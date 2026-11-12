@@ -370,13 +370,57 @@ test("every call of busy-emulator names a command it has, with its options", asy
   for (const name of Object.keys(AWAITED_COMMANDS)) if (find(name)) t.diagnostic(`${name} is in the command line now: take it out of AWAITED_COMMANDS`);
 });
 
+// The error codes the command line and the app's stage 2 raise, found where they are raised, as
+// tools/agent-reference/agent-reference.mjs finds them for docs/agents/reference.md. Read here from the sources, not
+// through that tool: the public repository carries this test and the sources, but not tools/.
+function raisedCodes() {
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== "test") walk(full);
+      else if (entry.isFile() && entry.name.endsWith(".mjs")) files.push(full);
+    }
+  };
+  walk(join(root, "packages", "server", "cli"));
+  files.push(join(root, "packages", "app", "src", "main.mjs"));
+  const github = join(root, "packages", "app", "src", "github");
+  for (const name of readdirSync(github)) if (name.endsWith(".mjs")) files.push(join(github, name));
+  const codes = new Set();
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    for (const m of text.matchAll(/\b(?:CliError|failed|PublishError)\(\s*"([a-z_]+)"/g)) codes.add(m[1]);
+    for (const m of text.matchAll(/\bhuman\(\{\s*code:\s*"([a-z_]+)"/g)) codes.add(m[1]);
+  }
+  return codes;
+}
+
+test("agents.md names only error codes the emulator raises", () => {
+  // The same table docs/agents/reference.md is made from. A code with an underscore is always a code; the plain words
+  // listed here are codes too (`refused` is also an ordinary word, so a word is not taken for one by its looks).
+  const PLAIN_CODES = ["refused"];
+  const real = raisedCodes();
+  const page = pages.find((p) => p.name === "public-docs/agents.md");
+  assert.ok(page, "public-docs/agents.md is missing");
+  let seen = 0;
+  for (const { text, line } of page.prose) {
+    for (const m of text.matchAll(/`([a-z]+(?:_[a-z]+)*)`/g)) {
+      if (!m[1].includes("_") && !PLAIN_CODES.includes(m[1])) continue;
+      seen++;
+      assert.ok(real.has(m[1]), `public-docs/agents.md:${line}: \`${m[1]}\` is not an error code of the command line any more; fix the page or the list (see docs/agents/reference.md, "Error codes")`);
+    }
+  }
+  assert.ok(seen >= 5, `only ${seen} error codes found in agents.md: is the pattern still right?`);
+});
+
 test("release addresses name files a release has; the pages link to pages and headings that are there", (t) => {
   const release = /https:\/\/github\.com\/busy-app\/busybar-emulator\/releases\/latest\/download\/([^\s)>\]"'`;]+)/g;
   const raw = /https:\/\/raw\.githubusercontent\.com\/busy-app\/busybar-emulator\/main\/public-docs\/([^\s)>\]"'`;]+)/g;
   const awaited = new Set();
   for (const page of pages) {
     const text = readFileSync(join(root, page.name), "utf8");
-    for (const m of text.matchAll(release)) assert.ok(ALL_RELEASE_FILES.includes(m[1]), `${page.name}: ${m[0]} names no file of a release (${ALL_RELEASE_FILES.join(", ")})`);
+    // The install scripts are not in the packaging list but are release files too (docs/release.md): they are public-docs/install/<file>.
+    for (const m of text.matchAll(release)) assert.ok(ALL_RELEASE_FILES.includes(m[1]) || existsSync(join(DOCS, "install", m[1])), `${page.name}: ${m[0]} names no file of a release (${ALL_RELEASE_FILES.join(", ")})`);
     for (const m of text.matchAll(raw)) {
       if (existsSync(join(DOCS, m[1]))) continue;
       assert.ok(Object.hasOwn(AWAITED_FILES, m[1]), `${page.name}: ${m[0]}: there is no public-docs/${m[1]}`);

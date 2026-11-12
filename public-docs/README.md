@@ -128,6 +128,7 @@ line makes the clips). A BUSY Bar has the final word: [how the emulator differs 
   agent, from the download to the pull request
 - [Your first app on the emulated BUSY Bar](first-app.md): create a project, build it, run it and take a screenshot;
   then [submit it to the catalog](first-app.md#submitting-to-the-catalog)
+- [agents.md](agents.md): instructions for AI agents making an app without a BUSY Bar
 - [Installing BUSY Bar Emulator](install.md): what is downloaded from where, the first open, the install sequence
   for agents, removing it
 - [BUSY Bar Emulator in a chat client (MCP)](mcp.md): the emulator's tools for Claude Desktop, Cursor and others

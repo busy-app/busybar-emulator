@@ -1,7 +1,7 @@
 {
   "$comment": "Written by the export of the BUSY Bar Emulator (tools/export in its internal repository): the files it wrote here, which the next export replaces.",
   "format": 1,
-  "from": "96c2342d72c2cbf1e81b8cde4d461566f0cdfcde",
+  "from": "4740f96d581edf83ed23810b8412f0496feec7da",
   "files": [
     ".gitattributes",
     ".github/ISSUE_TEMPLATE/bug.md",
@@ -1456,6 +1456,7 @@
     "packages/stage/test/leds.test.mjs",
     "packages/stage/versions.json",
     "public-docs/README.md",
+    "public-docs/agents.md",
     "public-docs/build-from-source.md",
     "public-docs/differences.md",
     "public-docs/first-app.md",

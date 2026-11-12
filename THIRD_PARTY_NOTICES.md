@@ -2026,4 +2026,4 @@ Which files of this repository are under which license; the first line whose fil
 | `README.md`, `CHANGELOG.md`, `.gitignore`, `.gitattributes`, `test/unpublished.json`, `.busybar-export.json` | 6 | GPL-2.0-or-later | the repository's own documents and the export's records |
 | `packages/app/launcher/macos/busy-emulator`, `packages/app/installer/windows/setup.manifest`, `public-docs/install/install-macos.sh` | 3 | GPL-2.0-or-later | the emulator's own code: the macOS command line's entry script, the setup's manifest and the macOS install script |
 | `.github/**` | 4 | GPL-2.0-or-later | the public repository's issue templates and the labels list |
-| `**/*.{mjs,cjs,js,c,h,cs,json,md,html,css,ps1}` | 630 | GPL-2.0-or-later | the emulator's own code, tests, test data and documents |
+| `**/*.{mjs,cjs,js,c,h,cs,json,md,html,css,ps1}` | 631 | GPL-2.0-or-later | the emulator's own code, tests, test data and documents |
