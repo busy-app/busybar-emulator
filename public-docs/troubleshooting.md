@@ -397,13 +397,12 @@ publishing use the same codes. A code with a section above links to it. The exit
 | `no_existing` | GitHub CLI has no such account on this computer | Sign in with another account |
 | `no_files`, `no_license` | Nothing to publish, or no license yet | Look at Repository files; choose a license |
 | `no_version` | The manifest has no id or version the catalog takes | Fix `src/appmeta/manifest.json`, then build and package again |
-| `not_author` | The authorship box was not ticked; nothing was sent | Tick it only if it is true |
 | `not_configured` | This build has no GitHub CLI | Send it by hand |
 | `not_landed` | GitHub does not hold the files that were sent | Publish again |
 | `not_packaged` | There is no catalog entry yet | Build and package first |
 | `not_pushed` | The app is not on GitHub from this computer yet | Publish to GitHub first |
 | `not_signed_in`, `not_signing_in`, `signing_in`, `unauthorized` | No sign-in, one already under way, or GitHub no longer takes it | Sign in to GitHub, or finish the sign-in under way |
-| `not_ticked` | Not every item of the catalog's checklist is ticked | Tick each item that is true: [Send to catalog](from-zero-to-catalog.md#send-to-catalog) |
+| `not_ticked` | Not every item of the catalog's checklist is ticked (an optional one may stay unticked); nothing was sent | Tick each item that is true: [Send to catalog](from-zero-to-catalog.md#send-to-catalog) |
 | `other_catalog` | The catalog is not BUSY's (busy-app/busy-apps-catalog or its dev copy), and you did not confirm its name | Send it to busy-app/busy-apps-catalog, or confirm the catalog by its name when the emulator asks |
 | `outside`, `bad_path`, `too_large`, `too_many_files` | A file is outside the project, has a name GitHub refuses or is over 50 MB, or there are too many files | Keep it out in Repository files, or rename it |
 | `rate_limited` | GitHub's limit of requests is reached for now | Try again at the time the message names |

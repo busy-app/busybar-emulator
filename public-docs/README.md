@@ -108,8 +108,9 @@ A chat client that cannot run commands, such as Claude Desktop, gets the emulato
 - **Screenshots for the catalog.** PNG files of 72×16 and 160×80 pixels with nothing in them but the pixels: from
   Screenshot over the BUSY Bar in the window, with Front, Back or both ticked (Cmd+Shift+S, Ctrl+Shift+S on Windows), or
   from `screenshot` on the command line.
-- **A clip for your post.** `record` makes an MP4 of the emulator's window or of the BUSY Bar alone, or a GIF of the
-  front display: [a clip for your post](first-app.md#a-clip-for-your-post).
+- **A clip for your post.** **Record** in the window's top bar, or `record` on the command line, makes an MP4 of the
+  emulator's window or of the BUSY Bar alone; `record --gif` makes a GIF of the front display:
+  [a clip for your post](first-app.md#a-clip-for-your-post).
 - **The catalog's checks before you submit.** `check` says what the BUSY Apps Catalog would say about your project;
   `submit` writes the files its pull request needs.
 - **Publish, step by step.** **Publish** in the window, or `publish` on the command line, takes you from the
@@ -119,8 +120,9 @@ A chat client that cannot run commands, such as Claude Desktop, gets the emulato
   ([how](first-app.md#publishing-step-by-step)).
 - **A command line for people and agents.** `busy-emulator`, with `--json` on every command.
 
-Not in this version: Import from GitHub in Create app, and the window's own Record button (`record` on the command
-line makes the clips). A BUSY Bar has the final word: [how the emulator differs from a BUSY Bar](differences.md).
+Create app starts a project from a template, an empty app, a folder you have, a repository on GitHub (Import from
+GitHub) or an app package (.tgz): [in the window](first-app.md#in-the-window). A BUSY Bar has the final word:
+[how the emulator differs from a BUSY Bar](differences.md).
 
 ## More
 

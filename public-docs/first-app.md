@@ -303,8 +303,9 @@ A request that fails, or an answer the BUSY Bar would not handle as you expect, 
 
 ## A clip for your post
 
-A short clip is handy for a post about your app. The window has no Record button in this version; run the app,
-then:
+A short clip is handy for a post about your app. In the window, press **Record** in the top bar and choose Window,
+Post (1080×1920) or Front display; press it again to stop, and the Save dialog asks where the MP4 goes. It stops by
+itself after 2 minutes. From the command line, run the app, then:
 
 ```text
 <cli> record                                 # media/clip-1.mp4: 5 s of the emulator's window, as you see it
@@ -513,12 +514,14 @@ Repository files to it in one commit, without git. It reads the commit back from
 commit. The folder `.github/workflows/` is not published. Publishing again updates the same repository; a name you
 have already gets a free one offered. The manifest in `submission/` now names the repository and the commit.
 
-**Send to catalog** opens the pull request that adds `applications/<app id>/manifest.yml` to the catalog. You tick
-that you are the app's author or have write access to its repository, and you choose how AI was used; the request's
-description is the catalog's own template with that box ticked (only because you ticked it) and the one line you
-chose. It comes from your fork of the catalog, or from a branch in it if you may push there. If the project changed
-since you published it, publish again first: the catalog builds exactly that commit. Sending again for the same
-version adds the change to the open request; a new version opens a new one.
+**Send to catalog** opens the pull request that adds `applications/<app id>/manifest.yml` to the catalog. It shows
+the catalog's author checklist as the catalog's template has it: you tick every item that is true, and you choose
+how AI was used. Nothing is sent until every item is ticked, except an item the catalog marks as optional (such as
+taking part in the BUSY JS Apps Contest), which may stay unticked. The request's description is the catalog's own
+template with the boxes you ticked and the one line you chose. It comes from your fork of the catalog, or from a
+branch in it if you may push there. If the project changed since you published it, publish again first: the catalog
+builds exactly that commit. Sending again for the same version adds the change to the open request; a new version
+opens a new one.
 
 Send to catalog sends the request to the BUSY Apps Catalog, https://github.com/busy-app/busy-apps-catalog; the step
 names it. The command line's `--catalog <owner/name>` names another catalog, for development and tests.
@@ -534,7 +537,7 @@ The same from the command line, with the emulator's app running (it holds the si
 <cli> publish signin --use-existing        # GitHub CLI's account on this computer, as it is
 <cli> publish signin --new-account         # prints the code and waits until you have entered it on GitHub
 <cli> publish push                         # the app asks you to confirm, then publishes
-<cli> publish pr --ai none                 # the app asks you to confirm and to tick the authorship; --catalog <owner/name>
+<cli> publish pr --ai none                 # the app asks you to confirm the checklist; optional items stay unticked
 <cli> publish status                       # stage 1's steps, the repository and the request
 <cli> publish signout
 ```

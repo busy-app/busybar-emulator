@@ -42,11 +42,6 @@ const AWAITED_FILES = {
   "install.md": "EMU-211, pull request 35",
   "install/install-macos.sh": "EMU-211, pull request 35",
   "install/install-windows.ps1": "EMU-211, pull request 35",
-  "images/guide-agent-pr-dialog.png": "EMU-171, the system's message box over a shown window: taken by hand, a hidden test window has none",
-  "images/guide-agent-push-dialog.png": "EMU-171, the system's message box over a shown window: taken by hand, a hidden test window has none",
-  "images/guide-macos-open-anyway.png": "EMU-171, macOS's own System Settings: taken by hand on a Mac with the release, not by a test",
-  "images/guide-trust-dialog.png": "EMU-171, the system's message box over a shown window: taken by hand, a hidden test window has none",
-  "images/guide-windows-smartscreen.png": "EMU-171, Windows SmartScreen: taken by hand on a PC with the release, not by a test",
 };
 // The commands this test runs, and why each other one is not run.
 const RUN = new Set(["help", "version", "status", "screenshot", "logs", "press"]);
@@ -448,8 +443,9 @@ test("release addresses name files a release has; the pages link to pages and he
   for (const page of pages.filter((p) => p.public)) {
     for (const { text, line } of page.prose) {
       const outsideCode = text.replace(/(`+)[^`]*?\1/g, "");
-      for (const m of outsideCode.matchAll(/\]\(([^)\s]+)\)/g)) {
-        const target = m[1];
+      // A link or a picture, ](target), and a picture as HTML, <img src="target">: every one must be there.
+      for (const m of outsideCode.matchAll(/\]\(([^)\s]+)\)|<img\b[^>]*?\ssrc="([^"]+)"/g)) {
+        const target = m[1] ?? m[2];
         if (/^[a-z]+:/i.test(target)) continue;
         const [path, anchor] = target.split("#");
         const file = path ? resolve(dirname(join(root, page.name)), path) : join(root, page.name);

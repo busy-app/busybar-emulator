@@ -115,6 +115,8 @@ user.
 Trusting a folder, signing in to GitHub, the license, how AI was used, the push, the pull request and the catalog's
 checklist are the user's: ask, and never choose, confirm or tick for them. `refused` or `trust_refused` means they
 chose Cancel: do not ask again. Sending the app to the catalog: `<cli> help publish`.
+The catalog's optional contest item cannot be ticked through `publish pr`: after the pull request is open, tell
+the user to tick it in the pull request's description on GitHub if they enter the BUSY JS Apps Contest.
 
 ## If a command is refused
 

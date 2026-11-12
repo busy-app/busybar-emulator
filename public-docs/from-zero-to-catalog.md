@@ -44,13 +44,9 @@ image. macOS says it cannot verify the app: choose **Done**. Open **System Setti
 line about BUSY Bar Emulator under Security and choose **Open Anyway**, then **Open Anyway** again. macOS may ask for
 your login password.
 
-![macOS, System Settings, Privacy & Security: Open Anyway for BUSY Bar Emulator](images/guide-macos-open-anyway.png)
-
 **Windows.** Run `busybar-emulator-win-x64-setup.exe`. SmartScreen says "Windows protected your PC": choose **More
 info**, check that the file is `busybar-emulator-win-x64-setup.exe`, then **Run anyway**. The setup needs no
 administrator rights. Open BUSY Bar Emulator from the Start menu.
-
-![Windows SmartScreen with More info open and the Run anyway button](images/guide-windows-smartscreen.png)
 
 After that the app opens like any other. Every step in detail: [Opening it for the first time](install.md#opening-it-for-the-first-time).
 
@@ -63,7 +59,7 @@ below, **My AI agent will** the second. "Getting started", at the foot of the Ap
 
 ### Create the app
 
-Press **Create app** at the top of the Apps list (or File → New App…). The dialog has four tabs:
+Press **Create app** at the top of the Apps list (or File → New App…). The dialog has five tabs:
 
 - **Templates**: the official template, or one of three finished examples (Focus Timer, Meeting Cost, Status Board).
   Choose one, give the app a name, and check Location, the folder the project goes in.
@@ -74,6 +70,8 @@ Press **Create app** at the top of the Apps list (or File → New App…). The d
 - **Import from GitHub**: a repository on github.com. Sign in as in [Publish to GitHub](#publish-to-github), paste
   the repository's address, check Location and press **Import**. The emulator downloads it and asks whether you
   trust the folder, as for Open existing.
+- **Install a package**: an app package (`.tgz`) someone built. The emulator shows the app's name, id and version
+  and installs it only when you choose Install. It is listed in Apps with no project folder.
 
 ![Create app, the Templates tab](images/guide-create-app-templates.png)
 
@@ -108,9 +106,13 @@ back, the size the catalog takes. The first front screenshot is the app's cover 
 
 ### Make a clip for your post
 
-<!-- When the window's Record button lands (EMU-108), describe it here first and keep the command line below. -->
+Press **Record** in the window's top bar, beside the camera, and choose what to record: **Window**, the window as you
+see it; **Post, 1080×1920**, the BUSY Bar upright for Reels, TikTok and X; or **Front display**, the front display
+alone. The button turns red and counts the time. Press it again to stop, then choose where the MP4 goes. A recording
+stops by itself after 2 minutes.
 
-The command line makes the clip. Open a terminal in the project's folder. On macOS:
+The command line makes the same clips, and a GIF of the front display. Open a terminal in the project's folder. On
+macOS:
 
 ```sh
 ~/.busy-emulator/bin/busy-emulator record --seconds 10                # media/clip-1.mp4 of the window, as you see it
@@ -199,16 +201,19 @@ link and its commit. Publishing again later updates the same repository.
 
 Press **Send to catalog**. The step shows the catalog's own pull request checklist, as the catalog's template has it:
 
-- I've read the terms for authors, and my app follows them.
-- I'm the author of the app or have write access to its repository.
-- The app builds with `busy-cli build`, and the lock file is committed.
-- The manifest follows the catalog manifest format.
-- I've tested the app on a BUSY Bar with the latest release firmware.
-- The screenshots are taken from the BUSY Bar.
+- I've read the [terms for authors](https://github.com/busy-app/busy-apps-catalog/blob/main/TERMS.md) and my app
+  follows them
+- I'm the author of the app or have write access to its repository
+- The app builds with `busy-cli build`, and the lock file is committed
+- The manifest follows the catalog manifest format
+- I've tested the app on a BUSY Bar with the latest release firmware
+- The screenshots are taken from the bar
+- (optional) My app takes part in the BUSY JS Apps Contest, and I accept the
+  [contest rules](https://go.busy.app/terms-of-js-apps-contest)
 
 The list on your screen is read from the catalog when the step opens, so it can differ from this one. Read each item
-and tick it. Every box goes into the request ticked, so tick only what is true. **Send to catalog** stays off until
-every item is ticked.
+and tick it if it is true: every box you tick goes into the request ticked. **Send to catalog** stays off until every
+item is ticked, except one marked optional; tick the contest item only if you enter the contest.
 
 Then choose how AI was used: **No AI was used**, **Partly AI-assisted** or **Fully AI-generated**. The request keeps
 that one line. Press **Send to catalog**. The window shows the pull request's link. The catalog's checks run on
@@ -280,12 +285,6 @@ command line gives these answers for you.
 | Choose how AI was used | In chat: none, partly or full |
 | Tick the catalog's checklist and confirm the request | The emulator's dialog: tick, then **Send** or **Cancel** |
 
-![The emulator's trust dialog: Don't Trust and Trust](images/guide-trust-dialog.png)
-
-![The emulator's dialog before an upload: Publish this app to a new public repository?](images/guide-agent-push-dialog.png)
-
-![The emulator's dialog before the request: Send this app to the catalog?](images/guide-agent-pr-dialog.png)
-
 The dialogs come to the front of the emulator's window, and a yes in the first second is not taken, so a stray key
 press does not answer them. If you choose Cancel, nothing is sent, and the agent should not ask again unless you say
 so. Read each dialog: it names the folder, the repository and the catalog.
@@ -296,9 +295,11 @@ emulator's dialogs cover only its own commands. To take the access back, see
 
 ### How it ends
 
-The agent's last answer has the pull request's link. Open it: the catalog's checks run there, then a moderator
-reviews the app. **Publish** in the window shows where every step stands, each done step ticked. The agent reads
-the same from the command line:
+The agent's last answer has the pull request's link. Open it: the catalog's checks run there, then a moderator reviews
+the app. In this version the request an agent sends ticks only the required items of the checklist: if you enter the
+BUSY JS Apps Contest, open the pull request's description on GitHub (**Edit**) and tick the contest item yourself.
+**Publish** in the window shows where every step stands, each done step ticked. The agent reads the same from the
+command line:
 
 ```sh
 ~/.busy-emulator/bin/busy-emulator publish status
@@ -321,14 +322,12 @@ the same from the command line:
 The window's own pictures come from `packages/app/test/app/guide-shots.test.mjs`: run it with
 `GUIDE_SHOTS=<folder>`, then optimise the PNGs losslessly and copy them into `public-docs/images/`. It takes a window
 of 1200×800 with an app made from the Focus Timer example, in a home of a user named "you", and the stand-ins for
-GitHub CLI and GitHub (accounts octo-person and octo-own). The system's pictures (macOS, Windows) and the system's
-message boxes (the trust and publish dialogs) are taken by hand with the release build. Save each as a PNG into
-`public-docs/images/` under the name below.
+GitHub CLI and GitHub (accounts octo-person and octo-own). The guide has no pictures of the system's own windows
+(macOS's Privacy & Security, Windows SmartScreen) or of the emulator's message boxes (the trust and publish dialogs):
+the test cannot take them. Each picture is a PNG in `public-docs/images/` under the name below.
 
 | File | What it shows |
 |---|---|
-| `guide-macos-open-anyway.png` | System Settings → Privacy & Security on macOS 15, the line about BUSY Bar Emulator with Open Anyway |
-| `guide-windows-smartscreen.png` | "Windows protected your PC" after More info, with the file name and Run anyway |
 | `guide-welcome.png` | The first-run question: I'll write the code, My AI agent will |
 | `guide-create-app-templates.png` | Create app, Templates tab, the official template and the three examples |
 | `guide-create-app-empty.png` | Create app, Empty app tab, with a name, a category and a letter icon filled in |
@@ -346,9 +345,5 @@ message boxes (the trust and publish dialogs) are taken by hand with the release
 | `guide-publish-github-done.png` | Publish to GitHub, Published, with the repository and the commit |
 | `guide-send-to-catalog.png` | Send to catalog, the checklist ticked and an AI usage chosen, before Send |
 | `guide-agent-text.png` | Paste this into your agent: the text, Copy and Create the project folder first |
-| `guide-trust-dialog.png` | The trust dialog over the window, for a cloned project |
-| `guide-agent-push-dialog.png` | The dialog `publish push` brings up: Publish this app to a new public repository? |
-| `guide-agent-pr-dialog.png` | The dialog `publish pr` brings up: Send this app to the catalog?, with its checklist |
 
-Crop the system's pictures (macOS, Windows) to the window in question. No other app, no name of a person, no path
-with a real user name: use a user named "you" or crop the path out.
+No other app, no name of a person, no path with a real user name: use a user named "you" or crop the path out.
