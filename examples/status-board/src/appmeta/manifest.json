@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "id": "app.example.status_board",
+  "name": "Status Board",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "Is it up? A heartbeat for a site, a build or anything that answers JSON: a green pulse while it is well, a red flat line when it is not.",
+  "author": "BUSY",
+  "heap_size_kib": 96
+}

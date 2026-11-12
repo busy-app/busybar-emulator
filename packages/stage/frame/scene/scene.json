@@ -1,0 +1,262 @@
+{
+ "$comment": "Contract of the bar scene handed to the emulator by the Tride agent. Every name and uid here that packages/stage/frame/stage.js reads is marked readByStage; changing one is a breaking change, agreed in advance.",
+ "handoff": "2026-11-12-3",
+ "editor": {
+  "tride": "0.16.0",
+  "sceneFormat": "0.76.0",
+  "manifestVersion": 8
+ },
+ "player": "Tride web player 0.16.0 (frame/player)",
+ "inputs": [
+  {
+   "id": "front",
+   "kind": "image",
+   "default": null,
+   "meaning": "LED matrix 72x16, the page sends pixels (setImagePixels), drawn as dots by the page",
+   "readByStage": true
+  },
+  {
+   "id": "back",
+   "kind": "image",
+   "default": null,
+   "meaning": "OLED 160x80, the page sends pixels (setImagePixels)",
+   "readByStage": true
+  },
+  {
+   "id": "turn",
+   "kind": "number",
+   "default": 0,
+   "meaning": "radians, the model round its vertical axis (spring 400/40)",
+   "readByStage": true
+  },
+  {
+   "id": "tilt",
+   "kind": "number",
+   "default": 0,
+   "meaning": "radians, the turntable leaned towards the camera (spring 400/40)",
+   "readByStage": true
+  },
+  {
+   "id": "distance",
+   "kind": "number",
+   "default": 1.5,
+   "meaning": "metres, the camera distance (spring 400/40)",
+   "readByStage": true
+  },
+  {
+   "id": "lift",
+   "kind": "number",
+   "default": 0,
+   "meaning": "metres, the camera offset up the picture (spring 400/40)",
+   "readByStage": true
+  },
+  {
+   "id": "shift",
+   "kind": "number",
+   "default": 0,
+   "meaning": "metres, the camera offset across the picture (spring 400/40)",
+   "readByStage": true
+  },
+  {
+   "id": "wheel",
+   "kind": "number",
+   "default": 0,
+   "meaning": "radians, the wheel angle; written by the wheel drag and by the page",
+   "readByStage": true
+  },
+  {
+   "id": "switch",
+   "kind": "number",
+   "default": 0,
+   "meaning": "radians, the mode switch angle, (position - 2) * switchStep; written by the lever drag and by the page",
+   "readByStage": true
+  },
+  {
+   "id": "press_start",
+   "kind": "number",
+   "default": 0,
+   "meaning": "0..1, how far Start is down",
+   "readByStage": true
+  },
+  {
+   "id": "press_back",
+   "kind": "number",
+   "default": 0,
+   "meaning": "0..1, how far Back is down",
+   "readByStage": true
+  },
+  {
+   "id": "press_wheel",
+   "kind": "number",
+   "default": 0,
+   "meaning": "0..1, how far the wheel is down",
+   "readByStage": true
+  },
+  {
+   "id": "wheel_step",
+   "kind": "number",
+   "default": 0,
+   "meaning": "computed, floor(wheel / (tau / 24)), the detents; the page counts clicks from its changes",
+   "readByStage": true
+  },
+  {
+   "id": "led_left",
+   "kind": "color",
+   "default": {
+    "r": 0,
+    "g": 0,
+    "b": 0,
+    "a": 1
+   },
+   "meaning": "colour of the RGB LED strip left of Start (the mode switch side), linear RGB 0..1 as an array [r, g, b]; the page turns the firmware sRGB bytes into linear ((v / 255) ** 2.2 or the exact sRGB curve); an object {r, g, b} is ignored by the player",
+   "readByStage": true
+  },
+  {
+   "id": "led_left_level",
+   "kind": "number",
+   "default": 0,
+   "meaning": "0..1, how bright the left strip glows (clamped; 1 = emissive strength 1, and the point light LED left glow at 60 spills the colour onto the top round the slot); 0 = off, the strip a dark diffuser, no glow",
+   "readByStage": true
+  },
+  {
+   "id": "led_right",
+   "kind": "color",
+   "default": {
+    "r": 0,
+    "g": 0,
+    "b": 0,
+    "a": 1
+   },
+   "meaning": "colour of the RGB LED strip right of Start (the wheel side), as led_left",
+   "readByStage": true
+  },
+  {
+   "id": "led_right_level",
+   "kind": "number",
+   "default": 0,
+   "meaning": "0..1, how bright the right strip glows, as led_left_level",
+   "readByStage": true
+  }
+ ],
+ "interactions": [
+  {
+   "id": "wheel_turn",
+   "on": "scroll_wheel",
+   "onUid": "b15e1aa7-6bd8-4de3-9633-51b6de8a26df",
+   "when": "drag",
+   "does": {
+    "kind": "dragAngle",
+    "binding_id": "wheel",
+    "plane": {
+     "facing": "y",
+     "through": "/node/e1f2a1b1-d715-4677-9a52-4f4ff053b322"
+    },
+    "per_turn": 6.2832,
+    "throw": 0
+   }
+  },
+  {
+   "id": "switch_turn",
+   "on": "5_position_switch",
+   "onUid": "c38ac941-9078-453e-a6b0-8c368c48b8f3",
+   "when": "drag",
+   "does": {
+    "kind": "dragAngle",
+    "binding_id": "switch",
+    "plane": {
+     "facing": "y",
+     "through": "/node/9b74a851-6a89-491b-aaa2-7e740c9fcb53"
+    },
+    "per_turn": 6.2832,
+    "throw": 0,
+    "min": -1.344,
+    "max": 1.344
+   }
+  }
+ ],
+ "events": [],
+ "camera": {
+  "front": {
+   "yfov": 0.126
+  }
+ },
+ "barJson": {
+  "controls": {
+   "00332392-bc2e-4869-90d5-e17db59ed240": {
+    "control": "start",
+    "node": "button_start_orange_part",
+    "readByStage": true
+   },
+   "38f4eb52-16c3-46cc-b71e-690a6365eeec": {
+    "control": "wheel",
+    "node": "Wheel",
+    "readByStage": true
+   },
+   "4f450980-185d-4406-ac81-4c72a8b88bf8": {
+    "control": "switch",
+    "node": "posselector_body",
+    "readByStage": true
+   },
+   "697240f5-d401-4cdd-bb4f-4cdbf1825e93": {
+    "control": "start",
+    "node": "button_start_body",
+    "readByStage": true
+   },
+   "7bdbbbe0-3fa0-4186-afa9-3a9855751f8e": {
+    "control": "back",
+    "node": "back_button",
+    "readByStage": true
+   },
+   "9b74a851-6a89-491b-aaa2-7e740c9fcb53": {
+    "control": "switch",
+    "node": "posselector_cap",
+    "readByStage": true
+   },
+   "ad793e76-b1ec-443e-89ae-3a7476d40e69": {
+    "control": "wheel",
+    "node": "Wheel__overmold_",
+    "readByStage": true
+   },
+   "e132451f-be9a-422c-bcab-16c93a1384c5": {
+    "control": "switch",
+    "node": "posselector_orange_part",
+    "readByStage": true
+   }
+  },
+  "switchStep": {
+   "value": 0.672,
+   "readByStage": true
+  },
+  "wheelDetents": {
+   "value": 24,
+   "readByStage": true
+  }
+ },
+ "alsoCoupled": "stage.js VIEW: fov 0.126 equals the camera's yfov, and VIEW.box is the bar's size; a change of the lens or of the model's size is a change of the contract too",
+ "files": {
+  "bar.trd": "b54a8e9bef3de3cebd24eb016950ee72b867187a95c101a7d58fb0c82091540d",
+  "bar.json": "b63b874f01eaa1508ab8eba68499d3a0d8f6a28141f651759ae4611f5c54dbb9"
+ },
+ "source": {
+  "project": "bar-stage/master/bar.trideproject (not handed over)",
+  "glb": {
+   "name": "bar5-tuned.glb",
+   "sha256": "e3fb6ff84a6e6dc084e3840186e23c5a860dfebff97ec6ff1350b15666cc622f"
+  },
+  "model": {
+   "name": "busy-bar-good-wheel.fbx",
+   "sha256": "d563d197f92b3400d7f81482f1d67ceeeb9957a1885140a2a8072a161fd72595"
+  },
+  "built by": "model/build_glb.py (the emulator's build_glb.py plus the wheel's grip point), model/tune_glb.py, model/build_scene.sh (PR 87's, the wheel's drag plane through wheel_grip), then commands-glass.json, commands-lighting.json, commands-backing-sensor.json, commands-leds.json and commands-tonemapping.json"
+ },
+ "materials": {
+  "led_left": {
+   "on": "led_light_1",
+   "meaning": "the left strip, written by led_left and led_left_level"
+  },
+  "led_right": {
+   "on": "led_light_2",
+   "meaning": "the right strip, written by led_right and led_right_level"
+  }
+ }
+}

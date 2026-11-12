@@ -1,0 +1,12 @@
+:root { color-scheme: light dark; font: 15px/1.5 system-ui, sans-serif; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: Canvas; color: CanvasText; }
+main { max-width: 620px; padding: 32px; }
+h1 { margin: 0 0 12px; font-size: 22px; font-weight: 600; }
+p { margin: 0 0 16px; }
+pre { margin: 0 0 16px; padding: 10px 12px; border: 1px solid GrayText; border-radius: 6px; font: 13px/1.4 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+#actions { display: flex; gap: 10px; }
+button { font: inherit; padding: 6px 16px; }
+/* The window's own title bar outside macOS (packages/app/src/title-bar.mjs): as tall as the system's three buttons
+   on its right, room to drag the window by; on macOS env() names nothing and the bar has no height. */
+.title-bar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; height: env(titlebar-area-height, 0px); padding-left: 12px; overflow: hidden; color: GrayText; font-size: 12px; user-select: none; -webkit-app-region: drag; }
+.title-bar img { flex: none; width: 16px; height: 16px; }

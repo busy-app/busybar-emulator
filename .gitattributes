@@ -1,0 +1,21 @@
+# One line-ending convention on every system: files are checked out with LF, as they are committed, whatever git's
+# core.autocrlf says. Git for Windows sets it to true, and without this line it would check the files out with CRLF:
+# the tests that compare files byte for byte (the engine's build, the local web, the icons) would then fail.
+* text=auto eol=lf
+
+*.anim binary
+*.snd binary
+*.image binary
+*.png binary
+*.gif binary
+*.webp binary
+*.tgz binary
+
+# The firmware's local web, copied by the engine build: kept byte for byte as the firmware has it
+packages/engine/build/*/web/** -text
+
+# The Tride player in the 3D view, and the scene: kept byte for byte on every system (the player's licence asks for
+# unmodified files, and packages/stage/versions.json records their checksums)
+packages/stage/frame/player/** -text
+packages/stage/frame/scene/** -text
+packages/app/tools/notices/app-texts/tride-players.txt -text

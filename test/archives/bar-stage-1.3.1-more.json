@@ -1,0 +1,34 @@
+[
+ {
+  "archive": "oversized-entry.tgz",
+  "bytes": 270,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (2560)",
+   "  scripts/"
+  ]
+ },
+ {
+  "archive": "gzip-bad-crc.tgz",
+  "bytes": 473,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":1190424757,\"staged\":{\"id\":\"app.fixture.mac\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "app.fixture.mac/",
+   "  appmeta/",
+   "    manifest.json (103)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "gzip-damaged-mid.tgz",
+  "bytes": 473,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": []
+ }
+]

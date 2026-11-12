@@ -1,0 +1,65 @@
+{
+  "format_version": 1,
+  "version": 1,
+  "fields": {
+    "url": {
+      "type": "string",
+      "label": "Address to check",
+      "description": "An http or https address that answers with a small JSON document, or just answers. Enter demo to see every state without a network.",
+      "default": "https://www.githubstatus.com/api/v2/status.json",
+      "min_length": 1,
+      "max_length": 255
+    },
+    "label": {
+      "type": "string",
+      "label": "Name on the BUSY Bar",
+      "description": "Up to 8 letters, shown beside the status: API, SHOP, BUILD.",
+      "default": "GITHUB",
+      "max_length": 8
+    },
+    "field": {
+      "type": "string",
+      "label": "JSON field with the status",
+      "description": "A path into the answer, such as status.indicator or checks.0.state. Leave empty to only ask whether the address answers with success.",
+      "default": "status.indicator",
+      "max_length": 64
+    },
+    "healthy": {
+      "type": "string",
+      "label": "Values that mean healthy",
+      "description": "Comma-separated, letter case ignored. Any other value of the field counts as down and is shown as the status word.",
+      "default": "none, ok, up, passing, success, operational, green, true",
+      "max_length": 128
+    },
+    "interval": {
+      "type": "integer",
+      "label": "Seconds between checks",
+      "description": "The wheel changes it while the app runs; this is where it starts.",
+      "default": 60,
+      "min": 5,
+      "max": 3600
+    },
+    "slow_ms": {
+      "type": "integer",
+      "label": "Slow above, milliseconds",
+      "description": "A healthy answer that took longer than this turns the pulse amber and slow. 0 turns this off.",
+      "default": 4000,
+      "min": 0,
+      "max": 60000
+    },
+    "header": {
+      "type": "string",
+      "label": "Request header",
+      "description": "Optional, as Name: value, for an address that wants a token: Authorization: Bearer abc123.",
+      "default": "",
+      "max_length": 255,
+      "sensitive": true
+    },
+    "sound": {
+      "type": "boolean",
+      "label": "Sound when it goes down",
+      "description": "Plays a sound once when a healthy address stops being healthy.",
+      "default": false
+    }
+  }
+}

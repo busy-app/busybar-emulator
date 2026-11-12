@@ -1,0 +1,27 @@
+{
+  "name": "busybar-emulator-app",
+  "productName": "BUSY Bar Emulator",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "description": "The desktop shell of the BUSY Bar emulator: starts the emulator server as a separate process and shows its window",
+  "license": "GPL-2.0-or-later",
+  "main": "src/main.mjs",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "start": "node tools/start.mjs",
+    "test": "node --test --test-concurrency=1 --test-timeout=600000 --test-force-exit \"test/unit/*.test.mjs\" \"test/app/*.test.mjs\"",
+    "test:unit": "node --test --test-concurrency=1 --test-timeout=600000 --test-force-exit \"test/unit/*.test.mjs\"",
+    "test:app": "node --test --test-concurrency=1 --test-timeout=600000 --test-force-exit \"test/app/*.test.mjs\"",
+    "dist": "node tools/dist.mjs build",
+    "dist:sums": "node tools/dist.mjs sums",
+    "dist:check": "node tools/dist.mjs check"
+  },
+  "devDependencies": {
+    "@electron/asar": "4.3.1",
+    "@electron/fuses": "2.1.3",
+    "electron": "45.2.3",
+    "resedit": "3.1.0"
+  }
+}

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>BUSY Bar Emulator</title>
+  <link rel="icon" type="image/png" href="/emulator/icons/emulator-logo-32.png">
+  <link rel="stylesheet" href="/emulator/window.css">
+</head>
+<body>
+  <!-- The window's own title bar outside macOS, with the app menu (title-bar.js): first, to be there at the first paint. -->
+  <script src="/emulator/title-bar.js"></script>
+
+  <!-- The window (layout V2): the top bar across; under it the side column, the whole height (All apps, or the opened
+       app), and the stage: the BUSY Bar, its controls, the BUSY Bar's card and the console. -->
+  <header class="topbar" id="topbar">
+    <div class="brand">
+      <img class="logo" id="logo" src="/emulator/icons/emulator-logo.svg" alt="" width="24" height="24" draggable="false" hidden>
+      <span class="brand-name">Bar Emulator</span>
+    </div>
+    <button type="button" class="top-btn" id="report-bug" title="Report a bug in the emulator"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-bug"/></svg><span>Report a Bug</span></button>
+    <!-- Documentation, beside Report a Bug: their addresses are set in window.js; the shell opens them in the browser after the click (external.mjs). -->
+    <a class="top-btn top-doc" id="docs-emulator" target="_blank" rel="noopener noreferrer" title="Emulator documentation"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-book"/></svg><span>Emulator Docs</span></a>
+    <a class="top-btn top-doc" id="docs-js-apps" target="_blank" rel="noopener noreferrer" title="Documentation for JS apps"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-code"/></svg><span>JS Apps Docs</span></a>
+    <div class="top-tools">
+      <!-- Screenshot: which displays, and the button (shot-float section of window.js); Record beside it. -->
+      <div class="seg shot-float" id="shot-float" role="group" aria-label="Screenshot">
+        <label class="shot-tick" id="shot-front-tick" title="The front display, 72×16"><input type="checkbox" id="shot-front" checked><span class="shot-box"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-checkmark"/></svg></span>Front</label>
+        <label class="shot-tick" id="shot-back-tick" title="The back display, 160×80"><input type="checkbox" id="shot-back" checked><span class="shot-box"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-checkmark"/></svg></span>Back</label>
+        <button type="button" class="shot-take" id="shot-take" title="Screenshot" aria-label="Screenshot"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-camera"/></svg></button>
+        <!-- A recording of the window, beside the camera (capture section of window.js; RECORD_BUTTON there). -->
+        <span class="capture-tools" id="capture-tools" role="group" aria-label="Record" hidden><button type="button" class="tool" id="capture-record" aria-label="Record" aria-pressed="false" title="Record"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-video"/></svg><span class="rec-time" id="capture-time" hidden>0:00</span></button></span>
+      </div>
+      <div class="seg view" id="canvas-tools-top" role="group" aria-label="View">
+        <button type="button" id="view-2d" class="on" aria-pressed="true">2D</button>
+        <button type="button" id="view-3d" aria-disabled="true" aria-pressed="false" title="3D view is coming">3D</button>
+      </div>
+    </div>
+    <div class="top-end">
+      <p class="update-note" id="update-note" hidden><a id="update-link" class="top-btn" target="_blank" rel="noopener noreferrer" title="A newer version of the emulator is available: open its download page"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-download"/></svg><span>Version <b id="update-version"></b></span></a><!-- The built-in update (window.js, "a new version"): Update to, the download's progress, Restart to update. --><button type="button" class="top-btn update-go" id="update-go" hidden><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use id="update-go-icon" href="/emulator/icons/busy-sprite.svg#bi-download"/></svg><span id="update-go-text"></span></button><span class="update-progress" id="update-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden><span class="update-track"><span class="update-fill" id="update-fill"></span></span><span id="update-progress-text"></span></span></p>
+      <button type="button" class="top-btn account" id="account" aria-haspopup="menu" hidden><span class="avatar" id="account-avatar" aria-hidden="true"></span><span class="account-name" id="account-name"></span><svg class="bi caret" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-chevron-down"/></svg></button>
+      <button type="button" class="btn solid publish-entry" id="publish" aria-disabled="true" title="Choose an app with a project folder"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-rocket"/></svg>Publish</button>
+    </div>
+  </header>
+
+  <!-- The side column, the whole height, two modes (data-mode): "all", the list of apps; "app", the opened app. -->
+  <aside class="side" id="side" data-mode="all" aria-label="Apps">
+    <section class="pane apps-card" id="apps-pane" aria-label="All apps">
+      <div class="pane-head card-head">
+        <h2>Apps<span class="count" id="apps-count"></span></h2>
+        <div class="head-actions">
+          <button type="button" class="icon-btn" id="refresh-apps" title="Read the list again" aria-label="Read the list again"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-refresh"/></svg></button>
+          <button type="button" class="btn solid" id="create-app" title="Create a new app: from a template or an empty one" aria-label="Create app"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-plus"/></svg><span class="label">Create app</span></button>
+        </div>
+      </div>
+      <ul id="apps" class="apps"></ul>
+    </section>
+
+    <section class="pane app-card" id="app-pane" aria-labelledby="app-title" hidden>
+      <div class="pane-nav">
+        <button type="button" class="nav-back" id="all-apps"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-arrow-left"/></svg>All apps</button>
+        <button type="button" class="icon-btn small" id="app-more" title="More" aria-label="More for this app" aria-haspopup="menu"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-more"/></svg></button>
+      </div>
+      <div class="app-head">
+        <span class="app-head-icon" id="app-icon"></span>
+        <div class="app-head-text">
+          <h2 id="app-title">App</h2>
+          <p class="facts" id="app-facts"></p>
+        </div>
+      </div>
+      <!-- app-column: the project's folder, under its id, and Copy prompt for AI (window.js, renderFolder). -->
+      <div class="app-folder" id="app-folder"></div>
+      <div class="app-actions" id="app-actions"></div>
+      <div class="app-status" id="app-status"></div>
+      <div class="tabs" role="tablist" aria-label="The app" id="app-tabs">
+        <button type="button" role="tab" data-tab="overview" id="tab-overview" aria-selected="true" aria-controls="app-body">Overview</button>
+        <button type="button" role="tab" data-tab="settings" id="tab-settings" aria-selected="false" aria-controls="app-body">Settings</button>
+        <button type="button" role="tab" data-tab="files" id="tab-files" aria-selected="false" aria-controls="app-body">Files</button>
+      </div>
+      <div class="app-body" id="app-body" role="tabpanel"></div>
+      <p hidden><a class="quiet-link" id="app-settings" href="/emulator/local-web.html?tab=apps" target="_blank" rel="noopener" title="Opens the BUSY Bar's local web on its Apps tab">App settings in Local Web</a></p>
+    </section>
+  </aside>
+
+  <!-- The stage: the BUSY Bar (2D or 3D) and its controls, the BUSY Bar's card, the console. -->
+  <main class="stage" id="stage">
+    <section class="canvas" aria-label="The BUSY Bar">
+      <div class="canvas-tools canvas-tools-right" id="canvas-tools-right">
+        <!-- The 3D view's camera: shown while the view is 3D (window.js). -->
+        <div class="camera-views" id="camera-views" role="group" aria-label="Camera" hidden>
+          <button type="button" data-camera="front" aria-pressed="false" title="The BUSY Bar from the front">Front</button>
+          <button type="button" data-camera="back" aria-pressed="false" title="The BUSY Bar from the back: its back display">Back</button>
+          <button type="button" data-camera="top" aria-pressed="false" title="The BUSY Bar from above: its controls">Top</button>
+          <button type="button" data-camera="side" aria-pressed="false" title="The BUSY Bar from the side: the wheel's end">Side</button>
+        </div>
+      </div>
+      <!-- What a screenshot or a recording became, for a few seconds (capture section of window.js). -->
+      <div class="capture-toast" id="capture-toast" role="status" aria-live="polite" hidden><span class="shot-thumbs" id="shot-thumbs" hidden><canvas id="shot-thumb-front" class="shot-thumb front-thumb" width="72" height="16"></canvas><canvas id="shot-thumb-back" class="shot-thumb back-thumb" width="160" height="80"></canvas></span><span class="said" id="capture-said"></span><button type="button" class="btn soft small" id="capture-reveal" hidden>Show in Finder</button></div>
+
+      <div class="views">
+        <div class="device-view" id="device-view">
+          <div class="bar" id="bar">
+            <img src="/emulator/busybar-device.png" alt="" class="bar-art" draggable="false">
+            <button class="hot hot-selector" id="selector-hot" tabindex="-1" title="Mode switch: click for the next position, Shift-click for the previous">Mode switch</button>
+            <button class="hot hot-start" data-key="start" tabindex="-1" title="Start / Pause (Space)">Start / Pause</button>
+            <button class="hot hot-back" data-key="back" tabindex="-1" title="Back (Esc)">Back</button>
+            <div class="hot hot-wheel" id="wheel-hot" title="Wheel: scroll to turn, click for OK"></div>
+            <canvas id="front" class="front"></canvas>
+            <p class="power-note" id="power-note" hidden>The BUSY Bar is off. Press any button to turn it on.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Under the BUSY Bar, centred: its controls, flat vectors of the BUSY Bar's top (Figma, the owner's controls), from the
+           left: the mode switch, a knob with its five positions on an arc beside it; Start / Pause with the two RGB
+           LEDs along its slanted sides; Back; the wheel, OK in its middle, a dot that turns with it. -->
+      <div class="dock" id="dock">
+        <div class="strip" id="strip" role="group" aria-label="The controls on the top of the BUSY Bar">
+          <div class="dial" id="dial" role="group" aria-label="Mode switch">
+            <button data-select="busy" title="BUSY">Busy</button>
+            <button data-select="custom" title="CUSTOM">Custom</button>
+            <button data-select="off" title="OFF">Off</button>
+            <button data-select="apps" title="APPS">Apps</button>
+            <button data-select="settings" title="SETTINGS">Settings</button>
+          </div>
+          <div class="lever" id="lever" tabindex="0" role="slider" aria-label="Mode switch" aria-valuemin="0" aria-valuemax="4" aria-orientation="vertical" title="Mode switch: drag, or click a position"><span class="knob-face"></span><span class="knob-slot"></span></div>
+          <span class="led left" id="led-left" aria-hidden="true"><span class="led-light"></span></span>
+          <button class="key-start" data-key="start" aria-label="Start / Pause" title="Start / Pause, OK in menus (Space)"><span>Start / Pause</span></button>
+          <span class="led right" id="led-right" aria-hidden="true"><span class="led-light"></span></span>
+          <button class="key-back" data-key="back" aria-label="Back" title="Back, hold to close the app (Esc)"><span class="back-arrow"></span></button>
+          <div class="wheel-box">
+            <span class="wheel-ticks" aria-hidden="true"></span>
+            <div class="wheel" id="wheel" title="Wheel: drag or scroll to turn, press for OK">
+              <div class="wheel-ring" id="wheel-ring"><span class="wheel-mark"></span></div>
+              <button class="wheel-ok" data-key="ok" aria-label="OK / Skip" title="OK / Skip: press the wheel (Enter)">OK</button>
+            </div>
+            <button class="turn left" data-wheel="down" title="Turn left (← or scroll up)" aria-label="Turn the wheel left"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-chevron-left"/></svg></button>
+            <button class="turn right" data-wheel="up" title="Turn right (→ or scroll down)" aria-label="Turn the wheel right"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-chevron-right"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- The BUSY Bar: its back display, what it is, and its basic settings. -->
+    <section class="card device-card" aria-label="The BUSY Bar">
+      <div class="oled-frame" title="Back display"><canvas id="back" width="160" height="80" class="oled"></canvas></div>
+      <div class="device-about">
+        <div class="device-head">
+          <h2 class="device-name">BUSY Bar</h2>
+          <span class="link" id="link">Not connected</span>
+          <span class="chip warn" id="speed-note" hidden>Computer speed</span>
+        </div>
+        <!-- bar-address: the BUSY Bar's address, its API documentation and the restart (window.js, "bar-address"). -->
+        <p class="builds"><span class="build" id="firmware" title="">Firmware</span><a class="build api-docs" id="api" href="/docs/" target="_blank" rel="noopener" title="The HTTP API of BUSY Bar: its documentation, with Try it out against this BUSY Bar">API</a></p>
+        <p class="builds mono bar-address" id="bar-address-line"><a id="bar-address" href="/" target="_blank" rel="noopener" title="The address of this BUSY Bar: its HTTP API and local web. Give it to busy-cli as --addr, and to your own tools"></a><button type="button" class="icon-btn tiny" id="bar-address-copy" title="Copy the address of BUSY Bar" aria-label="Copy the address of BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-copy"/></svg></button><span id="device-serial" hidden></span><span id="device-uptime"></span></p>
+        <div class="device-links">
+          <a class="btn small" id="local-web" href="/emulator/local-web.html" target="_blank" rel="noopener" title="The BUSY Bar's own web page: its settings and its apps"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-open-in-new"/></svg>Open in Local Web</a>
+          <button type="button" class="btn small" id="power-restart" title="Restart BUSY Bar, as holding Back and Start does on a real BUSY Bar. Apps and their settings are kept" aria-label="Restart BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-restart"/></svg><span class="label">Restart BUSY Bar</span></button>
+        </div>
+      </div>
+      <div class="sets">
+        <label class="set" title="Without Wi-Fi the app's network requests fail; requests to the BUSY Bar itself still work"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-wifi-4"/></svg><span>Wi-Fi</span><input type="checkbox" class="switch" id="status-wifi"></label>
+        <label class="set" title="The USB cable: power and charging"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-usb"/></svg><span>USB</span><input type="checkbox" class="switch" id="status-usb"></label>
+        <label class="set battery" title="Battery"><span class="icon" id="battery-icon"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-battery-5"/></svg></span><input type="range" class="slider" id="status-battery" min="0" max="100" step="1" aria-label="Battery"><span class="value" id="status-battery-text"></span></label>
+        <label class="set volume sound" title="The BUSY Bar's volume"><span class="icon" id="audio-icon"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-sound-off"/></svg></span><span class="unseen sound-note" id="audio-note"></span><input type="range" class="slider" id="status-volume" min="0" max="100" step="1" aria-label="Volume"><span class="value" id="status-volume-text"></span></label>
+      </div>
+    </section>
+
+    <!-- The console, under the BUSY Bar's card and as wide: it collapses, and its top edge resizes it. -->
+    <section class="card console-card" id="console-card" aria-label="Console">
+      <div class="console-grip" id="console-grip" role="separator" aria-orientation="horizontal" aria-label="Resize the console" tabindex="0" title="Drag to resize the console"></div>
+      <div class="card-head">
+        <h2><button type="button" class="console-title" id="console-toggle" aria-expanded="true" aria-controls="console">Console<span class="count error-count" id="error-count" hidden></span></button></h2>
+        <div class="filters">
+          <div class="seg small" role="group" aria-label="Show">
+            <button type="button" id="show-all" class="on" aria-pressed="true">All</button>
+            <button type="button" id="show-errors" aria-pressed="false" title="Errors and warnings only">Errors</button>
+          </div>
+          <button class="icon-btn small kinds-btn" id="console-kinds-btn" title="Kinds of line" aria-label="Kinds of line" aria-controls="console-kinds" aria-expanded="false"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-filter"/></svg></button>
+          <div class="kinds" id="console-kinds" role="group" aria-label="Kinds of line">
+            <label class="toggle" title="Apps starting and stopping"><input type="checkbox" data-kind="app" checked><span>Lifecycle</span></label>
+            <label class="toggle" title="What building, running and checking a project print"><input type="checkbox" data-kind="build" checked><span>Build</span></label>
+            <label class="toggle" title="The firmware's log"><input type="checkbox" data-kind="system"><span>System</span></label>
+          </div>
+          <button class="icon-btn small" id="open-terminal" title="Open in a terminal" aria-label="Open in a terminal" aria-disabled="true"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-code"/></svg></button>
+          <button class="icon-btn small" id="clear" title="Clear" aria-label="Clear the console"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-trash"/></svg></button>
+          <button class="icon-btn small collapse" id="console-collapse" title="Collapse the console" aria-label="Collapse the console" aria-controls="console" aria-expanded="true"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-chevron-down"/></svg></button>
+        </div>
+      </div>
+      <div id="console" class="console" tabindex="0" aria-label="Console"></div>
+    </section>
+  </main>
+
+  <script src="/emulator/actions.js"></script>
+  <script src="/emulator/stage3d/mount.js"></script>
+  <script src="/emulator/welcome.js"></script>
+  <script src="/emulator/icon-block.js"></script>
+  <script src="/emulator/create-app.js"></script>
+  <script src="/emulator/publish.js"></script>
+  <!-- Report a Bug (report-bug.js): window.openReportBug(), for the top bar and the app menu's Help. -->
+  <script src="/emulator/report-bug.js"></script>
+  <!-- The update's pop-up (update-popup.js): a newer version, offered once when the window opens or finds it. -->
+  <script src="/emulator/update-popup.js"></script>
+  <script type="module" src="/emulator/window.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BUSY Bar Emulator</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="message.css">
+</head>
+<body>
+  <!-- Outside macOS the window has no frame of the system's: this is the room to drag it by, under the system's three
+       buttons (title-bar.mjs). Elsewhere it has no height. -->
+  <header class="title-bar"><img src="icon.png" alt="" width="16" height="16" draggable="false"><span>BUSY Bar Emulator</span></header>
+  <main>
+    <h1 id="title"></h1>
+    <p id="text"></p>
+    <pre id="detail" hidden></pre>
+    <div id="actions">
+      <button id="retry" type="button" hidden>Try again</button>
+      <button id="quit" type="button" hidden>Quit</button>
+    </div>
+  </main>
+  <script src="message.js"></script>
+</body>
+</html>

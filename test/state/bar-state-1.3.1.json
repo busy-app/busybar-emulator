@@ -1,0 +1,1191 @@
+{
+ "recorded": "2026-11-10, evening",
+ "bar": "a bar with a self-built U5: firmware 1.3.1 (8edd2da4-dirty), API 27.14.0",
+ "script": "bar-compare/state-compare.mjs (EMU-232 spike, spikes/bar-compare.md); each request went to the bar and then to the emulator",
+ "exact": false,
+ "exactNote": "the recording script trimmed white space at both ends of every answer: a final line feed is not recorded",
+ "start": {
+  "brightness": "100",
+  "volume": 100,
+  "name": "BB"
+ },
+ "requests": [
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/stage",
+   "archive": "app.probe.cmp",
+   "status": 200,
+   "response": "{\"result\":\"OK\",\"install_key\":1348229229,\"staged\":{\"id\":\"app.probe.cmp\",\"name\":\"Compare probe\",\"version\":\"0.1.0\",\"api_version\":\"27.14.0\",\"author\":\"\",\"description\":\"Shows its settings and the last input events: the probe for comparing a bar with the emulator\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/install?install_key=<staged>",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/install?install_key=1",
+   "note": "a key nobody staged",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/install",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/quit",
+   "note": "nothing running",
+   "status": 409,
+   "response": "{\"error\":\"application is not running\"}",
+   "wait": 1500
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/launch?app_id=app.probe.nope",
+   "status": 404,
+   "response": "{\"error\":\"Not Found\"}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/launch?app_id=",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/launch",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/launch?app_id=bad%20id!",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "apps",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "note": "not running yet",
+   "status": 200,
+   "response": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"label\":\t\"hello\",\n\t\t\"count\":\t3,\n\t\t\"flag\":\tfalse\n\t}\n}"
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/launch?app_id=app.probe.cmp",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 2500,
+   "frameHashes": {
+    "front": "4f74533d93",
+    "back": "281205e47f"
+   }
+  },
+  {
+   "group": "apps",
+   "method": "POST",
+   "path": "apps/launch?app_id=app.probe.cmp",
+   "note": "double launch",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 2500,
+   "frameHashes": {
+    "front": "4f74533d93",
+    "back": "281205e47f"
+   }
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "status": 200,
+   "response": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"label\":\t\"hello\",\n\t\t\"count\":\t3,\n\t\t\"flag\":\tfalse\n\t}\n}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.nope",
+   "status": 404,
+   "response": "{\"error\":\"Not Found\"}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"world\",\"count\":5,\"flag\":true}}",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "status": 200,
+   "response": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"label\":\t\"world\",\n\t\t\"count\":\t5,\n\t\t\"flag\":\ttrue\n\t}\n}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"x\",\"count\":5}}",
+   "note": "a field missing",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"x\",\"count\":\"5\",\"flag\":true}}",
+   "note": "count as a string",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"x\",\"count\":10,\"flag\":true}}",
+   "note": "count above max 9",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"\",\"count\":1,\"flag\":true}}",
+   "note": "label below min_length 1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"thirteen char\",\"count\":1,\"flag\":true}}",
+   "note": "label above max_length 12",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"ünï\",\"count\":1,\"flag\":true}}",
+   "note": "non-ASCII label",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "status": 200,
+   "response": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"label\":\t\"ünï\",\n\t\t\"count\":\t1,\n\t\t\"flag\":\ttrue\n\t}\n}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":2,\"values\":{\"label\":\"x\",\"count\":1,\"flag\":true}}",
+   "note": "wrong version",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"version\":1,\"values\":{\"label\":\"extra\",\"count\":2,\"flag\":false,\"other\":1}}",
+   "note": "unknown key",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "status": 200,
+   "response": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"label\":\t\"extra\",\n\t\t\"count\":\t2,\n\t\t\"flag\":\tfalse\n\t}\n}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "not json",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "body": "{\"values\":{\"label\":\"x\",\"count\":1,\"flag\":true}}",
+   "note": "no version",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "settings",
+   "method": "PUT",
+   "path": "apps/settings?app_id=app.probe.nope",
+   "body": "{\"version\":1,\"values\":{\"label\":\"x\",\"count\":1,\"flag\":true}}",
+   "status": 404,
+   "response": "{\"error\":\"Not Found\"}"
+  },
+  {
+   "group": "settings",
+   "method": "POST",
+   "path": "apps/quit",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 1500
+  },
+  {
+   "group": "settings",
+   "method": "POST",
+   "path": "apps/launch?app_id=app.probe.cmp",
+   "note": "after PUT: the app should draw 'extra 2 F'",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 2500,
+   "frameHashes": {
+    "front": "801c95ad9e",
+    "back": "19cb483028"
+   }
+  },
+  {
+   "group": "settings",
+   "method": "DELETE",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "settings",
+   "method": "GET",
+   "path": "apps/settings?app_id=app.probe.cmp",
+   "note": "after DELETE",
+   "status": 200,
+   "response": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"label\":\t\"hello\",\n\t\t\"count\":\t3,\n\t\t\"flag\":\tfalse\n\t}\n}"
+  },
+  {
+   "group": "settings",
+   "method": "DELETE",
+   "path": "apps/settings?app_id=app.probe.nope",
+   "status": 404,
+   "response": "{\"error\":\"Not Found\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=up",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 700,
+   "frameHashes": {
+    "front": "22f525e73c",
+    "back": "a7fe69ebd5"
+   }
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=down",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 700,
+   "frameHashes": {
+    "front": "2dcfea22ef",
+    "back": "f846502116"
+   }
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=ok",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 700,
+   "frameHashes": {
+    "front": "f649f2dd78",
+    "back": "b67ffe6a39"
+   }
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=start",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 700,
+   "frameHashes": {
+    "front": "5026941916",
+    "back": "437ff5ad14"
+   }
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=nope",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=OK",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=encoder",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=up&key=down",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "input",
+   "method": "GET",
+   "path": "input?key=up",
+   "status": 405,
+   "response": "{\"error\":\"Method Not Allowed\"}"
+  },
+  {
+   "group": "input",
+   "method": "POST",
+   "path": "input?key=back",
+   "note": "short Back with an app running",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}",
+   "wait": 1000,
+   "frameHashes": {
+    "front": "febc9c4c66",
+    "back": "39a462514c"
+   }
+  },
+  {
+   "group": "quit",
+   "method": "POST",
+   "path": "apps/quit",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "quit",
+   "method": "POST",
+   "path": "apps/quit",
+   "note": "second quit",
+   "status": 409,
+   "response": "{\"error\":\"application is not running\"}",
+   "wait": 1500
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=50",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"50\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=0",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"0\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=100",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"100\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=auto",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"100\"}",
+   "alsoAccepted": {
+    "status": 200,
+    "response": "{\"value\":\"auto\"}"
+   },
+   "note": "right after the POST: the bar still gave the value before it; the emulator gives the new one at once (EMU-232: not emulated)"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"auto\"}",
+   "alsoAccepted": {
+    "status": 200,
+    "response": "{\"value\":\"1\"}"
+   },
+   "note": "right after the POST: the bar still gave the value before it; the emulator gives the new one at once (EMU-232: not emulated)"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=99",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"1\"}",
+   "alsoAccepted": {
+    "status": 200,
+    "response": "{\"value\":\"99\"}"
+   },
+   "note": "right after the POST: the bar still gave the value before it; the emulator gives the new one at once (EMU-232: not emulated)"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=101",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=-1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=abc",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=50.5",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=050",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=1000",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=10000",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=AUTO",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?front=50",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?back=50",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=50&front=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=+5",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "POST",
+   "path": "display/brightness?value=%2050",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "GET",
+   "path": "display/brightness",
+   "status": 200,
+   "response": "{\"value\":\"50\"}"
+  },
+  {
+   "group": "brightness",
+   "method": "PUT",
+   "path": "display/brightness?value=50",
+   "status": 405,
+   "response": "{\"error\":\"Method Not Allowed\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=30&silent=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "GET",
+   "path": "audio/volume",
+   "status": 200,
+   "response": "{\"volume\":30}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=0&silent=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "GET",
+   "path": "audio/volume",
+   "status": 200,
+   "response": "{\"volume\":0}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=100&silent=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "GET",
+   "path": "audio/volume",
+   "status": 200,
+   "response": "{\"volume\":100}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=1&silent=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "GET",
+   "path": "audio/volume",
+   "status": 200,
+   "response": "{\"volume\":1}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=10",
+   "note": "not silent: the bar clicks at volume 10",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=10&silent=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=101&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=-1&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=abc&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=50.5&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=050&silent=1",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=1000&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=10&silent=2",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=10&silent=yes",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=10&silent=",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?volume=+5&silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "POST",
+   "path": "audio/volume?silent=1",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "volume",
+   "method": "GET",
+   "path": "audio/volume",
+   "note": "after the refused ones",
+   "status": 200,
+   "response": "{\"volume\":50}"
+  },
+  {
+   "group": "volume",
+   "method": "PUT",
+   "path": "audio/volume?volume=10",
+   "status": 405,
+   "response": "{\"error\":\"Method Not Allowed\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"Probe name\"}",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "GET",
+   "path": "name",
+   "status": 200,
+   "response": "{\"name\":\"Probe name\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"12345678901234567890\"}",
+   "note": "20 characters",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "GET",
+   "path": "name",
+   "status": 200,
+   "response": "{\"name\":\"12345678901234567890\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"123456789012345678901\"}",
+   "note": "21 characters",
+   "status": 400,
+   "response": "{\"error\":\"Name is too long\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"\"}",
+   "status": 400,
+   "response": "{\"error\":\"Name is empty\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"   \"}",
+   "status": 400,
+   "response": "{\"error\":\"Name consists of only spaces\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\" lead\"}",
+   "note": "leading space",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "GET",
+   "path": "name",
+   "status": 200,
+   "response": "{\"name\":\" lead\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"trail \"}",
+   "note": "trailing space",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "GET",
+   "path": "name",
+   "status": 200,
+   "response": "{\"name\":\"trail \"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"имя\"}",
+   "note": "Cyrillic",
+   "status": 400,
+   "response": "{\"error\":\"Name contains disallowed character\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"Ünï\"}",
+   "note": "Latin-1 letters",
+   "status": 400,
+   "response": "{\"error\":\"Name contains disallowed character\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"a😀\"}",
+   "note": "emoji",
+   "status": 400,
+   "response": "{\"error\":\"Name contains disallowed character\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"a\\tb\"}",
+   "note": "tab",
+   "status": 400,
+   "response": "{\"error\":\"Name contains disallowed character\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"a-b_c.d!@#\"}",
+   "note": "punctuation",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "GET",
+   "path": "name",
+   "status": 200,
+   "response": "{\"name\":\"a-b_c.d!@#\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"{\\\"name\\\":5}\"}",
+   "note": "a number",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"{\\\"name\\\":\\\"x\\\",\\\"more\\\":1}\"}",
+   "note": "an extra key",
+   "status": 400,
+   "response": "{\"error\":\"Name is too long\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"not json\"}",
+   "note": "not JSON",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"{}\"}",
+   "note": "no name",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "name",
+   "method": "PUT",
+   "path": "name",
+   "body": "{\"name\":\"x\"}",
+   "status": 405,
+   "response": "{\"error\":\"Method Not Allowed\"}"
+  },
+  {
+   "group": "name",
+   "method": "GET",
+   "path": "name",
+   "note": "after the refused ones",
+   "status": 200,
+   "response": "{\"name\":\"{}\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":5}",
+   "note": "a number",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"x\",\"more\":1}",
+   "note": "an extra key",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "POST",
+   "path": "name",
+   "body": "not json",
+   "note": "not JSON",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "POST",
+   "path": "name",
+   "body": "{}",
+   "note": "no name",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":null}",
+   "note": "null",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "POST",
+   "path": "name",
+   "body": "{\"name\":\"BB2\"",
+   "note": "cut short",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "name-raw",
+   "method": "GET",
+   "path": "name",
+   "status": 200,
+   "response": "{\"name\":\"BB\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=Tokyo",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "GET",
+   "path": "time/timezone",
+   "status": 200,
+   "response": "{\"name\":\"Tokyo\",\"offset\":\"+09:00\",\"abbr\":\"JST\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "GET",
+   "path": "time",
+   "status": 200,
+   "response": "{\"timestamp\":\"2026-11-11T08:25:46+09:00\"}",
+   "compare": "offset",
+   "note": "only the time zone's offset at the end is compared: the time is the time of the recording"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=Los%20Angeles",
+   "note": "a name with a space",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "GET",
+   "path": "time/timezone",
+   "status": 200,
+   "response": "{\"name\":\"Los Angeles\",\"offset\":\"-08:00\",\"abbr\":\"PST\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=Los+Angeles",
+   "note": "space as +",
+   "status": 200,
+   "response": "{\"result\":\"OK\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=tokyo",
+   "note": "lower case",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=Nowhere",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=",
+   "note": "empty",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=Europe%2FBerlin",
+   "note": "an IANA id",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone?timezone=UTC",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "GET",
+   "path": "time/timezone",
+   "status": 200,
+   "response": "{\"name\":\"Los Angeles\",\"offset\":\"-08:00\",\"abbr\":\"PST\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "POST",
+   "path": "time/timezone",
+   "status": 400,
+   "response": "{\"error\":\"Bad Request\"}"
+  },
+  {
+   "group": "timezone",
+   "method": "GET",
+   "path": "time/timezone",
+   "note": "after the refused ones",
+   "status": 200,
+   "response": "{\"name\":\"Los Angeles\",\"offset\":\"-08:00\",\"abbr\":\"PST\"}"
+  }
+ ]
+}

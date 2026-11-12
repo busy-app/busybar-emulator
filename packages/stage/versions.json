@@ -1,0 +1,48 @@
+{
+  "$comment": "What the 3D view ships (ADR-0004 section 5): the player's release and the checksum of each of its files, which are the release's own files, unmodified; the scene (owned by the Tride agent) and what it comes from. Written by scene-build/record.mjs; test/files.test.mjs compares packages/stage/frame with it.",
+  "player": {
+    "name": "Tride web player",
+    "version": "0.16.0",
+    "from": "https://github.com/trideapp/tride-web/releases/tag/v0.16.0",
+    "trideCommit": "d1259a54a",
+    "sceneFormat": "0.76.0",
+    "filament": "1.77.1",
+    "license": "Tride Players Licence 1.2 (frame/player/LICENSE)",
+    "left out": "the full runtime (tride_runtime_api_bg.wasm: the scene has no text, the lite one is enough), the five other lighting environments, the player's type declarations and sample pages",
+    "files": {
+      "LICENSE": "e5bad1f86c63a54d8e2fc5cf54d8d2432458cac8b89e8bd6d8029ef17857fd2c",
+      "THIRD_PARTY_NOTICES.md": "7ee3f89b5b0c1b5bdb6aef505717699a3359c914a77954c090a78e8dacf976a7",
+      "filament/filament.js": "d066e58a4eafab323b8f79054378be4163f3af726cfcf43af8e47d42af5b4dc8",
+      "filament/filament.wasm": "ba608d83954fe03866de8ba883e5aa67ecc23f86286b92224db32359e76e0f04",
+      "ibl/studio_ibl.ktx": "c0b1e0b6f36f18f59c646c607fd10d13e0a9c592ab69dc3432be342726f08897",
+      "ibl/studio_skybox.ktx": "5461b08fb0019435db2c03d95b9cc8ec0244e140a1298fb70a868c1cece3c1dc",
+      "tride-web/tride-web.js": "a6a167c991d4bc733ab258ad9a53fc055afaef48cc75f8cb28cc5ea60ff47d99",
+      "tride-web/tride_runtime_api-Dy6ek_GD.js": "3fbdc83e4c096f0cbc1ba0a7ae2a2cdefbe6f9b43a7719efa458e76eb6d04b1d",
+      "tride-web/tride_runtime_api_lite_bg.wasm": "35175fd15ae75c025ad55ec255665b786b2546977c8f4b7f7faca6a23db5764e"
+    }
+  },
+  "scene": {
+    "editor": {
+      "tride": "0.16.0",
+      "sceneFormat": "0.76.0",
+      "manifestVersion": 8
+    },
+    "source": {
+      "model": {
+        "name": "busy-bar.fbx",
+        "sha256": "28e3a06fe2bd343af51828dedecf4fca20f76a58b06e5788e6fb4f94533e4afb"
+      },
+      "glb": {
+        "name": "bar5-tuned.glb",
+        "sha256": "e3fb6ff84a6e6dc084e3840186e23c5a860dfebff97ec6ff1350b15666cc622f"
+      }
+    },
+    "files": {
+      "bar.json": "b63b874f01eaa1508ab8eba68499d3a0d8f6a28141f651759ae4611f5c54dbb9",
+      "bar.trd": "b54a8e9bef3de3cebd24eb016950ee72b867187a95c101a7d58fb0c82091540d",
+      "scene.json": "ceb642cce22df9efed4f9a7f83414280ac036703e09d1b7a2022d3d28dacbe6f"
+    },
+    "owner": "the Tride agent: the master copy is a .trideproject kept outside this repository; changes come as deliveries, installed with scene-build/record.mjs --delivery <folder> --install",
+    "delivery": "2026-11-12-3"
+  }
+}

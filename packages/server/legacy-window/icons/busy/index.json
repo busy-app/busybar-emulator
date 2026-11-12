@@ -1,0 +1,20 @@
+{
+  "arrows": ["arrow-down","arrow-left","arrow-right","arrow-up","arrow-up-left","arrow-up-right","caret-down","caret-down-bold","caret-left","caret-right","caret-up","chevron-double-down","chevron-double-left","chevron-double-right","chevron-double-up","chevron-down","chevron-left","chevron-right","chevron-up","download","download-fill","navigate-back","open-in-new","upload","upload-fill"],
+  "various": ["apps","apps-add","apps-block","apps-fill","bell","bolt","book","book-open","box","box-open","brightness-auto-control","burger","camera","chart","checkmark","cloud","code","cross","cup","cycles","cycles-alt","cycles-arrow","cycles-variant-2","dock","eye","eye-shut","filter","fire","gamepad","globe","globe-alt","grid-view","grid-view-off","history","home","hourglass","integrations-puzzle","integrations-puzzle-alt","key","launch","link","loader","location","location-off","logout","more","noise","numpad","overlay","phone","plug","plus","qr","rectangle-spark","refresh","restart","rocket","scan","search","share","smart-home","sparkles","stats","support","sync","timezone","unlink","verified-badge","wall-mount","watches","weather","web","wrench"],
+  "pairs": ["alert","alert-fill","alert-variant","alert-variant-fill","apple","apple-fill","archive","archive-fill","basketball","basketball-fill","bug","bug-fill","busy-bar","busy-bar-filled","case","case-fill","checkmark-circle","checkmark-circle-fill","copy","copy-fill","devices","devices-fill","download-cloud","download-cloud-fill","drink","drink-fill","edit","edit-fill","emoji-d18","emoji-d18-fill","envelope","envelope-fill","error","error-fill","fast-delivery","fast-delivery-fill","folder","folder-fill","gift","gift-fill","heart","heart-fill","help","help-fill","http-api","http-fill","info","info-fill","laptop","laptop-fill","leaf","leaf-fill","mic","mic-fill","moon","moon-fill","network","network-fill","settings","settings-cog","settings-cog-fill","settings-fill","slider","slider-fill","tennis","tennis-fill","ticket","ticket-fill","trash","trash-fill","usb","usb-alt","usb-alt-fill","usb-fill"],
+  "security": ["lock","lock-fill","lock-simple","lock-simple-fill","password","password-fill","unlock","unlock-fill"],
+  "firmware-hardware": ["firmware","firmware-completed","firmware-download","firmware-download-variant","firmware-fill","hardware","hardware-fill"],
+  "music": ["music","music-fill","music-off","music-off-fill","note","note-fill","note-off","note-off-fill"],
+  "media-controls": ["control-pause","control-play","control-skip","control-stop"],
+  "time": ["clock","clock-fill","stopwatch","stopwatch-fill","stopwatch-variant","stopwatch-variant-fill","timer-fill"],
+  "bluetooth": ["bluetooth","bluetooth-connected","bluetooth-connecting","bluetooth-off"],
+  "files": ["file","file-document","file-document-fill","file-fill"],
+  "battery": ["battery-1","battery-2","battery-3","battery-4","battery-5","battery-charging","battery-charging-1","battery-charging-2","battery-charging-3","battery-charging-4","battery-charging-5","battery-error","battery-error-variant"],
+  "brightness": ["brightness","brightness-auto","brightness-fill","brightness-high","brightness-high-fill","brightness-low","brightness-low-fill"],
+  "sound": ["sound","sound-fill","sound-low","sound-low-fill","sound-medium","sound-medium-fill","sound-medium-variant","sound-medium-variant-fill","sound-off","sound-off-fill"],
+  "wi-fi": ["wifi-1","wifi-2","wifi-3","wifi-4","wifi-add-network","wifi-connected","wifi-disabled","wifi-error","wifi-no-connection","wifi-off"],
+  "account": ["account-passkey","user","user-fill","user-fill-add","user-fill-badge","user-fill-connected","user-no-connection","user-off-fill"],
+  "date": ["calendar","calendar-fill","date","date-fill","schedule","schedule-fill"],
+  "draw-tool": ["background","border-color","clear","color-fill","emoji-d19","grid","grid-off","image","move","palette","redo","resize","rotate","send-back","send-front","text","undo","video"],
+  "issues": ["busy-bar-issues-filled","laptop-issues-fill","phone-issues","smart-home-issues","user-issues-fill","wall-mount-issues","web-issues"]
+}

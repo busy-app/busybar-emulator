@@ -1,0 +1,14 @@
+{
+ "controls": {
+  "00332392-bc2e-4869-90d5-e17db59ed240": "start",
+  "38f4eb52-16c3-46cc-b71e-690a6365eeec": "wheel",
+  "4f450980-185d-4406-ac81-4c72a8b88bf8": "switch",
+  "697240f5-d401-4cdd-bb4f-4cdbf1825e93": "start",
+  "7bdbbbe0-3fa0-4186-afa9-3a9855751f8e": "back",
+  "9b74a851-6a89-491b-aaa2-7e740c9fcb53": "switch",
+  "ad793e76-b1ec-443e-89ae-3a7476d40e69": "wheel",
+  "e132451f-be9a-422c-bcab-16c93a1384c5": "switch"
+ },
+ "switchStep": 0.672,
+ "wheelDetents": 24
+}

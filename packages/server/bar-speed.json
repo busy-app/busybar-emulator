@@ -1,0 +1,54 @@
+{
+  "source": {
+    "bar": "BUSY Bar, firmware 1.3.1",
+    "firmware": "8edd2da4",
+    "recorded": "2026-11-09T22:49:35.198Z"
+  },
+  "stepMs": 127.9375,
+  "xpmMs": 102.86666666666666,
+  "drawFullBytes": 1753,
+  "drawTextBytes": 150,
+  "drawTextMs": 30.8,
+  "drawFullMs": 45.3,
+  "loopFps": 3.462204270051933,
+  "network": {
+    "note": "Requests to the internet from an app on the bar above, 2026-11-09, fetch() to the body's text: https to apps-api.busy.app and example.com took 1.28-1.70 s, http to example.com 0.09 s. tlsMs is the difference, the TLS handshake on the bar's processor; the emulator makes an https answer wait at least that long.",
+    "httpMs": 92,
+    "httpsMs": [
+      1277,
+      1500,
+      1508,
+      1531,
+      1602,
+      1656,
+      1703
+    ],
+    "tlsMs": 1400
+  },
+  "model": {
+    "note": "The bar's time for an app's work, fitted by emulator/test/speed.mjs to the times above: JS takes opMs per byte-code instruction plus allocByteMs per heap byte allocated; the bar's API answers a request in apiMs plus apiByteMs per byte of its body. work: instructions and heap bytes of the probe's pieces, counted in the runtime of `firmware`.",
+    "opMs": 0.003302525616439196,
+    "allocByteMs": 0.0008810026375500905,
+    "apiMs": 27.17849115891663,
+    "apiByteMs": 0.009077608086922285,
+    "firmware": "1.3.1",
+    "work": {
+      "step": {
+        "ops": 38739.12,
+        "allocBytes": 0.64
+      },
+      "xpm": {
+        "ops": 14056.8,
+        "allocBytes": 64067.6
+      },
+      "drawText": {
+        "ops": 29.4,
+        "allocBytes": 2454.9
+      },
+      "drawFull": {
+        "ops": 28.8,
+        "allocBytes": 2398.8
+      }
+    }
+  }
+}

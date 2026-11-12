@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "id": "app.busy.smoke",
+  "name": "Smoke",
+  "version": "0.1.0",
+  "api_version": "27.9.0",
+  "description": "The smoke test's app (emulator/test/smoke.mjs): draws one still text from its JS and keeps running",
+  "debug": false
+}

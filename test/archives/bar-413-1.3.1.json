@@ -1,0 +1,13 @@
+{
+ "what": "A stock BUSY Bar, firmware 1.3.1 (8edd2da4), over USB, 11.11.2026: POST /api/apps/stage with a Content-Length over 100 MiB. Each answer is the bytes the bar sent on the connection, as they came. The second answer, 508, is a fault of the firmware (see Device's reception); the emulator does not send it.",
+ "requests": [
+  {
+   "request": "Content-Length 104857601, 4096 bytes sent",
+   "answer": "HTTP/1.1 413 Payload Too Large\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 30         \r\n\r\n{\"error\":\"Payload Too Large\"}\nHTTP/1.1 508 Loop Detected\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 57         \r\n\r\n{\"error\":\"Failed to save update package (write error).\"}\n"
+  },
+  {
+   "request": "Content-Length 209715200, no body",
+   "answer": "HTTP/1.1 413 Payload Too Large\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 30         \r\n\r\n{\"error\":\"Payload Too Large\"}\nHTTP/1.1 508 Loop Detected\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 57         \r\n\r\n{\"error\":\"Failed to save update package (write error).\"}\n"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+/* The frame of the 3D view: one canvas over the whole frame, nothing else. The page behind the frame shows through
+   around the picture: the scene's own background is the page's color, and the canvas fades into it at the edges. */
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+  cursor: grab; /* a drag beside the controls turns the bar */
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
+  /* The picture's edges fade into the page: the scene's background is close to the page's, not the same. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent), linear-gradient(to bottom, transparent, #000 7%, #000 93%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent), linear-gradient(to bottom, transparent, #000 7%, #000 93%, transparent);
+  mask-composite: intersect;
+}
+canvas.ready { opacity: 1; }
+canvas.over-control { cursor: pointer; }
+canvas.orbiting { cursor: grabbing; }

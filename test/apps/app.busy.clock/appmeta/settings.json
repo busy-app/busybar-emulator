@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "version": 1,
+  "fields": {
+    "note": {
+      "type": "string",
+      "label": "Note",
+      "description": "Unused: an app with settings shows Setup on its card.",
+      "default": "",
+      "max_length": 16
+    }
+  }
+}

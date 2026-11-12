@@ -1,0 +1,15 @@
+#!/bin/sh -p
+# busy-emulator: the command line of BUSY Bar Emulator, on the Node inside the app. It lies in
+# <app>/Contents/Resources/bin and finds everything from its own place, without any other program, so it works with
+# an empty PATH. The launcher at ~/.busy-emulator/bin/busy-emulator, which the app writes, runs the same command line.
+# -p: the shell takes no functions and no ENV file from the environment. Node starts without the variables that would
+# change how it starts (packages/server/cli/node-environment.mjs holds the list; a test keeps the three entries equal).
+case "$0" in
+  */*) here=${0%/*} ;;
+  *) here=. ;;
+esac
+resources=$(CDPATH= cd -- "$here/.." && pwd) || exit 1
+exec /usr/bin/env \
+  -u NODE_OPTIONS -u NODE_PATH -u NODE_EXTRA_CA_CERTS -u NODE_TLS_REJECT_UNAUTHORIZED -u NODE_USE_SYSTEM_CA -u NODE_USE_ENV_PROXY -u NODE_REPL_EXTERNAL_MODULE -u NODE_REPL_HISTORY -u NODE_ICU_DATA -u NODE_V8_COVERAGE -u NODE_DEBUG -u NODE_DEBUG_NATIVE -u NODE_PRESERVE_SYMLINKS -u NODE_PENDING_DEPRECATION -u NODE_REDIRECT_WARNINGS -u NODE_COMPILE_CACHE -u NODE_TEST_CONTEXT -u NODE_CHANNEL_FD -u NODE_CHANNEL_SERIALIZATION_MODE -u NODE_UNIQUE_ID -u NODE_SKIP_PLATFORM_CHECK -u OPENSSL_CONF -u OPENSSL_ENGINES -u OPENSSL_MODULES -u SSL_CERT_FILE -u SSL_CERT_DIR \
+  BUSY_EMULATOR_CLI_PATH="$resources/bin/busy-emulator" \
+  "$resources/node/bin/node" "$resources/emulator/packages/server/cli/busy-emulator.mjs" "$@"

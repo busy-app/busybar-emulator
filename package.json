@@ -1,0 +1,17 @@
+{
+  "name": "busybar-emulator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "BUSY Bar emulator: the firmware's JS runtime and screen code in WebAssembly behind the bar's HTTP API",
+  "scripts": {
+    "start": "node packages/server/index.mjs",
+    "test:unit": "node --test \"packages/engine/**/*.test.mjs\" \"packages/server/**/*.test.mjs\" \"packages/stage/**/*.test.mjs\"",
+    "test:app": "npm --prefix packages/app test",
+    "test": "node test/gate.mjs --comparison",
+    "gate": "node test/gate.mjs",
+    "test:server": "node --test test/server/*.test.mjs",
+    "smoke": "node test/smoke.mjs",
+    "build:engine": "node packages/engine/build.mjs",
+    "live:gh": "node packages/app/tools/gh-texts.mjs check"
+  }
+}

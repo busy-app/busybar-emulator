@@ -1,0 +1,10 @@
+# Report a Bug in the emulator's window opens a new issue with its text already in it (the address carries it),
+# and GitHub only takes that address while blank issues are allowed.
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation and troubleshooting
+    url: https://github.com/busy-app/busybar-emulator/blob/main/public-docs/troubleshooting.md
+    about: Install problems, a BUSY Bar that does not connect, errors with their fixes. Look here first.
+  - name: BUSY apps and the hackathon
+    url: https://busy.app
+    about: Questions about the BUSY Bar, the app catalog or the hackathon are not about the emulator's code.

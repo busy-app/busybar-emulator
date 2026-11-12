@@ -1,0 +1,19 @@
+{
+  "version": "2.103.3",
+  "source": "https://github.com/cli/cli/releases/download/v2.103.3/",
+  "checksums": "gh_2.103.3_checksums.txt",
+  "archives": {
+    "darwin-arm64": {
+      "file": "gh_2.103.3_macOS_arm64.zip",
+      "sha256": "d700207eae9ae98fe2b89535c2c087c07823d4628c56364695a5a07ef311c062"
+    },
+    "darwin-x64": {
+      "file": "gh_2.103.3_macOS_amd64.zip",
+      "sha256": "a2f86418f4350ae6e9ec60d5000bdf7665728436946a97fc27fe50e6ae752682"
+    },
+    "win32-x64": {
+      "file": "gh_2.103.3_windows_amd64.zip",
+      "sha256": "98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
+    }
+  }
+}

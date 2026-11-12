@@ -1,0 +1,14 @@
+{
+  "default": "1.3.1",
+  "emscripten": "7.0.0",
+  "versions": {
+    "1.3.1": {
+      "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
+      "summary": "Release 1.3.1, the first public firmware that runs JS apps. A short Back press clears a running app's screen, and there is no console.warn."
+    },
+    "dev": {
+      "commit": "4d1c24ac38e4f745231713c9cdfaaef5669362ae",
+      "summary": "A development build newer than release 1.3.1. Unlike 1.3.1: console.warn exists, a short Back press leaves a running app's screen as it is, and there are fixes for reading fetch response bodies and for ReadableStream."
+    }
+  }
+}

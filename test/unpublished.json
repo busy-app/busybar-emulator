@@ -1,0 +1,14 @@
+{
+  "$comment": "Recordings of a bar that this repository does not carry: some show private data of the bar they were recorded on, and the others of the same kind are kept out with them. The comparison tests that need them skip them and say why.",
+  "files": {
+    "test/settings/about.json": "its frames of the About screens show the serial number and the MAC addresses of the bar it was recorded on; it is to be recorded again from a bar in factory state",
+    "test/settings/account.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/brightness.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/firmware.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/menu.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/smart-home.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/system.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/time.json": "recordings of a bar's settings screens are kept out of the public repository as a whole, so that a walk recorded again on a bar with private data cannot be published by mistake",
+    "test/settings/wifi.json": "its frames of the Wi-Fi screens show the name of the network the bar it was recorded on was in; it is to be recorded again from a bar in factory state"
+  }
+}

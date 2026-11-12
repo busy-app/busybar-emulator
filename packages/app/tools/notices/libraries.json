@@ -1,0 +1,1186 @@
+{
+  "$comment": "Written by tools/notices/refresh.mjs from the firmware checkout and the Emscripten SDK; do not edit. What the app's license summary (tools/notices/notices.mjs) says about the firmware inside the emulator: for each firmware build, the commits and versions of the libraries compiled into its modules, every path the engine's build takes and whose it is, the local web and its fonts; the licenses of the app assets and of the copies of firmware files; the license texts in texts/.",
+  "firmwareRepository": "https://github.com/busy-app/busybar-firmware",
+  "default": "1.3.1",
+  "firmware": {
+    "1.3.1": {
+      "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
+      "libraries": {
+        "jerryscript": {
+          "commit": "738156942113034cbe2103ed470222da65c2dbb2",
+          "in": "lib/jerryscript",
+          "version": "3.0.0"
+        },
+        "lvgl": {
+          "commit": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+          "in": "lib/lvgl",
+          "version": "9.3.0-dev"
+        },
+        "lodepng": {
+          "commit": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+          "in": "lib/lvgl",
+          "version": "20230410"
+        },
+        "qrcodegen": {
+          "commit": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+          "in": "lib/lvgl"
+        },
+        "mongoose": {
+          "commit": "b1c2ffe1a0aa13e3d94075b1a2c66b8b43ac9116",
+          "in": "lib/mongoose",
+          "version": "7.21"
+        },
+        "cjson": {
+          "commit": "12c4bf1986c288950a3d06da757109a6aa1ece38",
+          "in": "lib/cjson",
+          "version": "1.7.18"
+        },
+        "stb": {
+          "commit": "f1c79c02822848a9bed4315b12c8c8f3761e1296",
+          "in": "lib/stb/stb_repo",
+          "version": "v0.67"
+        },
+        "mlib": {
+          "commit": "43fdd10e772b084f1bb2d0065170c7da12c1da44",
+          "in": "fbt_layers/core_libs/lib/mlib",
+          "version": "0.7.0"
+        },
+        "utz": {
+          "commit": "57270be3e7794ec73c2b367c8d15f460def4be89",
+          "in": "fbt_layers/core_libs/lib/utz",
+          "version": "0.0.1"
+        },
+        "furi": {
+          "commit": "457bc2c0f3c73f5e8cae7a5d7f160575c72abf40",
+          "in": "fbt_layers/core_libs",
+          "license": "MIT",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ]
+        },
+        "datetime": {
+          "commit": "457bc2c0f3c73f5e8cae7a5d7f160575c72abf40",
+          "in": "fbt_layers/core_libs",
+          "license": "GPL-2.0-or-later",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ]
+        },
+        "furi-hal-headers": {
+          "commit": "8bf82eb2ad7afa4b0373e235e387614db4339454",
+          "in": "fbt_layers/fbtng",
+          "license": "GPL-2.0-or-later",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ]
+        },
+        "internal-images": {
+          "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
+          "in": "the firmware's own tree",
+          "license": "CC-BY-SA-4.0",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ],
+          "source": "assets/images/internal"
+        }
+      },
+      "compiled": {
+        "applications/main": "firmware (include path)",
+        "applications/main/apps_menu": "firmware",
+        "applications/main/busy": "firmware",
+        "applications/main/settings_menu": "firmware",
+        "applications/services": "firmware (include path)",
+        "applications/services/busy_timer": "firmware",
+        "applications/services/canvas": "firmware",
+        "applications/services/canvas/widgets": "firmware",
+        "applications/services/desktop": "firmware",
+        "applications/services/font_registry/font_registry.c": "firmware",
+        "applications/services/gui": "firmware",
+        "applications/services/gui/gui.c": "firmware",
+        "applications/services/gui/modules": "firmware",
+        "applications/services/gui/modules/private": "firmware",
+        "applications/services/gui/scene_manager.c": "firmware",
+        "applications/services/gui/widget.c": "firmware",
+        "applications/services/js_runner": "firmware",
+        "applications/services/js_runner/js_runner.h": "firmware",
+        "applications/services/js_runner/js_runner_i.h": "firmware",
+        "applications/services/mqtt/mqtt_config.c": "firmware",
+        "applications/services/status_bar/status_bar.c": "firmware",
+        "applications/services/status_bar/widgets": "firmware",
+        "applications/services/supervisor/supervisor.c": "firmware",
+        "applications/services/web_server/http_api/api_": "firmware",
+        "applications/services/web_server/http_api/api_display.c": "firmware",
+        "applications/services/web_server/http_api/http_api.h": "firmware",
+        "applications/services/web_server/openapi/openapi.yaml": "firmware",
+        "applications/services/wifi/wifi_util.c": "firmware",
+        "applications/settings": "firmware",
+        "applications/system": "firmware (include path)",
+        "applications/system/js_app_launcher": "firmware",
+        "assets/frontend-build/public": "firmware",
+        "fbt_layers/core_libs/lib": "firmware (include path)",
+        "fbt_layers/core_libs/lib/datetime": "datetime",
+        "fbt_layers/core_libs/lib/datetime/datetime.c": "datetime",
+        "fbt_layers/core_libs/lib/furi": "furi",
+        "fbt_layers/core_libs/lib/furi/core/check.h": "furi",
+        "fbt_layers/core_libs/lib/furi/core/state.c": "furi",
+        "fbt_layers/core_libs/lib/furi/core/string.c": "furi",
+        "fbt_layers/core_libs/lib/mlib": "mlib",
+        "fbt_layers/core_libs/lib/utz/utz.c": "utz",
+        "fbt_layers/core_libs/lib/utz/zones.c": "utz",
+        "fbt_layers/fbtng/targets/furi_hal_include": "furi-hal-headers",
+        "lib": "firmware (include path)",
+        "lib/anim_file": "firmware",
+        "lib/anim_file/components": "firmware",
+        "lib/cjson/cJSON.c": "cjson",
+        "lib/http/http_headers.c": "firmware",
+        "lib/http/http_response.c": "firmware",
+        "lib/jerryscript": "jerryscript",
+        "lib/jerryscript.scons": "firmware",
+        "lib/jerryscript/amalgam": "jerryscript",
+        "lib/jerryscript/amalgam/jerryscript.c": "jerryscript",
+        "lib/js_app": "firmware",
+        "lib/js_app/setting_types": "firmware",
+        "lib/lvgl": "lvgl",
+        "lib/lvgl/src": "lvgl",
+        "lib/lvgl/src/core": "lvgl",
+        "lib/lvgl/src/display": "lvgl",
+        "lib/lvgl/src/draw": "lvgl",
+        "lib/lvgl/src/draw/dma2d": "lvgl",
+        "lib/lvgl/src/draw/sw": "lvgl",
+        "lib/lvgl/src/draw/sw/blend": "lvgl",
+        "lib/lvgl/src/font": "lvgl",
+        "lib/lvgl/src/indev": "lvgl",
+        "lib/lvgl/src/layouts": "lvgl",
+        "lib/lvgl/src/libs/bin_decoder/lv_bin_decoder.c": "lvgl",
+        "lib/lvgl/src/libs/lodepng": "lodepng",
+        "lib/lvgl/src/libs/qrcode": "qrcodegen",
+        "lib/lvgl/src/misc": "lvgl",
+        "lib/lvgl/src/misc/cache": "lvgl",
+        "lib/lvgl/src/osal": "lvgl",
+        "lib/lvgl/src/others/observer": "lvgl",
+        "lib/lvgl/src/others/sysmon": "lvgl",
+        "lib/lvgl/src/stdlib": "lvgl",
+        "lib/lvgl/src/stdlib/clib": "lvgl",
+        "lib/lvgl/src/themes": "lvgl",
+        "lib/lvgl/src/tick": "lvgl",
+        "lib/lvgl/src/widgets": "lvgl",
+        "lib/lvgl_addons": "firmware",
+        "lib/mongoose": "mongoose",
+        "lib/mongoose/mongoose.c": "mongoose",
+        "lib/setting_provider": "firmware",
+        "lib/setting_provider/setting_provider.c": "firmware",
+        "lib/setting_provider/types": "firmware",
+        "lib/settings_helpers/app_desc.c": "firmware",
+        "lib/stb/stb.c": "stb",
+        "lib/storage_utils/dir_walk.c": "firmware",
+        "lib/toolbox": "firmware",
+        "lib/toolbox/path.c": "firmware",
+        "lib/toolbox/slice.c": "firmware",
+        "lib/toolbox/tls_config.c": "firmware",
+        "lib/toolbox/url.c": "firmware",
+        "lib/xpm/xpm.c": "firmware",
+        "native/screen-assets": "internal-images",
+        "targets/f21/config/lv_conf.h": "firmware",
+        "targets/f21/furi_hal": "firmware"
+      },
+      "firmware": {
+        "license": "GPL-2.0-or-later",
+        "copyright": [
+          "2024-2026 Flipper FZCO"
+        ]
+      },
+      "web": {
+        "from": "assets/frontend-build/public",
+        "tree": "c55a464d1b22123f90722bbe52ab9eae4bb33149",
+        "files": 120,
+        "source": "assets/frontend",
+        "license": "GPL-2.0-or-later",
+        "copyright": [
+          "2024-2026 Flipper FZCO"
+        ],
+        "fonts": [
+          {
+            "file": "_nuxt/Inter-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/Inter.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2016 The Inter Project Authors (https://github.com/rsms/inter)"
+            ]
+          },
+          {
+            "file": "_nuxt/Inter-Italic-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/Inter-Italic.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2016 The Inter Project Authors (https://github.com/rsms/inter)"
+            ]
+          },
+          {
+            "file": "_nuxt/LanaPixel-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/LanaPixel.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2020-2023 eishiya (https://mastodon.art/@eishiya)"
+            ]
+          },
+          {
+            "file": "_nuxt/busy_bold_10px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_bold_10px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_bold_7px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_bold_7px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_regular_5px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_regular_5px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_regular_7px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_regular_7px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_regular_9px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_regular_9px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          }
+        ],
+        "dependencies": [
+          {
+            "name": "@busy-app/busy-lib",
+            "kind": "dependencies",
+            "version": "0.21.1",
+            "license": "MIT",
+            "upstream": "https://github.com/busy-app/busylib-ts"
+          },
+          {
+            "name": "@nuxt/eslint",
+            "kind": "dependencies",
+            "version": "1.4.1",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt/eslint"
+          },
+          {
+            "name": "@nuxt/ui",
+            "kind": "dependencies",
+            "version": "3.3.4",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt/ui"
+          },
+          {
+            "name": "@nuxtjs/mdc",
+            "kind": "dependencies",
+            "version": "0.20.1",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt-content/mdc"
+          },
+          {
+            "name": "@pinia/nuxt",
+            "kind": "dependencies",
+            "version": "0.10.1",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/pinia"
+          },
+          {
+            "name": "eslint",
+            "kind": "dependencies",
+            "version": "9.35.0",
+            "license": "MIT",
+            "upstream": "https://github.com/eslint/eslint"
+          },
+          {
+            "name": "gifenc",
+            "kind": "dependencies",
+            "version": "1.0.3",
+            "license": "MIT",
+            "upstream": "https://github.com/mattdesl/gifenc"
+          },
+          {
+            "name": "gifuct-js",
+            "kind": "dependencies",
+            "version": "2.1.2",
+            "license": "MIT",
+            "upstream": "https://github.com/matt-way/gifuct-js"
+          },
+          {
+            "name": "konva",
+            "kind": "dependencies",
+            "version": "10.2.5",
+            "license": "MIT",
+            "upstream": "https://github.com/konvajs/konva"
+          },
+          {
+            "name": "maska",
+            "kind": "dependencies",
+            "version": "3.2.0",
+            "license": "MIT",
+            "upstream": "https://github.com/beholdr/maska"
+          },
+          {
+            "name": "nuxt",
+            "kind": "dependencies",
+            "version": "3.19.2",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt/nuxt"
+          },
+          {
+            "name": "pinia",
+            "kind": "dependencies",
+            "version": "3.0.3",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/pinia"
+          },
+          {
+            "name": "pinia-plugin-persistedstate",
+            "kind": "dependencies",
+            "version": "4.5.0",
+            "license": "MIT",
+            "upstream": "https://github.com/prazdevs/pinia-plugin-persistedstate"
+          },
+          {
+            "name": "qr",
+            "kind": "dependencies",
+            "version": "0.5.4",
+            "license": "MIT OR Apache-2.0",
+            "upstream": "https://github.com/paulmillr/qr"
+          },
+          {
+            "name": "tailwind-merge",
+            "kind": "dependencies",
+            "version": "3.3.1",
+            "license": "MIT",
+            "upstream": "https://github.com/dcastil/tailwind-merge"
+          },
+          {
+            "name": "tailwindcss",
+            "kind": "dependencies",
+            "version": "4.1.13",
+            "license": "MIT",
+            "upstream": "https://github.com/tailwindlabs/tailwindcss"
+          },
+          {
+            "name": "vite-plugin-eslint2",
+            "kind": "dependencies",
+            "version": "5.0.4",
+            "license": "MIT",
+            "upstream": "https://github.com/ModyQyW/vite-plugin-eslint2"
+          },
+          {
+            "name": "vue",
+            "kind": "dependencies",
+            "version": "3.5.21",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/core"
+          },
+          {
+            "name": "vue-konva",
+            "kind": "dependencies",
+            "version": "3.4.0",
+            "license": "MIT",
+            "upstream": "https://github.com/konvajs/vue-konva"
+          },
+          {
+            "name": "vue-router",
+            "kind": "dependencies",
+            "version": "4.5.1",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/router"
+          },
+          {
+            "name": "worker-timers",
+            "kind": "dependencies",
+            "version": "8.0.30",
+            "license": "MIT",
+            "upstream": "https://github.com/chrisguttandin/worker-timers"
+          },
+          {
+            "name": "@iconify-json/ri",
+            "kind": "devDependencies",
+            "version": "1.2.5",
+            "license": "Apache-2.0",
+            "upstream": "https://github.com/iconify/icon-sets"
+          },
+          {
+            "name": "@stylistic/eslint-plugin",
+            "kind": "devDependencies",
+            "version": "5.7.1",
+            "license": "MIT",
+            "upstream": "https://github.com/eslint-stylistic/eslint-stylistic"
+          },
+          {
+            "name": "typescript",
+            "kind": "devDependencies",
+            "version": "5.9.2",
+            "license": "Apache-2.0",
+            "upstream": "https://github.com/microsoft/TypeScript"
+          },
+          {
+            "name": "vue-tsc",
+            "kind": "devDependencies",
+            "version": "3.3.9",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/language-tools"
+          }
+        ]
+      }
+    },
+    "dev": {
+      "commit": "4d1c24ac38e4f745231713c9cdfaaef5669362ae",
+      "libraries": {
+        "jerryscript": {
+          "commit": "738156942113034cbe2103ed470222da65c2dbb2",
+          "in": "lib/jerryscript",
+          "version": "3.0.0"
+        },
+        "lvgl": {
+          "commit": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+          "in": "lib/lvgl",
+          "version": "9.3.0-dev"
+        },
+        "lodepng": {
+          "commit": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+          "in": "lib/lvgl",
+          "version": "20230410"
+        },
+        "qrcodegen": {
+          "commit": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+          "in": "lib/lvgl"
+        },
+        "mongoose": {
+          "commit": "b1c2ffe1a0aa13e3d94075b1a2c66b8b43ac9116",
+          "in": "lib/mongoose",
+          "version": "7.21"
+        },
+        "cjson": {
+          "commit": "12c4bf1986c288950a3d06da757109a6aa1ece38",
+          "in": "lib/cjson",
+          "version": "1.7.18"
+        },
+        "stb": {
+          "commit": "f1c79c02822848a9bed4315b12c8c8f3761e1296",
+          "in": "lib/stb/stb_repo",
+          "version": "v0.67"
+        },
+        "mlib": {
+          "commit": "43fdd10e772b084f1bb2d0065170c7da12c1da44",
+          "in": "fbt_layers/core_libs/lib/mlib",
+          "version": "0.7.0"
+        },
+        "utz": {
+          "commit": "57270be3e7794ec73c2b367c8d15f460def4be89",
+          "in": "fbt_layers/core_libs/lib/utz",
+          "version": "0.0.1"
+        },
+        "furi": {
+          "commit": "457bc2c0f3c73f5e8cae7a5d7f160575c72abf40",
+          "in": "fbt_layers/core_libs",
+          "license": "MIT",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ]
+        },
+        "datetime": {
+          "commit": "457bc2c0f3c73f5e8cae7a5d7f160575c72abf40",
+          "in": "fbt_layers/core_libs",
+          "license": "GPL-2.0-or-later",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ]
+        },
+        "furi-hal-headers": {
+          "commit": "8bf82eb2ad7afa4b0373e235e387614db4339454",
+          "in": "fbt_layers/fbtng",
+          "license": "GPL-2.0-or-later",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ]
+        },
+        "internal-images": {
+          "commit": "4d1c24ac38e4f745231713c9cdfaaef5669362ae",
+          "in": "the firmware's own tree",
+          "license": "CC-BY-SA-4.0",
+          "copyright": [
+            "2024-2026 Flipper FZCO"
+          ],
+          "source": "assets/images/internal"
+        }
+      },
+      "compiled": {
+        "applications/main": "firmware (include path)",
+        "applications/main/apps_menu": "firmware",
+        "applications/main/busy": "firmware",
+        "applications/main/settings_menu": "firmware",
+        "applications/services": "firmware (include path)",
+        "applications/services/busy_timer": "firmware",
+        "applications/services/canvas": "firmware",
+        "applications/services/canvas/widgets": "firmware",
+        "applications/services/desktop": "firmware",
+        "applications/services/font_registry/font_registry.c": "firmware",
+        "applications/services/gui": "firmware",
+        "applications/services/gui/gui.c": "firmware",
+        "applications/services/gui/modules": "firmware",
+        "applications/services/gui/modules/private": "firmware",
+        "applications/services/gui/scene_manager.c": "firmware",
+        "applications/services/gui/widget.c": "firmware",
+        "applications/services/js_runner": "firmware",
+        "applications/services/js_runner/js_runner.h": "firmware",
+        "applications/services/js_runner/js_runner_i.h": "firmware",
+        "applications/services/mqtt/mqtt_config.c": "firmware",
+        "applications/services/status_bar/status_bar.c": "firmware",
+        "applications/services/status_bar/widgets": "firmware",
+        "applications/services/supervisor/supervisor.c": "firmware",
+        "applications/services/web_server/http_api/api_": "firmware",
+        "applications/services/web_server/http_api/api_display.c": "firmware",
+        "applications/services/web_server/http_api/http_api.h": "firmware",
+        "applications/services/web_server/openapi/openapi.yaml": "firmware",
+        "applications/services/wifi/wifi_util.c": "firmware",
+        "applications/settings": "firmware",
+        "applications/system": "firmware (include path)",
+        "applications/system/js_app_launcher": "firmware",
+        "assets/frontend-build/public": "firmware",
+        "fbt_layers/core_libs/lib": "firmware (include path)",
+        "fbt_layers/core_libs/lib/datetime": "datetime",
+        "fbt_layers/core_libs/lib/datetime/datetime.c": "datetime",
+        "fbt_layers/core_libs/lib/furi": "furi",
+        "fbt_layers/core_libs/lib/furi/core/check.h": "furi",
+        "fbt_layers/core_libs/lib/furi/core/state.c": "furi",
+        "fbt_layers/core_libs/lib/furi/core/string.c": "furi",
+        "fbt_layers/core_libs/lib/mlib": "mlib",
+        "fbt_layers/core_libs/lib/utz/utz.c": "utz",
+        "fbt_layers/core_libs/lib/utz/zones.c": "utz",
+        "fbt_layers/fbtng/targets/furi_hal_include": "furi-hal-headers",
+        "lib": "firmware (include path)",
+        "lib/anim_file": "firmware",
+        "lib/anim_file/components": "firmware",
+        "lib/cjson/cJSON.c": "cjson",
+        "lib/http/http_headers.c": "firmware",
+        "lib/http/http_response.c": "firmware",
+        "lib/jerryscript": "jerryscript",
+        "lib/jerryscript.scons": "firmware",
+        "lib/jerryscript/amalgam": "jerryscript",
+        "lib/jerryscript/amalgam/jerryscript.c": "jerryscript",
+        "lib/js_app": "firmware",
+        "lib/js_app/setting_types": "firmware",
+        "lib/lvgl": "lvgl",
+        "lib/lvgl/src": "lvgl",
+        "lib/lvgl/src/core": "lvgl",
+        "lib/lvgl/src/display": "lvgl",
+        "lib/lvgl/src/draw": "lvgl",
+        "lib/lvgl/src/draw/dma2d": "lvgl",
+        "lib/lvgl/src/draw/sw": "lvgl",
+        "lib/lvgl/src/draw/sw/blend": "lvgl",
+        "lib/lvgl/src/font": "lvgl",
+        "lib/lvgl/src/indev": "lvgl",
+        "lib/lvgl/src/layouts": "lvgl",
+        "lib/lvgl/src/libs/bin_decoder/lv_bin_decoder.c": "lvgl",
+        "lib/lvgl/src/libs/lodepng": "lodepng",
+        "lib/lvgl/src/libs/qrcode": "qrcodegen",
+        "lib/lvgl/src/misc": "lvgl",
+        "lib/lvgl/src/misc/cache": "lvgl",
+        "lib/lvgl/src/osal": "lvgl",
+        "lib/lvgl/src/others/observer": "lvgl",
+        "lib/lvgl/src/others/sysmon": "lvgl",
+        "lib/lvgl/src/stdlib": "lvgl",
+        "lib/lvgl/src/stdlib/clib": "lvgl",
+        "lib/lvgl/src/themes": "lvgl",
+        "lib/lvgl/src/tick": "lvgl",
+        "lib/lvgl/src/widgets": "lvgl",
+        "lib/lvgl_addons": "firmware",
+        "lib/mongoose": "mongoose",
+        "lib/mongoose/mongoose.c": "mongoose",
+        "lib/setting_provider": "firmware",
+        "lib/setting_provider/setting_provider.c": "firmware",
+        "lib/setting_provider/types": "firmware",
+        "lib/settings_helpers/app_desc.c": "firmware",
+        "lib/stb/stb.c": "stb",
+        "lib/storage_utils/dir_walk.c": "firmware",
+        "lib/toolbox": "firmware",
+        "lib/toolbox/path.c": "firmware",
+        "lib/toolbox/slice.c": "firmware",
+        "lib/toolbox/tls_config.c": "firmware",
+        "lib/toolbox/url.c": "firmware",
+        "lib/xpm/xpm.c": "firmware",
+        "native/screen-assets": "internal-images",
+        "targets/f21/config/lv_conf.h": "firmware",
+        "targets/f21/furi_hal": "firmware"
+      },
+      "firmware": {
+        "license": "GPL-2.0-or-later",
+        "copyright": [
+          "2024-2026 Flipper FZCO"
+        ]
+      },
+      "web": {
+        "from": "assets/frontend-build/public",
+        "tree": "c55a464d1b22123f90722bbe52ab9eae4bb33149",
+        "files": 120,
+        "source": "assets/frontend",
+        "license": "GPL-2.0-or-later",
+        "copyright": [
+          "2024-2026 Flipper FZCO"
+        ],
+        "fonts": [
+          {
+            "file": "_nuxt/Inter-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/Inter.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2016 The Inter Project Authors (https://github.com/rsms/inter)"
+            ]
+          },
+          {
+            "file": "_nuxt/Inter-Italic-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/Inter-Italic.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2016 The Inter Project Authors (https://github.com/rsms/inter)"
+            ]
+          },
+          {
+            "file": "_nuxt/LanaPixel-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/LanaPixel.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2020-2023 eishiya (https://mastodon.art/@eishiya)"
+            ]
+          },
+          {
+            "file": "_nuxt/busy_bold_10px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_bold_10px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_bold_7px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_bold_7px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_regular_5px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_regular_5px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_regular_7px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_regular_7px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          },
+          {
+            "file": "_nuxt/busy_regular_9px-7c2bd48.ttf",
+            "source": "assets/frontend/assets/fonts/busy_regular_9px.ttf",
+            "license": "OFL-1.1",
+            "copyright": [
+              "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+              "2024-2026 Flipper FZCO"
+            ],
+            "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
+          }
+        ],
+        "dependencies": [
+          {
+            "name": "@busy-app/busy-lib",
+            "kind": "dependencies",
+            "version": "0.21.1",
+            "license": "MIT",
+            "upstream": "https://github.com/busy-app/busylib-ts"
+          },
+          {
+            "name": "@nuxt/eslint",
+            "kind": "dependencies",
+            "version": "1.4.1",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt/eslint"
+          },
+          {
+            "name": "@nuxt/ui",
+            "kind": "dependencies",
+            "version": "3.3.4",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt/ui"
+          },
+          {
+            "name": "@nuxtjs/mdc",
+            "kind": "dependencies",
+            "version": "0.20.1",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt-content/mdc"
+          },
+          {
+            "name": "@pinia/nuxt",
+            "kind": "dependencies",
+            "version": "0.10.1",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/pinia"
+          },
+          {
+            "name": "eslint",
+            "kind": "dependencies",
+            "version": "9.35.0",
+            "license": "MIT",
+            "upstream": "https://github.com/eslint/eslint"
+          },
+          {
+            "name": "gifenc",
+            "kind": "dependencies",
+            "version": "1.0.3",
+            "license": "MIT",
+            "upstream": "https://github.com/mattdesl/gifenc"
+          },
+          {
+            "name": "gifuct-js",
+            "kind": "dependencies",
+            "version": "2.1.2",
+            "license": "MIT",
+            "upstream": "https://github.com/matt-way/gifuct-js"
+          },
+          {
+            "name": "konva",
+            "kind": "dependencies",
+            "version": "10.2.5",
+            "license": "MIT",
+            "upstream": "https://github.com/konvajs/konva"
+          },
+          {
+            "name": "maska",
+            "kind": "dependencies",
+            "version": "3.2.0",
+            "license": "MIT",
+            "upstream": "https://github.com/beholdr/maska"
+          },
+          {
+            "name": "nuxt",
+            "kind": "dependencies",
+            "version": "3.19.2",
+            "license": "MIT",
+            "upstream": "https://github.com/nuxt/nuxt"
+          },
+          {
+            "name": "pinia",
+            "kind": "dependencies",
+            "version": "3.0.3",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/pinia"
+          },
+          {
+            "name": "pinia-plugin-persistedstate",
+            "kind": "dependencies",
+            "version": "4.5.0",
+            "license": "MIT",
+            "upstream": "https://github.com/prazdevs/pinia-plugin-persistedstate"
+          },
+          {
+            "name": "qr",
+            "kind": "dependencies",
+            "version": "0.5.4",
+            "license": "MIT OR Apache-2.0",
+            "upstream": "https://github.com/paulmillr/qr"
+          },
+          {
+            "name": "tailwind-merge",
+            "kind": "dependencies",
+            "version": "3.3.1",
+            "license": "MIT",
+            "upstream": "https://github.com/dcastil/tailwind-merge"
+          },
+          {
+            "name": "tailwindcss",
+            "kind": "dependencies",
+            "version": "4.1.13",
+            "license": "MIT",
+            "upstream": "https://github.com/tailwindlabs/tailwindcss"
+          },
+          {
+            "name": "vite-plugin-eslint2",
+            "kind": "dependencies",
+            "version": "5.0.4",
+            "license": "MIT",
+            "upstream": "https://github.com/ModyQyW/vite-plugin-eslint2"
+          },
+          {
+            "name": "vue",
+            "kind": "dependencies",
+            "version": "3.5.21",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/core"
+          },
+          {
+            "name": "vue-konva",
+            "kind": "dependencies",
+            "version": "3.4.0",
+            "license": "MIT",
+            "upstream": "https://github.com/konvajs/vue-konva"
+          },
+          {
+            "name": "vue-router",
+            "kind": "dependencies",
+            "version": "4.5.1",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/router"
+          },
+          {
+            "name": "worker-timers",
+            "kind": "dependencies",
+            "version": "8.0.30",
+            "license": "MIT",
+            "upstream": "https://github.com/chrisguttandin/worker-timers"
+          },
+          {
+            "name": "@iconify-json/ri",
+            "kind": "devDependencies",
+            "version": "1.2.5",
+            "license": "Apache-2.0",
+            "upstream": "https://github.com/iconify/icon-sets"
+          },
+          {
+            "name": "@stylistic/eslint-plugin",
+            "kind": "devDependencies",
+            "version": "5.7.1",
+            "license": "MIT",
+            "upstream": "https://github.com/eslint-stylistic/eslint-stylistic"
+          },
+          {
+            "name": "typescript",
+            "kind": "devDependencies",
+            "version": "5.9.2",
+            "license": "Apache-2.0",
+            "upstream": "https://github.com/microsoft/TypeScript"
+          },
+          {
+            "name": "vue-tsc",
+            "kind": "devDependencies",
+            "version": "3.3.9",
+            "license": "MIT",
+            "upstream": "https://github.com/vuejs/language-tools"
+          }
+        ]
+      }
+    }
+  },
+  "assets": [
+    {
+      "license": "CC-BY-SA-4.0",
+      "copyright": [
+        "2024-2026 Flipper FZCO"
+      ],
+      "files": 217,
+      "sources": [
+        "assets/animations/apps_menu",
+        "assets/animations/ble_settings",
+        "assets/animations/busy",
+        "assets/animations/desktop",
+        "assets/animations/power_on",
+        "assets/animations/settings",
+        "assets/animations/soft_off",
+        "assets/images/external",
+        "assets/shared/animations",
+        "assets/shared/images",
+        "assets/shared/sounds",
+        "assets/sounds/busy"
+      ]
+    },
+    {
+      "license": "GPL-2.0-or-later",
+      "copyright": [
+        "2024-2026 Flipper FZCO"
+      ],
+      "files": 13,
+      "sources": [
+        "applications/main/busy",
+        "applications/services/js_runner"
+      ]
+    },
+    {
+      "license": "OFL-1.1",
+      "copyright": [
+        "2021 TakWolf (https://ark-pixel-font.takwolf.com/)",
+        "2024-2026 Flipper FZCO"
+      ],
+      "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files.",
+      "files": 9,
+      "sources": [
+        "assets/shared/fonts"
+      ]
+    },
+    {
+      "license": "OFL-1.1",
+      "copyright": [
+        "2020-2023 eishiya (https://mastodon.art/@eishiya)"
+      ],
+      "files": 1,
+      "sources": [
+        "assets/shared/fonts"
+      ]
+    }
+  ],
+  "copies": [
+    {
+      "file": "packages/server/bar-ca-certificates.txt",
+      "source": "assets/shared/ca/cacert.pem",
+      "license": "CC-BY-SA-4.0",
+      "copyright": [
+        "2024-2026 Flipper FZCO"
+      ]
+    },
+    {
+      "file": "packages/server/legacy-window/Inter.ttf",
+      "source": "assets/frontend/assets/fonts/Inter.ttf",
+      "license": "OFL-1.1",
+      "copyright": [
+        "2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      ]
+    },
+    {
+      "file": "packages/server/legacy-window/busybar-device.png",
+      "source": "assets/frontend-build/public/_nuxt/busybar-device-7c2bd48.png",
+      "license": "GPL-2.0-or-later",
+      "copyright": [
+        "2024-2026 Flipper FZCO"
+      ]
+    }
+  ],
+  "emscripten": {
+    "version": "7.0.0",
+    "license": "MIT OR NCSA",
+    "upstream": "https://github.com/emscripten-core/emscripten",
+    "parts": [
+      "Emscripten",
+      "musl libc (Emscripten's C library)",
+      "compiler-rt (LLVM)"
+    ]
+  },
+  "libraries": [
+    {
+      "id": "jerryscript",
+      "name": "JerryScript",
+      "modules": [
+        "runtime"
+      ],
+      "license": "Apache-2.0",
+      "upstream": "https://github.com/jerryscript-project/jerryscript",
+      "paths": [
+        "lib/jerryscript"
+      ],
+      "text": "jerryscript.txt"
+    },
+    {
+      "id": "lvgl",
+      "name": "LVGL",
+      "modules": [
+        "screen"
+      ],
+      "license": "MIT",
+      "upstream": "https://github.com/lvgl/lvgl",
+      "paths": [
+        "lib/lvgl"
+      ],
+      "text": "lvgl.txt"
+    },
+    {
+      "id": "lodepng",
+      "name": "LodePNG (part of LVGL)",
+      "modules": [
+        "screen"
+      ],
+      "license": "Zlib",
+      "upstream": "https://github.com/lvandeve/lodepng",
+      "paths": [
+        "lib/lvgl/src/libs/lodepng"
+      ],
+      "text": "lodepng.txt"
+    },
+    {
+      "id": "qrcodegen",
+      "name": "QR Code generator (part of LVGL)",
+      "modules": [
+        "screen"
+      ],
+      "license": "MIT",
+      "upstream": "https://github.com/nayuki/QR-Code-generator",
+      "paths": [
+        "lib/lvgl/src/libs/qrcode"
+      ],
+      "text": "qrcodegen.txt"
+    },
+    {
+      "id": "mongoose",
+      "name": "Mongoose",
+      "modules": [
+        "screen"
+      ],
+      "license": "GPL-2.0-only",
+      "upstream": "https://github.com/cesanta/mongoose",
+      "note": "Mongoose is dual-licensed, GPLv2 or commercial; it is distributed here under the GNU General Public License version 2, as in the BUSY Bar firmware.",
+      "paths": [
+        "lib/mongoose"
+      ],
+      "text": "mongoose.txt"
+    },
+    {
+      "id": "cjson",
+      "name": "cJSON",
+      "modules": [
+        "runtime",
+        "screen"
+      ],
+      "license": "MIT",
+      "upstream": "https://github.com/DaveGamble/cJSON",
+      "paths": [
+        "lib/cjson"
+      ],
+      "text": "cjson.txt"
+    },
+    {
+      "id": "stb",
+      "name": "stb_ds (stb)",
+      "modules": [
+        "screen"
+      ],
+      "license": "MIT OR Unlicense",
+      "upstream": "https://github.com/nothings/stb",
+      "paths": [
+        "lib/stb/stb_repo"
+      ],
+      "via": [
+        "lib/stb/stb.c"
+      ],
+      "text": "stb.txt"
+    },
+    {
+      "id": "mlib",
+      "name": "M*LIB",
+      "modules": [
+        "runtime",
+        "screen"
+      ],
+      "license": "BSD-2-Clause",
+      "upstream": "https://github.com/P-p-H-d/mlib",
+      "paths": [
+        "fbt_layers/core_libs/lib/mlib"
+      ],
+      "text": "mlib.txt"
+    },
+    {
+      "id": "utz",
+      "name": "utz",
+      "modules": [
+        "screen"
+      ],
+      "license": "MIT",
+      "upstream": "https://github.com/evq/utz",
+      "paths": [
+        "fbt_layers/core_libs/lib/utz"
+      ],
+      "text": "utz.txt"
+    },
+    {
+      "id": "furi",
+      "name": "Furi (the firmware's core library)",
+      "modules": [
+        "runtime",
+        "screen"
+      ],
+      "upstream": "https://github.com/flipperdevices/fbtng-corelibs",
+      "paths": [
+        "fbt_layers/core_libs/lib/furi"
+      ]
+    },
+    {
+      "id": "datetime",
+      "name": "datetime (the firmware's core library)",
+      "modules": [
+        "screen"
+      ],
+      "upstream": "https://github.com/flipperdevices/fbtng-corelibs",
+      "paths": [
+        "fbt_layers/core_libs/lib/datetime"
+      ]
+    },
+    {
+      "id": "furi-hal-headers",
+      "name": "Furi HAL headers (fbtng)",
+      "modules": [
+        "screen"
+      ],
+      "upstream": "https://github.com/flipperdevices/fbtng",
+      "paths": [
+        "fbt_layers/fbtng"
+      ]
+    },
+    {
+      "id": "internal-images",
+      "name": "The firmware's internal images",
+      "modules": [
+        "screen"
+      ],
+      "source": "assets/images/internal",
+      "note": "Converted to C by the firmware's build and copied into packages/engine/native/screen-assets.",
+      "paths": [
+        "native/screen-assets"
+      ]
+    }
+  ],
+  "texts": [
+    "CC-BY-SA-4.0.txt",
+    "GPL-2.0-or-later.txt",
+    "MIT.txt",
+    "OFL-1.1.txt",
+    "cjson.txt",
+    "emscripten.txt",
+    "jerryscript.txt",
+    "lodepng.txt",
+    "lvgl.txt",
+    "mlib.txt",
+    "mongoose.txt",
+    "qrcodegen.txt",
+    "stb.txt",
+    "utz.txt"
+  ]
+}

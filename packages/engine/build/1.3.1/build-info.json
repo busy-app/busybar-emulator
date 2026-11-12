@@ -1,0 +1,76 @@
+{
+  "version": "1.3.1",
+  "firmware": "8edd2da4",
+  "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
+  "buildDate": "2026-10-26",
+  "emscripten": "7.0.0",
+  "optimized": true,
+  "api": "27.14.0",
+  "web": {
+    "from": "assets/frontend-build/public",
+    "tree": "c55a464d1b22123f90722bbe52ab9eae4bb33149",
+    "files": 120,
+    "bytes": 9119357
+  },
+  "docs": {
+    "from": [
+      "applications/services/web_server/openapi",
+      "assets/swagger"
+    ],
+    "swaggerUi": "5.30.1",
+    "serialExamples": 1,
+    "files": 9,
+    "bytes": 644605
+  },
+  "jerryscript": "738156942113034cbe2103ed470222da65c2dbb2",
+  "firmwareDefines": [
+    "JERRY_GLOBAL_HEAP_SIZE=8",
+    "JERRY_EXTERNAL_CONTEXT=1",
+    "JERRY_UNICODE_CASE_CONVERSION=0",
+    "JERRY_BUILTIN_ANNEXB=0",
+    "JERRY_BUILTIN_ARRAY=1",
+    "JERRY_BUILTIN_BOOLEAN=1",
+    "JERRY_BUILTIN_DATE=1",
+    "JERRY_BUILTIN_ERRORS=1",
+    "JERRY_BUILTIN_JSON=1",
+    "JERRY_BUILTIN_MATH=1",
+    "JERRY_BUILTIN_NUMBER=1",
+    "JERRY_BUILTIN_REGEXP=1",
+    "JERRY_BUILTIN_STRING=1",
+    "JERRY_BUILTIN_BIGINT=1",
+    "JERRY_BUILTIN_CONTAINER=1",
+    "JERRY_BUILTIN_DATAVIEW=1",
+    "JERRY_BUILTIN_GLOBAL_THIS=1",
+    "JERRY_BUILTIN_PROXY=1",
+    "JERRY_BUILTIN_REALMS=1",
+    "JERRY_BUILTIN_REFLECT=0",
+    "JERRY_BUILTIN_TYPEDARRAY=1",
+    "JERRY_BUILTIN_SHAREDARRAYBUFFER=1",
+    "JERRY_BUILTIN_ATOMICS=1",
+    "JERRY_BUILTIN_WEAKREF=1",
+    "JERRY_ERROR_MESSAGES=1",
+    "JERRY_LINE_INFO=1",
+    "JERRY_MODULE_SYSTEM=1",
+    "JERRY_VM_HALT=1",
+    "JERRY_PARSER_HALT=1"
+  ],
+  "emulatorDefines": [
+    "JERRY_MEM_STATS=1",
+    "JERRY_PROMISE_CALLBACK=1"
+  ],
+  "consoleSeverities": [
+    "log",
+    "info",
+    "error"
+  ],
+  "lvgl": "0e12dbeb5ef3fab77d256fe1057fc567c8f906a9",
+  "screenDefines": [
+    "LV_CONF_INCLUDE_SIMPLE",
+    "LV_LVGL_H_INCLUDE_SIMPLE",
+    "MG_ARCH=MG_ARCH_UNIX",
+    "SRV_INPUT",
+    "EMU_FW_VERSION=\"1.3.1\"",
+    "EMU_FW_COMMIT=\"8edd2da4\"",
+    "EMU_FW_BUILD_DATE=\"2026-10-26\""
+  ]
+}

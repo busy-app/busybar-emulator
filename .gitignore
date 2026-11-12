@@ -1,0 +1,25 @@
+# Installed dependencies
+node_modules/
+
+# Emulator data folders, test and build logs
+.data*/
+logs/
+*.log
+
+# The engine's build intermediates (packages/engine/build.mjs)
+packages/engine/build/obj/
+packages/engine/build/src/
+packages/engine/build/gen/
+packages/engine/build/out/
+
+# Editor and system files
+.DS_Store
+Thumbs.db
+._*
+.vscode/
+.idea/
+
+# Local secrets
+.env
+.env.*
+.npmrc

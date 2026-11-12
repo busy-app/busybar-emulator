@@ -1,0 +1,627 @@
+{
+  "format": 1,
+  "source": {
+    "repository": "busy-app/busy-apps-catalog",
+    "path": "tools/check_registry.py",
+    "commit": "cd70f339688523a0d0be6869ed8835f17ad941d4",
+    "committed_at": "2026-11-12T15:46:36+03:00"
+  },
+  "stages": [
+    {
+      "id": "manifest",
+      "title": "Manifest"
+    },
+    {
+      "id": "build",
+      "title": "Build"
+    },
+    {
+      "id": "package",
+      "title": "Package"
+    },
+    {
+      "id": "catalog",
+      "title": "Catalog"
+    },
+    {
+      "id": "review",
+      "title": "Review"
+    }
+  ],
+  "checks": [
+    {
+      "id": "manifest_path",
+      "stage": "manifest",
+      "title": "Manifest location",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The manifest is not at applications/<app_id>/manifest.yml, or the application ID is not valid.",
+      "fix": "Put the manifest at applications/<app_id>/manifest.yml. Application ID: up to 63 characters, lower-case Latin letters, digits, `_`, `-` and `.`; at least two dots, none at the start or end or in a row. e.g. `com.example.weather`, or `io.github.<your-github-user>.<app>` if you don't have a website."
+    },
+    {
+      "id": "id_style",
+      "stage": "manifest",
+      "title": "Application ID style",
+      "required": false,
+      "severity": "warning",
+      "problem": "The application ID does not start with a domain-like part.",
+      "fix": "Recommended: a reverse-domain ID (Java package style), e.g. `com.example.weather`, or `io.github.<your-github-user>.<app>` if you don't have a website."
+    },
+    {
+      "id": "pr_scope",
+      "stage": "manifest",
+      "title": "Changed files",
+      "required": true,
+      "severity": "blocking",
+      "problem": "PR must change exactly one application manifest.",
+      "fix": "Keep only `applications/<id>/manifest.yml` in this PR; other changes are made by maintainers."
+    },
+    {
+      "id": "app_id_format",
+      "stage": "manifest",
+      "title": "Application ID format",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The application ID in the folder name is not valid.",
+      "fix": "Application ID: up to 63 characters, lower-case Latin letters, digits, `_`, `-` and `.`; at least two dots, none at the start or end or in a row. e.g. `com.example.weather`, or `io.github.<your-github-user>.<app>` if you don't have a website."
+    },
+    {
+      "id": "removal_not_owner",
+      "stage": "manifest",
+      "title": "Who removes the app",
+      "required": true,
+      "severity": "blocking",
+      "problem": "Only the app's author or catalog maintainers can remove an app, and this pull request's author is neither.",
+      "fix": "Ask the maintainers to remove it: open an issue in this repository and name the app."
+    },
+    {
+      "id": "removal_not_published",
+      "stage": "manifest",
+      "title": "App in the catalog",
+      "required": false,
+      "severity": "warning",
+      "problem": "The app is not in the catalog: it was never published or is already removed.",
+      "fix": "Nothing else to do: merging only cleans the repository."
+    },
+    {
+      "id": "manifest_readable",
+      "stage": "manifest",
+      "title": "Manifest syntax",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The manifest is not readable YAML.",
+      "fix": "Fix the YAML syntax of manifest.yml at the line named in the details."
+    },
+    {
+      "id": "manifest_schema",
+      "stage": "manifest",
+      "title": "Manifest fields",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A manifest field is missing or has a wrong value.",
+      "fix": "In manifest.yml, add the missing field or correct the value of the field named in the details."
+    },
+    {
+      "id": "manifest_references",
+      "stage": "manifest",
+      "title": "Manifest paths",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A path or file reference in the manifest is not allowed.",
+      "fix": "Use relative paths inside the application directory; `@file` is allowed only in description."
+    },
+    {
+      "id": "changelog_text",
+      "stage": "manifest",
+      "title": "Changelog",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The changelog is a file reference, or shorter than 10 or longer than 4000 characters.",
+      "fix": "Write the changelog in `manifest.yml` as inline text of 10 to 4000 characters."
+    },
+    {
+      "id": "official_namespace",
+      "stage": "manifest",
+      "title": "Official namespace",
+      "required": false,
+      "severity": "warning",
+      "problem": "The ID starts with `app.busy.`, which official BUSY apps use, but the repository is not from the busy-app organization.",
+      "fix": "Check this is not an impersonation of an official app; otherwise use an ID of your own (for example `io.github.<your-user>.<app>`)."
+    },
+    {
+      "id": "category_public",
+      "stage": "manifest",
+      "title": "Category",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The category is not in the public category list.",
+      "fix": "Set `category` in manifest.yml to one of the allowed categories named in the details."
+    },
+    {
+      "id": "category_alias",
+      "stage": "manifest",
+      "title": "Category name",
+      "required": false,
+      "severity": "warning",
+      "problem": "The category is an alias of another category.",
+      "fix": "Use the main category name in `category`."
+    },
+    {
+      "id": "category_offline",
+      "stage": "manifest",
+      "title": "Category list",
+      "required": false,
+      "severity": "warning",
+      "problem": "The public category list could not be loaded.",
+      "fix": "Nothing to do: the local copy of the categories was used."
+    },
+    {
+      "id": "source_origin",
+      "stage": "build",
+      "title": "Source repository",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The source is not a GitHub HTTPS repository or the commit is not a full SHA.",
+      "fix": "Set `sourcecode.location.origin` to https://github.com/<owner>/<repo> and `commit_sha` to the full 40-character SHA."
+    },
+    {
+      "id": "source_commit",
+      "stage": "build",
+      "title": "Source commit",
+      "required": true,
+      "severity": "blocking",
+      "problem": "No commit found.",
+      "fix": "Check that the corresponding commit is available in your repository and that `commit_sha` in the manifest is the full 40-character SHA."
+    },
+    {
+      "id": "source_subdir",
+      "stage": "build",
+      "title": "Source directory",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The source subdirectory is missing or outside the repository.",
+      "fix": "Set `sourcecode.location.subdir` to a directory that exists at that commit."
+    },
+    {
+      "id": "app_id_match",
+      "stage": "build",
+      "title": "Application ID",
+      "required": true,
+      "severity": "blocking",
+      "problem": "Application ID doesn't match.",
+      "fix": "Rename the folder to match the `id` in your app's appmeta/manifest.json, or change that `id` and push a new commit. Application ID: up to 63 characters, lower-case Latin letters, digits, `_`, `-` and `.`; at least two dots, none at the start or end or in a row. e.g. `com.example.weather`, or `io.github.<your-github-user>.<app>` if you don't have a website."
+    },
+    {
+      "id": "license",
+      "stage": "build",
+      "title": "Open source license",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The repository has no license file at the submitted commit.",
+      "fix": "Add a LICENSE file with an open source license (for example MIT or GPL) to your repository, and submit a commit that contains it."
+    },
+    {
+      "id": "license_unrecognised",
+      "stage": "build",
+      "title": "License text",
+      "required": false,
+      "severity": "warning",
+      "problem": "The license text was not recognised, the moderator will check it.",
+      "fix": "Use the unmodified text of a standard open source license, for example from choosealicense.com."
+    },
+    {
+      "id": "referenced_file",
+      "stage": "build",
+      "title": "Referenced files",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A file referenced from the manifest is missing or outside the application directory.",
+      "fix": "Commit the file at the path used in the manifest, inside the application directory."
+    },
+    {
+      "id": "text_resolve",
+      "stage": "build",
+      "title": "Description and changelog",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A description or changelog is too short or too long.",
+      "fix": "Keep `description` between 50 and 4000 characters (after `@file` is read) and `changelog` between 10 and 4000."
+    },
+    {
+      "id": "markdown",
+      "stage": "build",
+      "title": "Markdown",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The description or changelog uses unsupported Markdown.",
+      "fix": "In `description` and `changelog` use only level 1–2 headings, bold, italic, lists and links; remove the element named in the details."
+    },
+    {
+      "id": "screenshots_count",
+      "stage": "build",
+      "title": "Screenshot count",
+      "required": true,
+      "severity": "blocking",
+      "problem": "There must be 1–10 screenshots.",
+      "fix": "List 1–10 PNG files under `screenshots`."
+    },
+    {
+      "id": "back_screenshots_count",
+      "stage": "build",
+      "title": "Back screenshot count",
+      "required": true,
+      "severity": "blocking",
+      "problem": "There can be at most 10 back screenshots.",
+      "fix": "List 0–10 PNG files under `back_screenshots`, or remove the field."
+    },
+    {
+      "id": "screenshot_png",
+      "stage": "build",
+      "title": "Screenshot files",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A screenshot is not a valid 72×16 PNG.",
+      "fix": "Replace the listed file with a valid PNG of exactly 72×16 pixels."
+    },
+    {
+      "id": "source_archive_size",
+      "stage": "build",
+      "title": "Source size",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The committed source is larger than 100 MiB.",
+      "fix": "Remove large files from the repository at that commit."
+    },
+    {
+      "id": "back_screenshot_png",
+      "stage": "build",
+      "title": "Back screenshot files",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A back screenshot is not a valid 160×80 PNG.",
+      "fix": "Replace the listed file with a valid 8-bit PNG of exactly 160×80 pixels."
+    },
+    {
+      "id": "build_lockfile",
+      "stage": "build",
+      "title": "Lock file",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The lock file or package manager version is not pinned.",
+      "fix": "Commit exactly one of package-lock.json or pnpm-lock.yaml with a pinned @busy-app/cli (and `packageManager` for pnpm)."
+    },
+    {
+      "id": "build",
+      "stage": "build",
+      "title": "Build",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The build failed.",
+      "fix": "Check that the `id` in appmeta/manifest.json is the folder name and that `busy-cli build` succeeds locally with the pinned toolchain."
+    },
+    {
+      "id": "script_main",
+      "stage": "build",
+      "title": "Entry script",
+      "required": true,
+      "severity": "blocking",
+      "problem": "scripts/main.js is missing, unreadable or too large.",
+      "fix": "Make the build output scripts/main.js of at most 256000 bytes."
+    },
+    {
+      "id": "script_imports",
+      "stage": "build",
+      "title": "Script imports",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A script has a syntax error or imports a file that is not in the package.",
+      "fix": "Fix the syntax and use only relative imports of files inside scripts/."
+    },
+    {
+      "id": "screenshot_final",
+      "stage": "build",
+      "title": "Screenshot files after the build",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A screenshot is no longer a valid 72×16 PNG after the build, or could not be re-saved.",
+      "fix": "Make sure the build doesn't change your screenshots and that they are 8-bit PNGs of exactly 72×16 pixels."
+    },
+    {
+      "id": "back_screenshot_final",
+      "stage": "build",
+      "title": "Back screenshot files after the build",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A back screenshot is no longer a valid 160×80 PNG after the build, or could not be re-saved.",
+      "fix": "Make sure the build doesn't change your back screenshots and that they are 8-bit PNGs of exactly 160×80 pixels."
+    },
+    {
+      "id": "icon_png",
+      "stage": "build",
+      "title": "Application icons",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The application icon is not a valid 8×8 PNG (or the back icon is not a valid 11×11 PNG).",
+      "fix": "Replace `appmeta/icon_front_8x8.png` in your app with a valid 8-bit PNG of exactly 8×8 pixels (`appmeta/icon_back_11x11.png`, if present, must be 11×11)."
+    },
+    {
+      "id": "icon_missing",
+      "stage": "build",
+      "title": "Application icon",
+      "required": false,
+      "severity": "warning",
+      "problem": "The application has no front icon, so the catalog shows a default one.",
+      "fix": "Add `appmeta/icon_front_8x8.png` to your app: a PNG of exactly 8×8 pixels."
+    },
+    {
+      "id": "package_missing",
+      "stage": "package",
+      "title": "Package built",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The build did not produce a readable package.",
+      "fix": "Re-run the checks. If it fails again, ask the maintainers."
+    },
+    {
+      "id": "invalid_id",
+      "stage": "package",
+      "title": "Application ID",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The application ID is not valid.",
+      "fix": "Application ID: up to 63 characters, lower-case Latin letters, digits, `_`, `-` and `.`; at least two dots, none at the start or end or in a row. e.g. `com.example.weather`, or `io.github.<your-github-user>.<app>` if you don't have a website."
+    },
+    {
+      "id": "package_size",
+      "stage": "package",
+      "title": "Package size",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The package is too large.",
+      "fix": "Reduce the compressed package to at most 100 MiB."
+    },
+    {
+      "id": "unpacked_size",
+      "stage": "package",
+      "title": "Unpacked size",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The unpacked package is too large.",
+      "fix": "Reduce the unpacked archive to at most 128 MiB."
+    },
+    {
+      "id": "archive_entries",
+      "stage": "package",
+      "title": "Archive entries",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The package has too many files.",
+      "fix": "Reduce the archive to at most 10000 entries."
+    },
+    {
+      "id": "archive_invalid",
+      "stage": "package",
+      "title": "Archive format",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The package is not a readable gzip tar archive.",
+      "fix": "Provide a readable gzip tar archive."
+    },
+    {
+      "id": "tar_format",
+      "stage": "package",
+      "title": "Tar format",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The archive is not a plain USTAR archive.",
+      "fix": "Create a USTAR archive without GNU or PAX headers."
+    },
+    {
+      "id": "package_path",
+      "stage": "package",
+      "title": "Package paths",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A file is outside the application ID directory.",
+      "fix": "Place all package files under the application ID directory."
+    },
+    {
+      "id": "duplicate_path",
+      "stage": "package",
+      "title": "Duplicate paths",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The archive has duplicate paths.",
+      "fix": "Remove duplicate archive paths."
+    },
+    {
+      "id": "archive_entry",
+      "stage": "package",
+      "title": "Entry types",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The archive has entries other than files and directories.",
+      "fix": "Use regular files and directories only."
+    },
+    {
+      "id": "javascript_size",
+      "stage": "package",
+      "title": "JavaScript size",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A JavaScript file is too large.",
+      "fix": "Reduce each JavaScript file to at most 256000 bytes."
+    },
+    {
+      "id": "main_missing",
+      "stage": "package",
+      "title": "Entry script in package",
+      "required": true,
+      "severity": "blocking",
+      "problem": "scripts/main.js is not in the package.",
+      "fix": "Include scripts/main.js in the package."
+    },
+    {
+      "id": "manifest_missing",
+      "stage": "package",
+      "title": "App manifest in package",
+      "required": true,
+      "severity": "blocking",
+      "problem": "appmeta/manifest.json is not in the package.",
+      "fix": "Include appmeta/manifest.json in the package."
+    },
+    {
+      "id": "manifest_size",
+      "stage": "package",
+      "title": "App manifest size",
+      "required": true,
+      "severity": "blocking",
+      "problem": "appmeta/manifest.json is too large.",
+      "fix": "Reduce manifest.json to at most 512 bytes."
+    },
+    {
+      "id": "manifest_json",
+      "stage": "package",
+      "title": "App manifest JSON",
+      "required": true,
+      "severity": "blocking",
+      "problem": "appmeta/manifest.json is not a JSON object.",
+      "fix": "Provide a valid JSON manifest object."
+    },
+    {
+      "id": "manifest_field",
+      "stage": "package",
+      "title": "App manifest fields",
+      "required": true,
+      "severity": "blocking",
+      "problem": "A required field is missing in appmeta/manifest.json.",
+      "fix": "Add the missing field to manifest.json."
+    },
+    {
+      "id": "manifest_format_version",
+      "stage": "package",
+      "title": "App manifest format",
+      "required": true,
+      "severity": "blocking",
+      "problem": "format_version is not 1.",
+      "fix": "Set format_version to the integer 1."
+    },
+    {
+      "id": "manifest_id",
+      "stage": "package",
+      "title": "App manifest ID",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The ID in appmeta/manifest.json differs from the catalog application ID.",
+      "fix": "Rename the folder to match the `id` in your app's appmeta/manifest.json, or change that `id` and push a new commit. Application ID: up to 63 characters, lower-case Latin letters, digits, `_`, `-` and `.`; at least two dots, none at the start or end or in a row. e.g. `com.example.weather`, or `io.github.<your-github-user>.<app>` if you don't have a website."
+    },
+    {
+      "id": "manifest_name",
+      "stage": "package",
+      "title": "App name",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The application name is empty, longer than 32 characters, or has characters or spaces the design does not allow.",
+      "fix": "Set `name` in appmeta/manifest.json to 1–32 characters: Latin letters, digits, single spaces between words and ! ? & ' ( ) + , - . / : # $ % @ _"
+    },
+    {
+      "id": "manifest_version",
+      "stage": "package",
+      "title": "App versions",
+      "required": true,
+      "severity": "blocking",
+      "problem": "version or api_version is not numeric semantic versioning.",
+      "fix": "Use numeric versions like 1.2.3 for version and api_version."
+    },
+    {
+      "id": "manifest_heap",
+      "stage": "package",
+      "title": "Heap size",
+      "required": true,
+      "severity": "blocking",
+      "problem": "heap_size_kib is out of range.",
+      "fix": "Set heap_size_kib between 1 and 512."
+    },
+    {
+      "id": "manifest_debug",
+      "stage": "package",
+      "title": "Debug mode",
+      "required": true,
+      "severity": "blocking",
+      "problem": "Debug mode is enabled.",
+      "fix": "Disable debug mode in the published app."
+    },
+    {
+      "id": "version_not_newer",
+      "stage": "catalog",
+      "title": "Version is new",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The version is not higher than the published one.",
+      "fix": "Increase the application version above the published version."
+    },
+    {
+      "id": "source_repository_changed",
+      "stage": "catalog",
+      "title": "Same repository",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The update comes from another repository than the published app.",
+      "fix": "Submit the update from the repository the app was published from."
+    },
+    {
+      "id": "firmware_too_old",
+      "stage": "catalog",
+      "title": "Firmware API",
+      "required": true,
+      "severity": "blocking",
+      "problem": "api_version is higher than the latest released firmware API.",
+      "fix": "Set api_version no higher than the latest released API."
+    },
+    {
+      "id": "catalog_unavailable",
+      "stage": "catalog",
+      "title": "Catalog lookup",
+      "required": false,
+      "severity": "warning",
+      "problem": "The catalog could not be queried, so the version, repository and firmware checks were skipped.",
+      "fix": "Nothing to do; the maintainers recheck before publishing."
+    },
+    {
+      "id": "version_unavailable",
+      "stage": "catalog",
+      "title": "Published version lookup",
+      "required": false,
+      "severity": "warning",
+      "problem": "The published version and its repository could not be checked.",
+      "fix": "Nothing to do; the maintainers recheck before publishing."
+    },
+    {
+      "id": "firmware_unavailable",
+      "stage": "catalog",
+      "title": "Firmware API lookup",
+      "required": false,
+      "severity": "warning",
+      "problem": "The latest firmware API could not be checked.",
+      "fix": "Nothing to do; the maintainers recheck before publishing."
+    },
+    {
+      "id": "author_attestation",
+      "stage": "review",
+      "title": "Author confirmation",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The PR author did not confirm being the author or having write access.",
+      "fix": "Tick the author confirmation in the pull request description."
+    },
+    {
+      "id": "internal_error",
+      "stage": "review",
+      "title": "Checks could not finish",
+      "required": true,
+      "severity": "blocking",
+      "problem": "The catalog checks could not finish.",
+      "fix": "This is not a problem with your app. Re-run the checks; if it fails again, a maintainer will look at it."
+    }
+  ]
+}

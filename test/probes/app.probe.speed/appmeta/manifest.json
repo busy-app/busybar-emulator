@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "id": "app.probe.speed",
+  "name": "Speed probe",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "Measures JS and display/draw speed the same way on a BUSY Bar and in the emulator",
+  "debug": false
+}

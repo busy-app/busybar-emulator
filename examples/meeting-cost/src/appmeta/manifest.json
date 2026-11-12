@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "id": "app.example.meeting_cost",
+  "name": "Meeting Cost",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "What this meeting has cost so far: a stack of money on fire and a counter that ticks every second.",
+  "author": "BUSY",
+  "heap_size_kib": 96
+}

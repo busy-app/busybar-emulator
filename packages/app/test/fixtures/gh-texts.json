@@ -1,0 +1,149 @@
+{
+  "gh": "2.103.3",
+  "recorded": "2026-11-12",
+  "by": "node tools/gh-texts.mjs record",
+  "formats": {
+    "codeCopied": "%s One-time code (%s) copied to clipboard\n",
+    "copyFailed": "%s Failed to copy one-time code to clipboard\n",
+    "firstCopy": "%s First copy your one-time code: %s\n",
+    "openUrl": "%s to continue in your web browser: %s\n",
+    "openUrlWords": "Open this URL",
+    "webFailed": "failed to authenticate via web browser: %w",
+    "authComplete": "%s Authentication complete.",
+    "loggedInAs": "%s Logged in as %s\n",
+    "plainText": "%s Authentication credentials saved in plain text\n",
+    "noToken": "no oauth token found for %s",
+    "switched": "%s Switched active account for %s to %s\n",
+    "loggedOut": "%s Logged out of %s account %s\n",
+    "notLoggedIn": "not logged in to %s account %s",
+    "noMatch": "no accounts matched that criteria",
+    "noKey": "could not find key \"%s\""
+  },
+  "offline": {
+    "version": {
+      "args": [
+        "--version"
+      ],
+      "code": 0,
+      "stdout": "gh version 2.103.3 (2026-10-26)\nhttps://github.com/cli/cli/releases/tag/v2.103.3\n",
+      "stderr": ""
+    },
+    "configNoUser": {
+      "args": [
+        "config",
+        "get",
+        "--host",
+        "github.com",
+        "user"
+      ],
+      "code": 1,
+      "stdout": "",
+      "stderr": "could not find key \"user\"\n"
+    },
+    "tokenNoAccount": {
+      "args": [
+        "auth",
+        "token",
+        "--hostname",
+        "github.com",
+        "--user",
+        "fake-carol"
+      ],
+      "code": 1,
+      "stdout": "",
+      "stderr": "no oauth token found for github.com account fake-carol\n"
+    },
+    "apiNoSignIn": {
+      "args": [
+        "api",
+        "/user",
+        "--hostname",
+        "github.com",
+        "--method",
+        "GET",
+        "--include"
+      ],
+      "code": 4,
+      "stdout": "",
+      "stderr": "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\n"
+    },
+    "switched": {
+      "args": [
+        "auth",
+        "switch",
+        "--hostname",
+        "github.com",
+        "--user",
+        "fake-alice"
+      ],
+      "code": 0,
+      "stdout": "",
+      "stderr": "✓ Switched active account for github.com to fake-alice\n"
+    },
+    "switchUnknown": {
+      "args": [
+        "auth",
+        "switch",
+        "--hostname",
+        "github.com",
+        "--user",
+        "fake-carol"
+      ],
+      "code": 1,
+      "stdout": "",
+      "stderr": "not logged in to github.com account fake-carol\n"
+    },
+    "loggedOutActive": {
+      "args": [
+        "auth",
+        "logout",
+        "--hostname",
+        "github.com",
+        "--user",
+        "fake-bob"
+      ],
+      "code": 0,
+      "stdout": "",
+      "stderr": "✓ Logged out of github.com account fake-bob\n✓ Switched active account for github.com to fake-alice\n"
+    },
+    "logoutUnknown": {
+      "args": [
+        "auth",
+        "logout",
+        "--hostname",
+        "github.com",
+        "--user",
+        "fake-carol"
+      ],
+      "code": 1,
+      "stdout": "",
+      "stderr": "not logged in to github.com account fake-carol\n"
+    }
+  },
+  "live": {
+    "copied": {
+      "stderr": "\n! One-time code ({code}) copied to clipboard\nOpen this URL to continue in your web browser: https://github.com/login/device\n",
+      "shown": {
+        "userCode": "{code}",
+        "verificationUri": "https://github.com/login/device",
+        "copied": true
+      }
+    },
+    "copyFailed": {
+      "stderr": "\n! Failed to copy one-time code to clipboard\n  exec: \"pbcopy\": executable file not found in $PATH\n! First copy your one-time code: {code}\nOpen this URL to continue in your web browser: https://github.com/login/device\n",
+      "shown": {
+        "userCode": "{code}",
+        "verificationUri": "https://github.com/login/device",
+        "copied": false
+      }
+    },
+    "notCopied": {
+      "stderr": "\n! First copy your one-time code: {code}\nOpen this URL to continue in your web browser: https://github.com/login/device\n",
+      "shown": {
+        "userCode": "{code}",
+        "verificationUri": "https://github.com/login/device",
+        "copied": false
+      }
+    }
+  }
+}

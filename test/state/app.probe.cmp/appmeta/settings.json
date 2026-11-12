@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "version": 1,
+  "fields": {
+    "label": { "type": "string", "label": "Label", "default": "hello", "min_length": 1, "max_length": 12 },
+    "count": { "type": "integer", "label": "Count", "default": 3, "min": 0, "max": 9 },
+    "flag": { "type": "boolean", "label": "Flag", "default": false }
+  }
+}

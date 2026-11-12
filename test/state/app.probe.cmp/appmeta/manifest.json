@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "id": "app.probe.cmp",
+  "name": "Compare probe",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "Shows its settings and the last input events: the probe for comparing a bar with the emulator",
+  "author": "",
+  "debug": false
+}

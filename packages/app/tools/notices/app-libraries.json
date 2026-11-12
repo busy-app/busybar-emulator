@@ -1,0 +1,73 @@
+{
+  "$comment": "Written by hand: what the app itself carries besides the firmware's parts (those are in libraries.json, written by refresh.mjs). The license summary (notices.mjs) names each of these, and prints its license text from app-texts/. An entry without 'text' has no license text to print. When src/icons/lucide.json is made anew (tools/local-web-icons.mjs), update 'from' here.",
+  "libraries": [
+    {
+      "id": "lucide",
+      "name": "Lucide icons",
+      "file": "packages/app/src/icons/lucide.json",
+      "what": "the Lucide icons the firmware's local web names. The local web asks Iconify's API for them while it runs; the app's windows have no network, so the app answers the page from this file instead (`packages/app/src/icons.mjs`)",
+      "from": "the npm package @iconify-json/lucide 1.2.153, the Lucide set in Iconify's JSON format, cut down to those icons by `packages/app/tools/local-web-icons.mjs`",
+      "upstream": "https://github.com/lucide-icons/lucide",
+      "license": "ISC",
+      "copyright": [
+        "Lucide Icons and Contributors"
+      ],
+      "note": "Lucide's license names the icons that are derived from the Feather project; those are under the MIT License (© 2013-present Cole Bemis), and some of the icons in the file are among them. Both texts are below, as Lucide's LICENSE file has them.",
+      "text": "lucide.txt"
+    },
+    {
+      "id": "tride-player",
+      "name": "Tride web player 0.16.0",
+      "file": "packages/stage/frame/player/tride-web/tride-web.js",
+      "what": "the player that draws the bar in the 3D view, in a frame of the device window that has no rights and no network: `packages/stage/frame/player` holds its files unmodified (the player's module and runtime, Filament 1.77.1 built for WebGL2, one lighting environment), with the player's own `LICENSE` and `THIRD_PARTY_NOTICES.md` beside them; that notices file lists the libraries inside the player with their licenses",
+      "from": "the release v0.16.0 of https://github.com/trideapp/tride-web (Tride commit d1259a54a)",
+      "upstream": "https://github.com/trideapp/tride-web",
+      "license": "LicenseRef-Tride-Players-1.2",
+      "copyright": [
+        "2026 Tride Labs Ltd"
+      ],
+      "note": "The player is not under the emulator's license: it stays under the Tride Players Licence, which lets a product carry the player, and lets a public repository hold its unmodified files next to that license. The emulator's repository is not a place to get the player from; it is published at the address above. The license's text is below.",
+      "text": "tride-players.txt"
+    },
+    {
+      "id": "bar-model",
+      "name": "The model of the BUSY Bar",
+      "file": "packages/stage/frame/scene/bar.trd",
+      "what": "the scene of the 3D view: the three-dimensional model of the BUSY Bar with its textures, lit and wired to the emulator's displays and controls with the Tride editor's commands (`packages/stage/scene-build`)",
+      "from": "the model of the bar by Flipper FZCO, the emulator's own copyright holder",
+      "upstream": "https://busy.app",
+      "license": "LicenseRef-Flipper-FZCO",
+      "copyright": [
+        "Flipper FZCO"
+      ],
+      "note": "The model is not under the GPL: it shows the product and is shipped for the emulator's own 3D view."
+    },
+    {
+      "id": "gh",
+      "name": "GitHub CLI",
+      "file": "packages/app/bundled-gh.json",
+      "what": "the program `gh`, inside the app beside Node (`gh/` in its resources folder): when an app is published, it signs the person in to GitHub, keeps the token in the system's password store and makes the calls to GitHub (`packages/app/src/github/gh.mjs`)",
+      "from": "the pinned release of github.com/cli/cli that `packages/app/bundled-gh.json` names, its archives for macOS (arm64 and amd64) and Windows (amd64), checked against the release's checksums file by `packages/app/tools/bundled-gh.mjs`; unchanged, with GitHub's own signature on macOS",
+      "upstream": "https://github.com/cli/cli",
+      "license": "MIT",
+      "copyright": [
+        "2019 GitHub Inc."
+      ],
+      "text": "gh.txt"
+    },
+    {
+      "id": "swagger-ui",
+      "name": "Swagger UI 5.30.1",
+      "file": "packages/engine/build/1.3.1/docs/swagger-ui-bundle.js.gz",
+      "what": "the page of the bar's API documentation at /docs/ of the emulated bar, as the bar serves it: Swagger UI's script, styles and icons, gzipped, with the page around them, which the firmware's own build scripts write (`packages/engine/build/<firmware>/docs`, made by `packages/engine/build.mjs`)",
+      "from": "the archive of release v5.30.1 of github.com/swagger-api/swagger-ui that the firmware keeps (assets/swagger/swagger-ui-5.30.1.zip), the files of its dist folder unchanged",
+      "upstream": "https://github.com/swagger-api/swagger-ui",
+      "license": "Apache-2.0",
+      "copyright": [
+        "2020-2021 SmartBear Software Inc."
+      ],
+      "note": "Swagger UI's LICENSE and NOTICE lie beside the page in each firmware's docs folder; both are below.",
+      "text": "swagger-ui.txt"
+    }
+  ]
+}

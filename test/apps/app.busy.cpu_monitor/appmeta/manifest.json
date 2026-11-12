@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "id": "app.busy.cpu_monitor",
+  "name": "CPU Monitor",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "A stand-in for the system scenes of test/golden.mjs: the name and icons of the app, no code of it",
+  "author": "BUSY Bar emulator tests"
+}

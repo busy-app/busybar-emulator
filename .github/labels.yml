@@ -1,0 +1,29 @@
+# The labels of the public repository, for triage. The repository's maintainer creates them once (the development repository's
+# docs/release.md, Bug intake and hotfixes). name, color (hex, no #), description.
+- name: bug
+  color: d73a4a
+  description: Something does not work as documented
+- name: enhancement
+  color: a2eeef
+  description: A new feature or a change to one
+- name: windows
+  color: 0078d4
+  description: Happens on Windows
+- name: macos
+  color: 6e7781
+  description: Happens on macOS
+- name: publish
+  color: 5319e7
+  description: Submitting an app to the catalog, the catalog's checks
+- name: agent
+  color: 1d76db
+  description: The command line, the MCP server or an AI agent's use of the emulator
+- name: catalog
+  color: 0e8a16
+  description: The app catalog and its readiness checks
+- name: firmware-diff
+  color: fbca04
+  description: The emulator differs from a real BUSY Bar
+- name: needs-info
+  color: ededed
+  description: Waiting for details from the reporter

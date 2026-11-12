@@ -1,0 +1,17 @@
+{
+  "$comment": "The apps installed for the system scenes of golden.mjs (the apps menu, an app's card), in the order the menu lists them: a bar lists apps in the order they were installed, and the emulator in the order their folders were made. The goldens in golden/system-*.json were taken from a bar that had Clock, Weather and CPU Monitor, in that order. Only what those screens show is here: each app's name, its two icons and a settings form (an app with one shows Setup on its card); the script is a stand-in that keeps running. own-emulator.mjs copies these folders into a test's data folder. Clock and Weather are Flipper FZCO's apps from github.com/busy-app at the commits named below; their icons may go into the public repository's tests (the owner's decision, EMU-006).",
+  "apps": [
+    {
+      "id": "app.busy.clock",
+      "icons": "src/appmeta/icon_back_11x11.png and icon_front_8x8.png of https://github.com/busy-app/clock-app at dd3727d408318a58018212d64c1f276e24912539, byte for byte (the official Clock 0.6.1; the repository has no license file)"
+    },
+    {
+      "id": "app.busy.weather",
+      "icons": "src/appmeta/icon_back_11x11.png and icon_front_8x8.png of https://github.com/busy-app/weather-app at 26ee739aac4c523b20878aba9257c208b86957c9, byte for byte (the official Weather 0.6.2; the repository has no license file)"
+    },
+    {
+      "id": "app.busy.cpu_monitor",
+      "icons": "apps/cpu-monitor/src/appmeta of this repository, byte for byte: an opaque gray icon, which the menu draws as a solid square, as it did on the bar the goldens were taken from"
+    }
+  ]
+}

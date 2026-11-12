@@ -1,0 +1,228 @@
+[
+ {
+  "archive": "api-newer.tgz",
+  "bytes": 270,
+  "status": 400,
+  "body": "{\"error\":\"API version mismatch\",\"error_code\":\"api_mismatch\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (106)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "traversal-dot.tgz",
+  "bytes": 280,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": []
+ },
+ {
+  "archive": "ustar-prefix.tgz",
+  "bytes": 290,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":405354311,\"staged\":{\"id\":\"app.fixture.hostile\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)",
+   "extra.js (24)"
+  ]
+ },
+ {
+  "archive": "traversal-parent.tgz",
+  "bytes": 296,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "traversal-top.tgz",
+  "bytes": 297,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": []
+ },
+ {
+  "archive": "absolute.tgz",
+  "bytes": 299,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":660079889,\"staged\":{\"id\":\"app.fixture.hostile\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "abs/",
+   "  evil.js (4)",
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "links.tgz",
+  "bytes": 321,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":1971910197,\"staged\":{\"id\":\"app.fixture.hostile\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "gnu-tar.tgz",
+  "bytes": 331,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":274937270,\"staged\":{\"id\":\"app.fixture.gnu\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "app.fixture.gnu/",
+   "  appmeta/",
+   "    manifest.json (103)",
+   "  scripts/",
+   "    main.js (24)",
+   "    long-name-long-name-long-name-long-name-long-name-long-name-long-name-long-n (24)"
+  ]
+ },
+ {
+  "archive": "two-apps.tgz",
+  "bytes": 349,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":791692232,\"staged\":{\"id\":\"app.fixture.first\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "app.fixture.first/",
+   "  appmeta/",
+   "    manifest.json (105)",
+   "  scripts/",
+   "    main.js (24)",
+   "app.fixture.second/",
+   "  appmeta/",
+   "    manifest.json (106)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "not-app-first.tgz",
+  "bytes": 304,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":310096214,\"staged\":{\"id\":\"app.fixture.hostile\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "notes/",
+   "  readme.txt (5)",
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "no-main.tgz",
+  "bytes": 225,
+  "status": 400,
+  "body": "{\"error\":\"Wrong app manifest\",\"error_code\":\"manifest_error\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/"
+  ]
+ },
+ {
+  "archive": "dot-underscore-dir.tgz",
+  "bytes": 342,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":1622032107,\"staged\":{\"id\":\"app.fixture.hostile\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "._app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)",
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "dot-underscore-dir-only.tgz",
+  "bytes": 274,
+  "status": 400,
+  "body": "{\"error\":\"Wrong app manifest\",\"error_code\":\"manifest_error\"}",
+  "staging": [
+   "._app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "bad-checksum.tgz",
+  "bytes": 273,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "  scripts/"
+  ]
+ },
+ {
+  "archive": "cut-gzip.tgz",
+  "bytes": 135,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/"
+  ]
+ },
+ {
+  "archive": "no-end-record.tgz",
+  "bytes": 267,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": [
+   "app.fixture.hostile/",
+   "  appmeta/",
+   "    manifest.json (107)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ },
+ {
+  "archive": "not-an-archive.tgz",
+  "bytes": 1040,
+  "status": 400,
+  "body": "{\"error\":\"Cannot unpack\",\"error_code\":\"unpack_error\"}",
+  "staging": []
+ },
+ {
+  "archive": "macos-clean.tgz",
+  "bytes": 533,
+  "status": 200,
+  "body": "{\"result\":\"OK\",\"install_key\":593041593,\"staged\":{\"id\":\"app.fixture.mac\",\"name\":\"Fixture\",\"version\":\"1.0.0\",\"api_version\":\"27.12.0\",\"author\":\"\",\"description\":\"\",\"is_debug\":false,\"icon_path\":\"/ext/apps_assets/shared/images/unknown_app_front_8x8.image\"}}",
+  "staging": [
+   "app.fixture.mac/",
+   "  appmeta/",
+   "    manifest.json (103)",
+   "  scripts/",
+   "    main.js (24)"
+  ]
+ }
+]

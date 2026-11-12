@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "id": "app.example.focus_timer",
+  "name": "Focus Timer",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "A focus session you can see: a tree grows while you work, wilts if you give up, and joins a forest when you finish.",
+  "author": "BUSY",
+  "heap_size_kib": 96
+}

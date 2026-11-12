@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "id": "app.probe.oom",
+  "name": "Heap probe",
+  "version": "0.1.0",
+  "api_version": "27.14.0",
+  "description": "Fills the JS heap a second after it starts, to see what the system does about it",
+  "debug": false
+}
