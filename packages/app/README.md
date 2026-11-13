@@ -100,7 +100,7 @@ from before EMU-005 kept the BUSY Bar in `bar/ext`; `node emulator/test/convert-
   tried to leave for, is given to the system, three in ten seconds at most (`src/external.mjs`); anything else goes
   nowhere. The server's opener takes this over when it exists (EMU-010). A hidden run and a run under a test open
   nothing and keep what they would have opened.
-- **The notice of a new version** (EMU-205; ADR-0014, point 6). At its start, at most once a day (and at the first start of a new version), the main
+- **The notice of a new version** (EMU-205; ADR-0014, point 6). At every start (not again within a minute of the last answer) and then once a day while it runs, the main
   process asks `https://api.github.com/repos/busy-app/busybar-emulator/releases/latest` (owner and repository:
   `RELEASES` in `src/update-check.mjs`). The request carries a fixed `User-Agent: busybar-emulator` and an `Accept`
   header, and nothing else. When the release is newer than the app, the device window shows one line with a Download

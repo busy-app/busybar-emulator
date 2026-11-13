@@ -2,6 +2,7 @@
 // while the app is busy or in a run that shows no pop-up; and the release notes' short summary it shows
 // (update-check.mjs releaseSummary).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { releaseSummary, SUMMARY_CHARS, summaryInAnswer } from "../../src/update-check.mjs";
@@ -78,4 +79,37 @@ test("the release notes' summary: the first sentences, or the first items of a l
   for (const empty of [null, "", "   ", "## Files\n\n- a", 5]) assert.equal(releaseSummary(empty), null, String(empty));
   assert.deepEqual(summaryInAnswer(JSON.stringify({ tag_name: "v0.2.0", body: "Fixes the Run button." })), { kind: "text", lines: ["Fixes the Run button."] });
   assert.equal(summaryInAnswer("not json"), null);
+});
+
+test("a lead-in that ends with a colon is not the summary: the list or the paragraph it introduces is", () => {
+  // The changelog groups its items under such lines; the summary of 0.1.0-beta.2 was once "The window:" alone.
+  assert.deepEqual(releaseSummary("The window:\n\n- A new app column.\n- A new dashboard.\n\nPublish:\n\n- One more."), { kind: "list", lines: ["A new app column.", "A new dashboard."] });
+  assert.deepEqual(releaseSummary("Fixed:\n- Run keeps going.\n- Publish says why."), { kind: "list", lines: ["Run keeps going.", "Publish says why."] });
+  assert.deepEqual(releaseSummary("### Fixed\n\nThe window:\n\n- Run keeps going."), { kind: "list", lines: ["Run keeps going."] });
+  assert.deepEqual(releaseSummary("In short:\n\nRun keeps going. Publish says why."), { kind: "text", lines: ["Run keeps going. Publish says why."] });
+  // A loose list (a blank line between its items) is one list; a paragraph after it is not part of it.
+  assert.deepEqual(releaseSummary("The window:\n\n- One.\n\n- Two.\n\nAlso this.\n\n- Three."), { kind: "list", lines: ["One.", "Two."] });
+  // A paragraph that ends with a colon but says something itself stays the summary.
+  const said = releaseSummary("The first trial release of BUSY Bar Emulator, a BUSY Bar on your computer, for macOS and Windows. Start here:\n[download](https://example.com).\n\n- One");
+  assert.equal(said.kind, "text");
+  assert.match(said.lines[0], /^The first trial release/);
+  // Prose that starts the list's item without a blank line is a paragraph, and is the summary.
+  assert.deepEqual(releaseSummary("This release fixes three things, all in the window.\n- One."), { kind: "text", lines: ["This release fixes three things, all in the window."] });
+});
+
+test("the real notes of 0.1.0-beta.2 give the first three items of the window's list, each cut at a clause", () => {
+  const body = readFileSync(new URL("../fixtures/release-notes-v0.1.0-beta.2.md", import.meta.url), "utf8");
+  assert.ok(body.startsWith("The window:\n\n- "), "the fixture is the release's body as GitHub has it");
+  const summary = releaseSummary(body);
+  assert.deepEqual(summary, {
+    kind: "list",
+    lines: ["A new app column: the project's folder with Copy and Open in Finder…", "A new dashboard for the BUSY Bar: its name and address with Copy…", "Square buttons and one kind of hover descriptor across the window…"],
+  });
+  assert.ok(summary.lines.join("").length <= SUMMARY_CHARS);
+  assert.deepEqual(summaryInAnswer(JSON.stringify({ tag_name: "v0.1.0-beta.2", body })), summary);
+});
+
+test("a lead-in with nothing after it says nothing: no pop-up line of its own", () => {
+  assert.equal(releaseSummary("The window:\n"), null);
+  assert.equal(releaseSummary("The window:\n\n## Files\n\n- busybar-emulator-mac-arm64.dmg\n"), null);
 });

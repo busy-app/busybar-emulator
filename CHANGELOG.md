@@ -2,6 +2,13 @@
 
 What changes in each release of BUSY Bar Emulator. The newest release is first.
 
+## 0.1.0-beta.3
+
+The emulator now looks for a new version every time it starts, so a fix reaches you the next time you open it.
+
+- A new version is looked for at every start, not once a day; while the emulator stays open, once a day as before.
+- The update's pop-up shows the first points of the release's notes and its whole title.
+
 ## 0.1.0-beta.2
 
 The window:

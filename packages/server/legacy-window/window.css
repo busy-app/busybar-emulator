@@ -2223,7 +2223,9 @@ textarea.report-bug-input { resize: vertical; min-height: 64px; }
 /* ---------------------------------------------------------------- update-popup: a newer version (update-popup.js)
 
    The window's dialog: a calm near-black card over the dimmed window, as Delete's. The emulator's mark and the version
-   at the top, a few lines of the release's notes in a tile, the buttons at the foot, the primary one white and last. */
+   at the top, a few lines of the release's notes in a tile, the buttons at the foot, the primary one white and last.
+   The window's type system: the title 18/24 500, the notes 14/20 400, "You are on" a caption 12/16 400. The title is
+   never cut (the window's h2 is one line with an ellipsis): a long version ("0.1.0-beta.10") takes a second line. */
 
 body.update-popping { overflow: hidden; }
 .update-popup-scrim { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; padding: var(--s-6); background: rgb(0 0 0 / 0.6); backdrop-filter: blur(6px); }
@@ -2231,7 +2233,7 @@ body.update-popping { overflow: hidden; }
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
-  width: min(460px, 100%);
+  width: min(500px, 100%);
   max-height: 100%;
   padding: var(--s-6);
   border-radius: 20px;
@@ -2240,23 +2242,23 @@ body.update-popping { overflow: hidden; }
   overflow-y: auto;
   outline: none;
 }
-.update-popup-head { display: flex; align-items: center; gap: var(--s-4); }
+.update-popup-head { display: flex; align-items: flex-start; gap: var(--s-4); }
 .update-popup-logo { flex: none; width: 40px; height: 40px; border-radius: 10px; }
-.update-popup-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.update-popup h2 { margin: 0; color: var(--text-strong); font-size: 18px; line-height: 24px; font-weight: 600; overflow-wrap: anywhere; }
-.update-popup-about { margin: 0; color: var(--muted); font-size: 13px; line-height: 18px; }
-.update-popup-notes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: var(--s-3) var(--s-4); border-radius: 12px; background: var(--tile); color: var(--text); font-size: 13px; line-height: 19px; list-style: none; }
+.update-popup-words { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; min-height: 40px; }
+.update-popup h2 { margin: 0; overflow: visible; color: var(--text-strong); font-size: 18px; line-height: 24px; font-weight: 500; white-space: normal; text-overflow: clip; text-wrap: balance; overflow-wrap: break-word; }
+.update-popup-about { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 400; }
+.update-popup-notes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: var(--s-3) var(--s-4); border-radius: 12px; background: var(--tile); color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; list-style: none; }
 .update-popup-notes p { margin: 0; }
 ul.update-popup-notes li { position: relative; padding-left: 14px; }
 ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 4px; height: 4px; border-radius: 1px; background: var(--dimmed); }
-.update-popup-why { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0; color: var(--warning); font-size: 13px; line-height: 18px; }
-.update-popup-why .bi { width: 16px; height: 16px; margin-top: 1px; }
+.update-popup-why { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0; color: var(--warning); font-size: 14px; line-height: 20px; }
+.update-popup-why .bi { width: 16px; height: 16px; margin-top: 2px; }
 .update-popup-why span { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
 .update-popup-progress { display: flex; flex-direction: column; gap: var(--s-2); }
 .update-popup-progress-text { color: var(--muted); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .update-popup-track { position: relative; height: 6px; border-radius: 3px; background: var(--accented); overflow: hidden; }
 .update-popup-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: var(--primary); transition: width 0.2s linear; }
-.update-popup-failed { margin: 0; color: var(--error); font-size: 13px; line-height: 18px; }
+.update-popup-failed { margin: 0; color: var(--error); font-size: 14px; line-height: 20px; }
 .update-popup-foot { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-1); }
 .update-popup-foot a.btn { text-decoration: none; }
 

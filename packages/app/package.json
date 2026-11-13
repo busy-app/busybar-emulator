@@ -1,7 +1,7 @@
 {
   "name": "busybar-emulator-app",
   "productName": "BUSY Bar Emulator",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "private": true,
   "description": "The desktop shell of the BUSY Bar emulator: starts the emulator server as a separate process and shows its window",
   "license": "GPL-2.0-or-later",

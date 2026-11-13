@@ -1,7 +1,8 @@
 // The update's pop-up in the app (update-popup.mjs, legacy-window/update-popup.js), against the stand-in for GitHub
 // the updater's tests use: a newer version at the start shows it, with a few lines of the release's notes; Later
 // closes it and the top bar's notice stays; Update now starts the download, with its progress; a copy that cannot
-// replace itself offers Download; the first run's greeting goes first; and a version is offered once in a run.
+// replace itself offers Download; the first run's greeting goes first; a version is offered once in a run; a start
+// within a day of the last check still asks, and the pop-up follows; a long version's title is never cut.
 // UPDATE_POPUP_SHOTS=<folder> also saves pictures at 1200×800 and 900×650.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -16,6 +17,9 @@ import { PORTS, removeFolder, sleep, temporaryFolder, until } from "../helpers.m
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";
 
 const VERSION = "9.9.9";
+// The app's own version at this commit (a pre-release too).
+const OWN_VERSION = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
+const LATEST = "/repos/busy-app/busybar-emulator/releases/latest";
 const mac = process.platform === "darwin";
 const ASSET = mac ? (process.arch === "arm64" ? "busybar-emulator-mac-arm64.zip" : "busybar-emulator-mac-x64.zip") : "busybar-emulator-win-x64-setup.exe";
 const skip = { skip: (!HAS_REAL_SERVER && "the server is not beside this package") || (!["darwin", "win32"].includes(process.platform) && "no update on this system") };
@@ -106,10 +110,11 @@ afterEach(async () => {
   slow = false;
 });
 
-const start = async ({ env = {}, welcomed = true, place = target } = {}) => {
+const start = async ({ env = {}, welcomed = true, place = target, dataDir = null } = {}) => {
   app = await launch({
     server: "real",
     welcomed,
+    dataDir,
     env: {
       BUSY_EMULATOR_UPDATE_URL: `http://127.0.0.1:${PORTS.witness}/repos/busy-app/busybar-emulator/releases/latest`,
       BUSY_EMULATOR_UPDATE_RELEASES: `http://127.0.0.1:${PORTS.witness}/download`,
@@ -222,4 +227,53 @@ test("the first run's greeting goes first: the pop-up waits until it is closed",
   await until(() => shown("#update-popup"), "the pop-up after the greeting", 10_000);
   await key("Escape");
   await until(async () => !(await shown("#update-popup")), "Esc is Later");
+});
+
+test("a start within a day of the last check asks again: the release out since then shows the pop-up on its own", skip, async () => {
+  // The morning of 0.1.0-beta.2: the app checked an hour ago, when it was the newest; since then a release came out.
+  const folder = temporaryFolder();
+  try {
+    writeFileSync(path.join(folder, "app-settings.json"), `${JSON.stringify({ welcomed: true, updateChecked: Date.now() - 60 * 60 * 1000, updateFailed: null, updateLatest: OWN_VERSION, updateCheckedBy: OWN_VERSION })}\n`);
+    await start({ welcomed: false, dataDir: folder });
+    await until(() => shown("#update-popup"), "the pop-up at the start", 30_000);
+    assert.equal(await text("#update-popup-title"), `BUSY Bar Emulator ${VERSION} is available`);
+    assert.equal(asked.filter((url) => url === LATEST).length, 1, "one request at the start");
+    assert.equal(await app.run((shell) => shell.updates.requests), 1);
+  } finally {
+    await app?.close();
+    app = null;
+    await removeFolder(folder);
+  }
+});
+
+test("a long version's title is never cut: it wraps, at 900×650 and at 1200×800", skip, async () => {
+  const long = "10.10.10-beta.10";
+  const before = served[LATEST];
+  served[LATEST] = Buffer.from(JSON.stringify({ tag_name: `v${long}`, body: NOTES }));
+  try {
+    await start({ place: readOnly });
+    await until(() => shown("#update-popup"), "the pop-up", 30_000);
+    assert.equal(await text("#update-popup-title"), `BUSY Bar Emulator ${long} is available`);
+    for (const [w, h] of [
+      [900, 650],
+      [1200, 800],
+    ]) {
+      await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);
+      await sleep(400);
+      const box = await app.page(`(() => {
+        const title = document.querySelector("#update-popup-title");
+        const style = getComputedStyle(title);
+        const range = document.createRange();
+        range.selectNodeContents(title);
+        const words = range.getBoundingClientRect();
+        const room = title.getBoundingClientRect();
+        const card = document.querySelector("#update-popup .update-popup").getBoundingClientRect();
+        return { lines: Math.round(room.height / parseFloat(style.lineHeight)), cut: title.scrollWidth > title.clientWidth || title.scrollHeight > title.clientHeight || words.right > room.right + 0.5, ellipsis: style.textOverflow, size: style.fontSize, weight: style.fontWeight, inside: card.left >= 0 && card.right <= innerWidth && card.top >= 0 && card.bottom <= innerHeight };
+      })()`);
+      assert.deepEqual({ ...box, lines: box.lines <= 2 }, { lines: true, cut: false, ellipsis: "clip", size: "18px", weight: "500", inside: true }, `${w}×${h}: ${JSON.stringify(box)}`);
+    }
+    await shot("long-version");
+  } finally {
+    served[LATEST] = before;
+  }
 });

@@ -45,7 +45,7 @@ ask about. The BUSY Bar's port is always 8640. If another program holds it, the 
   GitHub CLI runs with its update check and its telemetry off. Nothing goes to GitHub until you sign in there or
   choose Use <login>; a push and a pull request each wait for your click (from the command line, for your yes in the
   app's own dialog).
-- **One check for a new version.** When the app starts, at most once a day (and once more at the first start of a newly installed version), it asks GitHub which release of
+- **One check for a new version.** Each time the app starts (not again within a minute of the last answer), and then once a day while it runs, it asks GitHub which release of
   the emulator is the latest: `GET https://api.github.com/repos/busy-app/busybar-emulator/releases/latest`. The
   request carries a fixed `User-Agent: busybar-emulator`, without the app's version, and an `Accept` header: no
   identifier, nothing about your computer. GitHub sees your network address, as it does when you open any of its

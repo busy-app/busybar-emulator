@@ -7,7 +7,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 import { PORTS } from "../helpers.mjs";
-import { askLatest, CHECK_EVERY_MS, compareVersions, createSettings, createUpdateCheck, FORCED_CHECK_EVERY_MS, isNewer, LATEST_RELEASE_URL, parseVersion, RELEASES, releasePage, RETRY_AFTER_FAILURE_MS, REQUEST_HEADERS, versionInAnswer, versionText } from "../../src/update-check.mjs";
+import { askLatest, CHECK_EVERY_MS, compareVersions, createSettings, createUpdateCheck, FORCED_CHECK_EVERY_MS, isNewer, LATEST_RELEASE_URL, parseVersion, RELEASES, releasePage, RETRY_AFTER_FAILURE_MS, REQUEST_HEADERS, START_CHECK_EVERY_MS, versionInAnswer, versionText } from "../../src/update-check.mjs";
 
 const folder = mkdtempSync(path.join(os.tmpdir(), "busy-app-update-"));
 after(() => rmSync(folder, { recursive: true, force: true }));
@@ -120,7 +120,7 @@ test("a newer release gives a notice with its version and its page; the answer i
   assert.deepEqual(check.notice, notices[0]);
   assert.equal(asked(), 1);
   assert.equal(check.requests, 1);
-  assert.deepEqual(kept(), { updateChecked: time.now, updateFailed: null, updateLatest: "0.2.0", updateCheckedBy: "0.1.0" });
+  assert.deepEqual(kept(), { updateAsked: time.now, updateChecked: time.now, updateFailed: null, updateLatest: "0.2.0", updateCheckedBy: "0.1.0" });
 });
 
 test("the same release or an older one gives no notice; a tag that is not a version is ignored", async () => {
@@ -151,7 +151,7 @@ test("a beta is told about the next beta and about the release, with the page of
   }
 });
 
-test("at most once a day: a start within a day of the last check asks nothing and shows what that check found", async () => {
+test("while the app runs, at most once a day: a check within a day of the last one asks nothing and shows what it found", async () => {
   const first = setup({ answers: [release("v0.2.0")] });
   await first.check.check();
   const time = { now: first.time.now + CHECK_EVERY_MS - 1000 };
@@ -175,7 +175,7 @@ test("the app that was updated meanwhile shows no notice for the version it now 
   assert.deepEqual(second.notices, []);
   assert.equal(second.asked(), 1);
   assert.equal(second.kept().updateCheckedBy, "0.1.0-beta.2");
-  // Its next start that day asks nothing.
+  // Its next check that day, while it runs, asks nothing.
   await second.check.check();
   assert.equal(second.asked(), 1);
   // A hotfix that came out the same day is found on the first start of the version before it.
@@ -213,6 +213,82 @@ test("a hotfix is not hidden for a day by a network that was down at the start: 
   time.now += RETRY_AFTER_FAILURE_MS * 2;
   await check.check();
   assert.equal(asked(), 2);
+});
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+test("every start asks once, whatever the last check was: a release out an hour after it is seen at the next start", async () => {
+  // The morning of 0.1.0-beta.2: beta.1 checked the evening before, when beta.2 was not out yet.
+  const first = setup({ current: "0.1.0-beta.1", answers: [release("v0.1.0-beta.1")] });
+  await first.check.check();
+  assert.equal(first.check.notice, null);
+  const time = { now: first.time.now + 60 * 60 * 1000 };
+  const second = setup({ current: "0.1.0-beta.1", answers: [release("v0.1.0-beta.2")], file: first.file, time });
+  second.check.start();
+  second.check.start(); // the app calls it once; a second call changes nothing
+  await settle();
+  second.check.stop();
+  assert.equal(second.asked(), 1);
+  assert.equal(second.check.requests, 1);
+  assert.equal(second.check.notice?.version, "0.1.0-beta.2");
+  assert.equal(second.kept().updateChecked, time.now);
+  // The daily rule holds for the rest of the run: the checks the timer makes ask nothing that day.
+  time.now += RETRY_AFTER_FAILURE_MS;
+  await second.check.check();
+  time.now += CHECK_EVERY_MS - RETRY_AFTER_FAILURE_MS - 1000;
+  await second.check.check();
+  assert.equal(second.asked(), 1);
+  time.now += 2000;
+  await second.check.check();
+  assert.equal(second.asked(), 2);
+});
+
+test("a start within a minute of the last answer takes it: an app started over and over is not a request each time", async () => {
+  const first = setup({ answers: [release("v0.2.0")] });
+  await first.check.check();
+  const time = { now: first.time.now + START_CHECK_EVERY_MS - 1000 };
+  const again = setup({ answers: [release("v0.3.0")], file: first.file, time });
+  again.check.start();
+  await settle();
+  again.check.stop();
+  assert.equal(again.asked(), 0);
+  assert.equal(again.check.notice?.version, "0.2.0", "what the last check found is shown at once");
+  // A minute on, the next start asks.
+  time.now += 2000;
+  const later = setup({ answers: [release("v0.3.0")], file: first.file, time });
+  later.check.start();
+  await settle();
+  later.check.stop();
+  assert.equal(later.asked(), 1);
+  assert.equal(later.check.notice?.version, "0.3.0");
+});
+
+test("a start after a failed check asks again, past the 15 minutes; within a minute of the failure it does not", async () => {
+  const first = setup({ answers: [new Error("ENOTFOUND")] });
+  await first.check.check();
+  const time = { now: first.time.now + 30_000 };
+  const soon = setup({ answers: [release("v0.2.0")], file: first.file, time });
+  soon.check.start();
+  await settle();
+  soon.check.stop();
+  assert.equal(soon.asked(), 0);
+  time.now += 5 * 60 * 1000;
+  const later = setup({ answers: [release("v0.2.0")], file: first.file, time });
+  later.check.start();
+  await settle();
+  later.check.stop();
+  assert.equal(later.asked(), 1);
+  assert.equal(later.check.notice?.version, "0.2.0");
+});
+
+test("a start with the menu's switch off asks nothing", async () => {
+  const off = setup({ answers: [release("v0.2.0")] });
+  off.check.setEnabled(false);
+  off.check.start();
+  await settle();
+  off.check.stop();
+  assert.equal(off.asked(), 0);
+  assert.equal(off.check.notice, null);
 });
 
 test("a build or a run that never checks asks nothing, whatever the settings say", async () => {
@@ -328,4 +404,25 @@ test("busy-emulator update --check asks now, but at most once a minute: within i
   await check.check({ force: true });
   assert.equal(asked(), 3);
   assert.equal(check.notice.version, "0.3.0");
+});
+
+test("a request still unanswered when the app ended counts: a loop of quick crashes asks at most once a minute", async () => {
+  const hung = new Promise(() => {}); // the app ends before GitHub answers
+  const first = setup({ answers: [hung] });
+  first.check.start();
+  await settle();
+  first.check.stop();
+  assert.equal(first.asked(), 1);
+  const time = { now: first.time.now + 5000 };
+  const again = setup({ answers: [release("v0.3.0")], file: first.file, time });
+  again.check.start();
+  await settle();
+  again.check.stop();
+  assert.equal(again.asked(), 0, "a start five seconds after an unanswered request does not ask again");
+  time.now += START_CHECK_EVERY_MS;
+  const later = setup({ answers: [release("v0.3.0")], file: first.file, time });
+  later.check.start();
+  await settle();
+  later.check.stop();
+  assert.equal(later.asked(), 1);
 });

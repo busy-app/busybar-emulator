@@ -2,7 +2,7 @@
 // one quiet line in the device window with a link for the user's browser; off in the test variant unless a test names
 // a stand-in on this machine, off with BUSY_EMULATOR_NO_UPDATE_CHECK=1, off by the menu's switch; silent when it fails.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
 import { after, afterEach, before, test } from "node:test";
@@ -135,7 +135,7 @@ test("the device page shows only a version written as one, and its link is its o
   }
 });
 
-test("at most once a day: the next start asks nothing and still shows what the last check found", async () => {
+test("every start asks once; a start within a minute of the last answer takes it and still shows what it found", async () => {
   folder = temporaryFolder();
   await start({}, { dataDir: folder });
   await until(notice, "the notice");
@@ -143,12 +143,26 @@ test("at most once a day: the next start asks nothing and still shows what the l
   assert.equal(settings().updateLatest, "9.9.9");
   await app.close();
   requests = [];
+  // Started again at once: the answer of a moment ago stands.
   await start({}, { dataDir: folder });
   await until(notice, "the notice of the second start");
   await sleep(700);
-  assert.equal(requests.length, 0, "the second start within a day asked again");
+  assert.equal(requests.length, 0, "a start within a minute of the last answer asked again");
   assert.equal(await app.run((shell) => shell.updates.requests), 0);
   if (HAS_REAL_SERVER) assert.match(await deviceUrl(), /#update=9\.9\.9&/);
+  await app.close();
+  requests = [];
+  // Started an hour after a check that found nothing newer: it asks, though the day is not over, and finds the release.
+  writeFileSync(path.join(folder, "app-settings.json"), `${JSON.stringify({ ...settings(), updateChecked: Date.now() - 60 * 60 * 1000, updateAsked: Date.now() - 60 * 60 * 1000, updateLatest: OWN_VERSION, updateCheckedBy: OWN_VERSION, updateNotes: undefined })}\n`);
+  await start({}, { dataDir: folder });
+  await until(notice, "the notice of the third start");
+  await sleep(500);
+  assert.equal(requests.length, 1);
+  assert.equal(await app.run((shell) => shell.updates.requests), 1);
+  // The checks while it runs keep the daily rule.
+  await app.run((shell) => shell.updates.check());
+  await sleep(300);
+  assert.equal(requests.length, 1);
 });
 
 test("the same version or an older one: no notice, no change in the window", async () => {

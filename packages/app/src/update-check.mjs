@@ -1,7 +1,7 @@
 // The notice of a new version (EMU-205; ADR-0014, point 6).
 //
-// At its start, at most once a day and again at the first start of a newly installed version, the app asks GitHub
-// which release of the emulator is the latest. When that release is newer than the app, the window shows one quiet
+// At every start, and then once a day while it runs, the app asks GitHub which release of the emulator is the latest
+// (one request per launch: a hotfix published an hour after the last check is seen at the next start, not a day later). When that release is newer than the app, the window shows one quiet
 // line with a link to the release page, which opens in the user's browser. Nothing is downloaded and nothing is installed.
 //
 // It is the one request the app makes by itself. It goes from the main process, not through a window's session
@@ -30,6 +30,11 @@ const MAX_ANSWER_BYTES = 1024 * 1024;
  * the answer of the last forced check stands.
  */
 export const FORCED_CHECK_EVERY_MS = 60_000;
+/**
+ * The check at the start asks whatever the daily rule says, but not again within this of the last answer: an app
+ * started over and over (by an agent, by a crash loop) is one request a minute, not one per launch.
+ */
+export const START_CHECK_EVERY_MS = 60_000;
 
 /**
  * A version by the rules of Semantic Versioning 2.0.0, "1.2.3" or "1.2.3-beta.1", with or without a leading "v":
@@ -131,46 +136,74 @@ function plainLine(line) {
     .trim();
 }
 
-/** `text` cut to `max` characters at a word, with an ellipsis when it was cut. */
+/**
+ * `text` cut to `max` characters, with an ellipsis when it was cut: at the end of a clause (a comma, a semicolon) when
+ * one is past the middle, else at a word.
+ */
 function cutAt(text, max) {
   if (text.length <= max) return text;
   const head = text.slice(0, max - 1);
+  const clause = Math.max(...[...head.matchAll(/[,;](?=\s)/g)].map((m) => m.index));
   const word = head.lastIndexOf(" ");
-  return `${(word > max / 2 ? head.slice(0, word) : head).replace(/[\s,;:.-]+$/, "")}…`;
+  const end = clause > max / 2 ? clause : word > max / 2 ? word : head.length;
+  return `${head.slice(0, end).replace(/[\s,;:.-]+$/, "")}…`;
 }
+
+/** A lead-in is one short line that ends with a colon ("The window:"): it introduces what follows and says nothing itself. */
+export const LEAD_IN_CHARS = 80;
+const isLeadIn = (paragraph) => paragraph.length === 1 && /:$/.test(paragraph[0]) && plainLine(paragraph[0]).length <= LEAD_IN_CHARS;
 
 /**
  * Two or three short lines of a release's notes (the body of GitHub's answer, the changelog's section first), for
  * the update's pop-up: { kind: "list", lines } for the first items of the first list, { kind: "text", lines: [one] }
- * for the first sentences of the first paragraph; null when there is nothing to say. Headings are skipped, and the
+ * for the first sentences of the first paragraph; null when there is nothing to say. Headings are skipped, and so is
+ * a lead-in before a list or a paragraph (the changelog groups its items under lines such as "The window:"); the
  * notes stop at the release's own "## Files". Plain text only: what is shown is never read as markup.
  */
 export function releaseSummary(body) {
   if (typeof body !== "string" || !body.trim()) return null;
   const items = [];
   let paragraph = [];
+  let lead = false; // the paragraph is a lead-in that a blank line closed: what comes next is what it introduces
+  let gap = false; // a blank line after the list's items: the list goes on only with another item
   for (const raw of body.slice(0, 64 * 1024).split(/\r?\n/)) {
     const line = raw.trim();
     if (/^#{1,6}\s/.test(line)) {
-      if (/^#{1,6}\s+files\b/i.test(line) || paragraph.length || items.length) break;
+      if (/^#{1,6}\s+files\b/i.test(line) || items.length || (paragraph.length && !isLeadIn(paragraph))) break;
+      paragraph = [];
+      lead = false;
       continue;
     }
     const item = /^(?:[-*+]|\d{1,3}[.)])\s+(.*)$/.exec(line);
     if (item) {
-      if (paragraph.length) break;
+      if (paragraph.length) {
+        if (!isLeadIn(paragraph)) break;
+        paragraph = [];
+        lead = false;
+      }
+      gap = false;
       const text = plainLine(item[1]);
       if (text) items.push(text);
       if (items.length >= SUMMARY_LINES) break;
       continue;
     }
     if (!line) {
-      if (paragraph.length || items.length) break;
+      if (items.length) gap = true;
+      else if (paragraph.length) {
+        if (!isLeadIn(paragraph)) break;
+        lead = true;
+      }
       continue;
     }
-    // A line that goes on a list's item belongs to it.
+    // A line that goes on a list's item belongs to it; after a blank line the list is over.
     if (items.length) {
+      if (gap) break;
       items[items.length - 1] = plainLine(`${items[items.length - 1]} ${line}`);
       continue;
+    }
+    if (lead) {
+      paragraph = [];
+      lead = false;
     }
     paragraph.push(line);
   }
@@ -178,6 +211,8 @@ export function releaseSummary(body) {
     const each = Math.floor(SUMMARY_CHARS / items.length);
     return { kind: "list", lines: items.map((text) => cutAt(text, Math.max(60, each))) };
   }
+  // A lead-in with nothing after it ("The window:" and then "## Files") says nothing on its own.
+  if (paragraph.length && isLeadIn(paragraph)) return null;
   const text = plainLine(paragraph.join(" "));
   if (!text) return null;
   // Whole sentences while they fit; the first one cut if it alone does not.
@@ -286,25 +321,35 @@ export function createUpdateCheck({ current, allowed, settings, ask, log, onNoti
 
   /**
    * One check, if one is due. Never rejects; `force` (busy-emulator update --check) asks now, at most once in
-   * FORCED_CHECK_EVERY_MS, and rejects when no answer came.
+   * FORCED_CHECK_EVERY_MS, and rejects when no answer came. `atStart` (start) asks past the daily rule and past the
+   * retry after a failure, unless the last answer or failure is less than START_CHECK_EVERY_MS old.
    */
-  async function check({ force = false } = {}) {
+  async function check({ force = false, atStart = false } = {}) {
     if (!enabled() || asking) return;
     if (force && lastForced && lastForced.at <= now() && now() - lastForced.at < FORCED_CHECK_EVERY_MS) {
       if (lastForced.error) throw lastForced.error;
       force = false;
     }
     if (force) lastForced = { at: now(), error: null };
-    const { updateChecked, updateFailed, updateLatest, updateCheckedBy } = settings.read();
+    const { updateChecked, updateFailed, updateLatest, updateCheckedBy, updateAsked } = settings.read();
     // What the last check found is shown without asking again.
     show(updateLatest);
     // A check made by another version (the person has just installed the new one) is not this version's: during the
     // hackathon a hotfix may follow the one just installed within the day, so the first start of a version asks again.
-    const fresh = updateCheckedBy === current && Number.isFinite(updateChecked) && updateChecked <= now() && now() - updateChecked < everyMs;
-    if (fresh && !force) return;
-    if (!force && Number.isFinite(updateFailed) && updateFailed <= now() && now() - updateFailed < RETRY_AFTER_FAILURE_MS) return;
+    const within = (at, ms) => Number.isFinite(at) && at <= now() && now() - at < ms;
+    const fresh = updateCheckedBy === current && within(updateChecked, everyMs);
+    if (atStart && !force) {
+      // Every launch asks once; only a launch right after the last request takes its answer.
+      // A request still unanswered when the app ended (a crash right after start) counts too: a loop of quick crashes
+      // asks at most once a minute.
+      if (within(updateChecked, START_CHECK_EVERY_MS) || within(updateFailed, START_CHECK_EVERY_MS) || within(updateAsked, START_CHECK_EVERY_MS)) return;
+    } else {
+      if (fresh && !force) return;
+      if (!force && within(updateFailed, RETRY_AFTER_FAILURE_MS)) return;
+    }
     asking = true;
     requests += 1;
+    settings.update({ updateAsked: now() });
     try {
       const answer = await ask();
       const version = versionInAnswer(answer);
@@ -340,10 +385,14 @@ export function createUpdateCheck({ current, allowed, settings, ask, log, onNoti
     },
     enabled,
     check,
-    /** Checks now and then once a day for as long as the app runs. */
+    /**
+     * Asks now, whatever the last check was (one request per launch: the app calls this once, from its single
+     * instance; windows and restarts of the server do not), and then once a day for as long as the app runs, or 15
+     * minutes after a check that got no answer.
+     */
     start() {
       if (!allowed || timer) return;
-      void check();
+      void check({ atStart: true });
       timer = setInterval(() => void check(), Math.min(everyMs, RETRY_AFTER_FAILURE_MS));
       timer.unref?.();
     },
