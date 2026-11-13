@@ -46,7 +46,8 @@ macOS needs 13.5 (Ventura) or later. The app installs for your user only, withou
 and the BUSY Bar tools are inside it. [SHA256SUMS](https://github.com/busy-app/busybar-emulator/releases/latest/download/SHA256SUMS)
 lists the checksum of each file.
 
-The beta is not notarized on macOS and not signed on Windows, so your system warns you the first time you open it.
+On macOS the app is signed and notarized by Apple, so it opens without a security warning. On Windows the setup is
+not signed yet, and SmartScreen warns you the first time you run it.
 [Here is what to do](public-docs/install.md#opening-it-for-the-first-time).
 
 **For AI agents:** [install-macos.sh](public-docs/install/install-macos.sh) and

@@ -17,7 +17,8 @@ Which Mac is yours: Apple menu → About This Mac says "Chip: Apple M…" on App
 Intel. [SHA256SUMS](https://github.com/busy-app/busybar-emulator/releases/latest/download/SHA256SUMS) lists the checksum of
 each file.
 
-The app is not notarized by Apple and not signed for Windows yet, so the system warns you the first time you open it:
+On macOS the app is signed and notarized by Apple and opens without a security warning. On Windows the setup is not
+signed yet, so SmartScreen warns you the first time you run it:
 [what to do](install.md#opening-it-for-the-first-time). It installs for your user only, without administrator rights.
 Node, npm and the BUSY Bar tools are inside it.
 

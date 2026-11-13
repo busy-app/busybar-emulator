@@ -7,11 +7,16 @@
 // electron package. The output lies outside the repository.
 //
 //   node tools/dist.mjs build [--kind release|test] [--arch arm64|x64|all] [--out <dir>] [--allow-uncommitted (test variant only)]
+//                             [--mac-identity "Developer ID Application: Name (TEAMID)" --notary-profile <name>]
 //                                                         --arch: which of this system's targets. A release builds
 //                                                         all of them by default (on a Mac: both), the test variant
-//                                                         this system's own.
+//                                                         this system's own. --mac-identity and --notary-profile
+//                                                         (a release only, both or neither): the macOS app is signed
+//                                                         with Developer ID and the hardened runtime, notarized and
+//                                                         stapled, and so is its disk image (packaging/sign-mac.mjs,
+//                                                         EMU-204); without them it keeps the ad hoc signature.
 //   node tools/dist.mjs sums [<release folder>]           SHA256SUMS for a folder holding every file of the release
-//   node tools/dist.mjs check [<release folder>] [--partial] [--export-check <tools/export-check>]
+//   node tools/dist.mjs check [<release folder>] [--partial] [--export-check <tools/export-check>] [--signed]
 //                                                         the produced files: names, sums, fuses, contents; on this
 //                                                         system's own files also the bundled Node, the command line
 //                                                         and the server, all without opening a window. Exit code 0:
@@ -19,7 +24,10 @@
 //                                                         what the export check refuses to publish, or not all of it
 //                                                         checked (another system's files; no export check here).
 //                                                         --export-check names the export check of the internal
-//                                                         repository, for a check run in the exported tree
+//                                                         repository, for a check run in the exported tree. --signed:
+//                                                         the macOS files must be signed with Developer ID and
+//                                                         notarized: every program, the tickets, Gatekeeper's
+//                                                         assessment, also of the disk image as a browser leaves it
 //
 // <out> holds release/ (the files of a release and nothing else), reports/ (what each build and check found),
 // work/ (the unpacked app as built) and test-variant/ (the test variant, never part of a release).
@@ -107,8 +115,14 @@ function commitTime() {
  * it needs (packaging/disk.mjs); `statfs` is for tests.
  * @returns {Promise<object[]>} the report of each target, also written to <out>/reports/build-<kind>-<target>.json
  */
-export async function build({ kind = "release", arch = null, out = defaultOutDir(), cacheDir = defaultCacheDir(), allowUncommitted = false, log = () => {}, version = appVersion(), statfs = null } = {}) {
+export async function build({ kind = "release", arch = null, out = defaultOutDir(), cacheDir = defaultCacheDir(), allowUncommitted = false, log = () => {}, version = appVersion(), statfs = null, macSign = null } = {}) {
   const targets = buildTargets({ kind, arch });
+  if (macSign) {
+    const { signingProblem } = await import("./packaging/sign-mac.mjs");
+    if (kind !== "release") throw new Error("The test variant is never signed with an identity: --mac-identity and --notary-profile are for a release.");
+    const problem = signingProblem(macSign);
+    if (problem) throw new Error(problem);
+  }
   if (insideFolder(out, repositoryRoot())) throw new Error(`The output ${out} lies inside the repository: built files must never be committed. Name a folder outside it.`);
   if (kind === "release" && allowUncommitted) throw new Error("A release is built from a commit only: --allow-uncommitted is for the test variant (--kind test).");
   checkReleaseVersion(kind, version);
@@ -123,11 +137,11 @@ export async function build({ kind = "release", arch = null, out = defaultOutDir
     throw new Error(`The build takes committed files only, and these are changed or not committed:\n  ${changes.join("\n  ")}\nCommit them, or pass --allow-uncommitted with --kind test for a build that is not a release.`);
   }
   const reports = [];
-  for (const target of targets) reports.push(await buildTarget({ target, kind, version, out, cacheDir, changes, log: targets.length > 1 ? (line) => log(`${target}: ${line}`) : log }));
+  for (const target of targets) reports.push(await buildTarget({ target, kind, version, out, cacheDir, changes, macSign, log: targets.length > 1 ? (line) => log(`${target}: ${line}`) : log }));
   return reports;
 }
 
-async function buildTarget({ target, kind, version, out, cacheDir, changes, log }) {
+async function buildTarget({ target, kind, version, out, cacheDir, changes, macSign = null, log }) {
   // Electron of the other architecture is unpacked beside the build's work and removed with it.
   const scratch = path.join(out, "work", `electron-${target}`);
   const { dist, version: electron, from: electronFrom } = await electronFor({ target, scratch, cacheDir, log });
@@ -138,7 +152,7 @@ async function buildTarget({ target, kind, version, out, cacheDir, changes, log 
 
   let built;
   if (target.startsWith("darwin-")) {
-    const { buildMacApp, dmgApp, zipApp } = await import("./packaging/macos.mjs");
+    const { buildMacApp, dmgApp, signAndNotarizeApp, signAndNotarizeDmg, zipApp } = await import("./packaging/macos.mjs");
     try {
       built = await buildMacApp({ target, electronDist: dist, work, kind, version, cacheDir, sourceTime, commit, log });
     } finally {
@@ -148,10 +162,14 @@ async function buildTarget({ target, kind, version, out, cacheDir, changes, log 
       const release = path.join(out, "release");
       mkdirSync(release, { recursive: true });
       const [dmg, zip] = RELEASE_FILES[target];
+      // Signed and stapled before the zip and the disk image are made, so that both carry the stapled app.
+      const signed = macSign ? await signAndNotarizeApp(built.app, { ...macSign, work, sourceTime, log }) : null;
       log(`zipping into ${zip}`);
       zipApp(built.app, path.join(release, zip));
       log(`making ${dmg}`);
       dmgApp(built.app, path.join(release, dmg), { work });
+      const signedDmg = macSign ? await signAndNotarizeDmg(path.join(release, dmg), { ...macSign, log }) : null;
+      report.signature = signed ? { kind: "developer-id", identity: macSign.identity, team: signed.team, machO: signed.machO, signed: signed.signed, notarized: { app: signed.submission, dmg: signedDmg.submission } } : { kind: "adhoc" };
       report.files = sizesOf(release, RELEASE_FILES[target]);
     } else {
       const to = path.join(out, "test-variant", target);
@@ -211,8 +229,11 @@ async function main(argv) {
     const out = path.resolve(take("--out") ?? defaultOutDir());
     const cacheDir = take("--cache");
     const allowUncommitted = flag("--allow-uncommitted");
+    const identity = take("--mac-identity");
+    const profile = take("--notary-profile");
     if (args.length) throw new Error(`Unknown arguments: ${args.join(" ")}`);
-    const reports = await build({ kind, arch, out, cacheDir: cacheDir ? path.resolve(cacheDir) : undefined, allowUncommitted, log });
+    const macSign = identity || profile ? { identity, profile } : null;
+    const reports = await build({ kind, arch, out, cacheDir: cacheDir ? path.resolve(cacheDir) : undefined, allowUncommitted, log, macSign });
     // One document: the report of the one target built, or the list of them.
     console.log(JSON.stringify(reports.length === 1 ? reports[0] : reports, null, 2));
     return 0;
@@ -227,6 +248,7 @@ async function main(argv) {
   if (command === "check") {
     const { checkRelease, useExportCheck } = await import("./packaging/check.mjs");
     const partial = flag("--partial");
+    const signed = flag("--signed");
     const exportCheck = take("--export-check");
     const folder = path.resolve(args.shift() ?? path.join(defaultOutDir(), "release"));
     if (exportCheck) {
@@ -234,7 +256,7 @@ async function main(argv) {
       useExportCheck(exportCheck);
     }
     if (args.length) throw new Error(`Unknown arguments: ${args.join(" ")}`);
-    const result = await checkRelease({ folder, partial, log });
+    const result = await checkRelease({ folder, partial, signed, log });
     const reports = path.join(path.dirname(folder), "reports");
     mkdirSync(reports, { recursive: true });
     writeFileSync(path.join(reports, `check-${targetOfHost()}.json`), `${JSON.stringify(result, null, 2)}\n`);
@@ -259,7 +281,7 @@ async function main(argv) {
     }
     return 0;
   }
-  console.error("usage: dist.mjs build [--kind release|test] [--arch arm64|x64|all] [--out <dir>] [--cache <dir>] [--allow-uncommitted]\n       dist.mjs sums [<release folder>]\n       dist.mjs check [<release folder>] [--partial] [--export-check <folder>]");
+  console.error("usage: dist.mjs build [--kind release|test] [--arch arm64|x64|all] [--out <dir>] [--cache <dir>] [--allow-uncommitted] [--mac-identity <identity> --notary-profile <profile>]\n       dist.mjs sums [<release folder>]\n       dist.mjs check [<release folder>] [--partial] [--export-check <folder>] [--signed]");
   return 2;
 }
 

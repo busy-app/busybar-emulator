@@ -176,8 +176,9 @@ page gets the login and the results. A development run and the test variant may 
 - `tools/bundled-gh.mjs`, `bundled-gh.json` — the pinned gh (2.103.3): the archives of its release for macOS (arm64,
   amd64) and Windows (amd64), checked against the SHA-256 sums of the release's checksums file and refused on a
   mismatch, staged unchanged into `<resources>/gh/` (`bin/gh` or `bin/gh.exe`, `LICENSE`). On macOS it keeps GitHub's
-  Developer ID signature (the bundle's ad hoc signature does not replace it); the release check runs `gh --version`
-  and checks the signature.
+  Developer ID signature in an ad hoc signed build (the bundle's ad hoc signature does not replace it), and carries
+  the app's own in a release signed with Developer ID (below); the release check runs `gh --version` and checks the
+  signature.
 
 The tests run a stand-in for gh (`test/fixtures/fake-gh.mjs`: the commands above, nothing more) against a stand-in for
 GitHub on 127.0.0.1 (`test/fixtures/github-stub.mjs`); a release always runs the gh inside it.
@@ -271,7 +272,8 @@ Windows executable (`resedit`). Then the fuses (`packaging/fuses.mjs`, ADR-0016:
 `EnableCookieEncryption` and `LoadBrowserProcessSpecificV8Snapshot` off; `EnableEmbeddedAsarIntegrityValidation`,
 `OnlyLoadAppFromAsar` and `WasmTrapHandlers` on), set with `@electron/fuses` and read back by our own reader. On macOS
 Info.plist loses the descriptions of access (camera, microphone, Bluetooth, audio capture) and the exception for plain
-HTTP, and the app is signed ad hoc. On Windows the executable's version information names the app and loses
+HTTP, and the app is signed ad hoc; a release built with an identity is then signed with Developer ID and notarized
+(below). On Windows the executable's version information names the app and loses
 Electron's company, copyright and Squirrel mark; Electron's signature no longer matches and is dropped.
 
 **The license summary.** Every build has `THIRD_PARTY_NOTICES.md` in its resources folder (macOS
@@ -306,7 +308,23 @@ writes.
 
 **The integrity check protects a signed build only.** Without a signature, whoever can change `app.asar` can change
 the hash recorded beside it (Info.plist, the executable's resources) as well: `test/app/built.test.mjs` does exactly
-that and the app starts. The first releases are unsigned (ADR-0002, section 4).
+that and the app starts. The first releases were unsigned (ADR-0002, section 4); from 0.1.0-beta.4 the macOS app is
+signed with Developer ID (EMU-204), Windows is still unsigned.
+
+**The release's macOS signature** (`packaging/sign-mac.mjs`, EMU-204). `dist.mjs build --mac-identity "<Developer ID
+Application: Name (TEAMID)>" --notary-profile <profile>`, a release only, signs every Mach-O file of the app inside
+out, found by its first bytes (a native module added later is found too), each bundle after what it holds and the app
+last, with `codesign --force --timestamp --options runtime --entitlements packaging/entitlements.mac.plist` and never
+`--deep`. The entitlements (JIT, unsigned executable memory, library validation off for the native modules npm puts in
+people's projects) are the same for every program; the file says why each is there. Then the app is zipped and sent
+to Apple's notary service (`notarytool --keychain-profile`), its ticket stapled; the release's zip and disk image are
+made from the stapled app, and the disk image is signed, notarized and stapled too. `dist.mjs check --signed` checks
+every program's authority, team, hardened runtime and timestamp, both tickets, `spctl --assess` of the app and the
+disk image, and the disk image again with the quarantine mark of a browser's download (mounted as quarantined, its
+app assessed). The zip is unpacked onto a scratch volume of its own (`packaging/scratch-volume.mjs`): once code of a
+notarized app has run, macOS's App Management protection lets no process of another team change or remove it. `npm run release` passes the
+identity and the profile (docs/release.md); without them the build keeps the ad hoc signature, and the test variant
+never has more.
 
 **The setup** (`installer/windows/setup.cs`) is a small C# program compiled with the C# compiler of .NET Framework 4
 that is part of Windows, as the command line's entry is; the app folder follows it as a zip, and a trailer with the

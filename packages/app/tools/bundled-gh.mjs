@@ -2,8 +2,10 @@
 // GitHub CLI inside the app (Publish stage 2, src/github/gh.mjs): one pinned release of github.com/cli/cli, taken at
 // build time from the release's archives and checked against the SHA-256 sums recorded in bundled-gh.json, which come
 // from the release's own checksums file. Nothing is downloaded while the app runs. gh is put in unchanged: on macOS
-// it keeps GitHub's signature and notarisation (Developer ID Application: GitHub, team VEKTX9H2N7), which the
-// packaging's ad hoc signature of the bundle does not replace (it signs code in Contents/Resources as data).
+// it keeps GitHub's signature and notarization (Developer ID Application: GitHub, team VEKTX9H2N7), which the
+// packaging's ad hoc signature of the bundle does not replace (it signs code in Contents/Resources as data). A release
+// signed with Developer ID signs gh again with the app's identity and the hardened runtime, as it does every program
+// in the app (packaging/sign-mac.mjs, EMU-204).
 //
 //   node tools/bundled-gh.mjs pin <version>                       records the version and the sums of its archives,
 //                                                                 from gh_<version>_checksums.txt of the release

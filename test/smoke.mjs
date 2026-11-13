@@ -51,8 +51,9 @@
 //   server or the command line is no socket of the app's, and Chromium's log does not cover Node; processes the app
 //   starts from outside its bundle (/usr/bin/open, ps) are not watched.
 //
-// Stopped by Ctrl+C, SIGTERM or SIGHUP, the test quits the app, removes its temporary folder and ends with exit code
-// 130: the app runs on its own, and only the test knows its data folder.
+// Stopped by Ctrl+C, SIGTERM or SIGHUP, the test goes no further: it ends the commands of the app's it has going, quits
+// the app, removes its temporary folder and ends with exit code 130, once every process it started is gone: the app
+// runs on its own, and only the test knows its data folder.
 //
 // Exit code 0: every check passed; 1: a check failed; 2: a wrong call or an app this test cannot run; 130: stopped.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
@@ -393,14 +394,39 @@ Object.assign(env, {
 if (win) env.LOCALAPPDATA = homeDir;
 else env.HOME = homeDir;
 
+// Stopped by a signal (below), the run goes no further: it starts no command of the app's but the quit, and gets no
+// answer from one it has going, which is ended. Before, the run went on beside the signal's handler: after SIGTERM it
+// took a screenshot, recorded against an app that was quitting and started `busy-emulator mcp`, and the test ended
+// with that command's process still running (13.11, the release's gate of beta.2 and beta.4).
+class Stopped extends Error {}
+let stopping = false;
+// The app's command-line processes the run has going, each with whether a signal ends it: all but the quit, and the
+// start, which is let finish so that the quit after it finds the app it started.
+const commands = new Map(); // child -> { stoppable, gone }
+function track(child, stoppable) {
+  const gone = new Promise((resolve) => {
+    child.once("exit", resolve);
+    child.once("error", resolve);
+  });
+  commands.set(child, { stoppable, gone });
+  gone.then(() => commands.delete(child));
+}
+/** Ends the commands a signal ends, then waits until every command the run started is gone. */
+async function endCommands() {
+  for (const [child, { stoppable }] of commands) if (stoppable) child.kill();
+  await Promise.all([...commands.values()].map((c) => c.gone));
+}
+
 /**
  * One command of the app's command line, with --json: its answer, parsed. Done when the command's process ends, not
  * when its output closes: on Windows the app that `start` launches directly inherits the command's output handles and
- * keeps them open as long as it runs.
+ * keeps them open as long as it runs. Once the run is stopped it rejects with Stopped, but for the quit (`quitting`).
  */
-function cli(args, timeoutMs = 120_000) {
-  return new Promise((resolve) => {
+function cli(args, timeoutMs = 120_000, { quitting = false } = {}) {
+  if (stopping && !quitting) return Promise.reject(new Stopped());
+  return new Promise((resolve, reject) => {
     const child = spawnProgram(layout.cli, [...args, "--json"], { env, cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    track(child, !quitting && args[0] !== "start");
     let stdout = "";
     let stderr = "";
     let ended = 0;
@@ -418,7 +444,8 @@ function cli(args, timeoutMs = 120_000) {
       } catch {
         // Below: no answer.
       }
-      resolve({ code, answer, stdout, stderr });
+      if (stopping && !quitting) reject(new Stopped());
+      else resolve({ code, answer, stdout, stderr });
     };
     child.stdout.setEncoding("utf8").on("data", (c) => (stdout += c));
     child.stderr.setEncoding("utf8").on("data", (c) => (stderr += c));
@@ -439,14 +466,19 @@ function cli(args, timeoutMs = 120_000) {
 const told = (r) => (r.answer ? JSON.stringify(r.answer) : `exit ${r.code}: ${(r.stderr || r.stdout || "").trim().slice(0, 400)}`);
 
 async function bar(method, route, body, headers = {}) {
+  if (stopping) throw new Stopped();
   const r = await fetch(`http://127.0.0.1:${port}/api/${route}`, { method, body, headers });
-  return { status: r.status, text: await r.text() };
+  const text = await r.text();
+  if (stopping) throw new Stopped();
+  return { status: r.status, text };
 }
 
 /** `busy-emulator mcp` over stdio, as a chat client starts it: initialize, then tools/list. { tools } or { error }. */
 function mcpHandshake(timeoutMs = 30_000) {
-  return new Promise((resolve) => {
+  if (stopping) return Promise.reject(new Stopped());
+  return new Promise((resolve, reject) => {
     const child = spawnProgram(layout.cli, ["mcp"], { env, cwd: root, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    track(child, true);
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -456,7 +488,8 @@ function mcpHandshake(timeoutMs = 30_000) {
       clearTimeout(timer);
       child.stdin.end();
       setTimeout(() => child.kill(), 2000).unref();
-      resolve(result);
+      if (stopping) reject(new Stopped());
+      else resolve(result);
     };
     const timer = setTimeout(() => finish({ error: `no answer to tools/list within ${timeoutMs / 1000} s: ${(stderr || stdout).trim().slice(-300)}` }), timeoutMs);
     child.on("error", (e) => finish({ error: e.message }));
@@ -497,7 +530,7 @@ let ending = null;
 function endApp() {
   ending ??= (async () => {
     if (started || (await appProcesses()).size) {
-      const quit = await cli(["quit"], 60_000);
+      const quit = await cli(["quit"], 60_000, { quitting: true });
       if (!(quit.code === 0 && quit.answer?.ok)) fail(`busy-emulator quit: ${told(quit)}`);
     }
     // Every process of the app gone, the port free: what the test started, it ends.
@@ -531,10 +564,14 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
     if (interrupted) process.exit(130);
     say(`stopped by ${signal}: quitting the app and removing the temporary folder`);
+    stopping = true;
     interrupted = (async () => {
       try {
+        // What the run had going first, then the app; the test ends only once every command it started is gone.
+        await endCommands();
         await endApp();
         await watcher.stop();
+        await endCommands();
       } finally {
         removeRoot();
         process.exit(130);
@@ -624,7 +661,8 @@ try {
     }
   }
 } catch (e) {
-  fail(`the run stopped: ${e?.stack ?? e}`);
+  // Stopped by a signal: whatever failed after it is the stop's doing.
+  if (!stopping) fail(`the run stopped: ${e?.stack ?? e}`);
 } finally {
   await endApp();
 }

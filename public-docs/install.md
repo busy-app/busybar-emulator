@@ -44,11 +44,12 @@ The app sends nothing about you anywhere, and its emulated BUSY Bar answers on 1
 
 ## Opening it for the first time
 
-The first releases are not notarized by Apple and not signed for Windows. Your system warns you once, the first time
-you open the app; after that it opens like any other app.
+On macOS the app is signed with a Developer ID and notarized by Apple, so it opens without a security warning. On
+Windows the setup is not signed: SmartScreen warns you once, the first time you run it; after that the app opens like
+any other app.
 
-The steps below follow Apple's and Microsoft's documentation for macOS 15 and Windows. They have not been walked
-through on a clean machine yet, and the exact words on your screen may differ.
+The Windows steps below follow Microsoft's documentation for Windows 10 and 11. The exact words on your screen may
+differ.
 
 ### macOS
 
@@ -58,15 +59,15 @@ through on a clean machine yet, and the exact words on your screen may differ.
 2. Drag BUSY Bar Emulator to Applications. Do not open it from the disk image or from Downloads: macOS then runs it
    from a temporary read-only place, and the emulator asks you to move it: "BUSY Bar Emulator cannot work from where
    it is now … Quit, drag BUSY Bar Emulator to the Applications folder and open it from there."
-3. Open BUSY Bar Emulator from Applications. macOS refuses: it says it cannot verify that the app is free of malware.
-   Choose **Done** (not Move to Trash).
-4. Open **System Settings → Privacy & Security**, scroll to Security, where it says BUSY Bar Emulator "was blocked to
-   protect your Mac", and choose **Open Anyway**. Confirm with **Open Anyway** in the dialog that follows; macOS may
-   ask for your login password.
-5. BUSY Bar Emulator opens. From now on it opens without a question.
+3. Open BUSY Bar Emulator from Applications. The first time, macOS says it is an app downloaded from the internet and
+   asks whether to open it: choose **Open**. From now on it opens without a question.
 
-On macOS 15, Control-click → Open no longer lets an app through as it did on earlier versions; System Settings is
-the only way.
+**Releases before 0.1.0-beta.4 are not notarized.** macOS refuses to open one at first: it says it cannot verify that
+the app is free of malware. Choose **Done** (not Move to Trash), open **System Settings → Privacy & Security**,
+scroll to Security, where it says BUSY Bar Emulator "was blocked to protect your Mac", and choose **Open Anyway**;
+confirm with **Open Anyway** in the dialog that follows (macOS may ask for your login password). On macOS 15,
+Control-click → Open no longer lets such an app through; System Settings is the only way. The built-in update brings
+an older release to the notarized one.
 
 ### Windows
 
@@ -81,9 +82,10 @@ the only way.
 macOS and Windows warn only about files marked as coming from the internet, and browsers are what mark them. A file
 fetched with `curl` on macOS, or with `Invoke-WebRequest` or `curl.exe` in PowerShell, carries no such mark (seen on
 macOS 15 and Windows 10). Gatekeeper on macOS and SmartScreen on Windows do not check it, and the app opens without
-a warning. That is how the agent's sequence below works. For this app, which is neither notarized nor signed, it
-leaves HTTPS to GitHub as the only check. If you download the zip with a browser and unpack it yourself, the mark
-goes with it, and the steps above apply.
+a warning. That is how the agent's sequence below works. On macOS the app is still signed and notarized, whatever
+fetched it; on Windows, where the setup is not signed, this leaves HTTPS to GitHub and the sums in `SHA256SUMS` as the
+only checks. If you download the zip with a browser and unpack it yourself, the mark goes with it, and the steps above
+apply.
 
 ## For agents: install and start the emulator
 
@@ -455,3 +457,8 @@ rm -rf "$HOME/Library/Application Support/BUSY Bar Emulator"
 
 If the app is in `/Applications`, delete it there instead. There is no uninstaller on macOS: these four places are
 everything the app puts on the disk, besides GitHub CLI's sign-in (above).
+
+macOS protects a notarized app that has run from changes by other programs. If `rm` answers "Operation not
+permitted" for `BUSY Bar Emulator.app` (and macOS says your terminal was prevented from modifying apps), drag the app
+to the Trash in the Finder instead, or allow your terminal under **System Settings → Privacy & Security → App
+Management**. The other three places are not protected.

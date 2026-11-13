@@ -22,9 +22,9 @@ Before you download or run anything, tell the user the following and wait for a 
   - its data: `~/Library/Application Support/BUSY Bar Emulator`, or `%LOCALAPPDATA%\BUSY Bar Emulator`;
   - its command line: `~/.busy-emulator/bin`, or `%LOCALAPPDATA%\busy-emulator\bin`.
 
-  No administrator rights, no `sudo`, no system setting changed. The first releases are not notarized or signed,
-  and a file downloaded by a command skips the system's first-open warning. The checksum proves the download is
-  complete; only HTTPS to github.com vouches for its origin.
+  No administrator rights, no `sudo`, no system setting changed. A file downloaded by a command skips the system's
+  first-open check. The checksum proves the download is complete. On macOS the app is also signed and notarized by
+  Apple; the Windows setup is not signed, so there only HTTPS to github.com vouches for its origin.
 - **What you will ask to be allowed.** To run the install script, to read the pointer file (step 1), and to run
   `busy-emulator` outside your sandbox. That lets you start the emulator and build and run the project's code on
   this computer. To be asked only once, the user can allow that one command by its full path in your tool's

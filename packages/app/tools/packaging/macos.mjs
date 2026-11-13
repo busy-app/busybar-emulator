@@ -3,7 +3,8 @@
 // with the app's archive, the resources, the release's fuses and an ad-hoc signature (on Apple Silicon, code without
 // any signature does not run; ADR-0002, section 4). Then the zip (ditto, as the agent's instructions unpack it) and
 // the disk image (hdiutil). Only programs of macOS are used, and none of the built app is run: a Mac of either
-// architecture builds both.
+// architecture builds both. A release built with an identity is then signed with Developer ID and notarized
+// (signAndNotarizeApp, signAndNotarizeDmg; sign-mac.mjs), before and after its zip and disk image are made.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, lstatSync, lutimesSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -162,6 +163,40 @@ export async function buildMacApp({ target, electronDist, work, kind, version, c
   run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
   setTimes(app, sourceTime);
   return { app, helpers, headerHash: archive.headerHash, archiveFiles: archive.files, emulatorFiles: staged.emulatorFiles, fuses };
+}
+
+/**
+ * The release's own signature (EMU-204, sign-mac.mjs) over the ad hoc one: every program signed with the Developer ID
+ * identity and the hardened runtime, the app zipped into <work> and notarized by Apple, its ticket stapled. The zip
+ * and the disk image of the release are made after this, from the stapled app.
+ * @returns {{ team: string, machO: number, signed: number, submission: string }}
+ */
+export async function signAndNotarizeApp(app, { identity, profile, work, sourceTime, log = () => {} }) {
+  const { notarize, signMacApp, staple, teamOf } = await import("./sign-mac.mjs");
+  const signed = signMacApp(app, { identity, log });
+  const zip = path.join(work, `notarize-${path.basename(work)}.zip`);
+  zipApp(app, zip);
+  let submission;
+  try {
+    submission = notarize(zip, { profile, log });
+  } finally {
+    rmSync(zip, { force: true });
+  }
+  staple(app, { log });
+  log(`the app is notarized and stapled (submission ${submission.id})`);
+  // The ticket is a new file in the bundle: every file gets the commit's time again, as before the signature.
+  setTimes(app, sourceTime);
+  return { team: teamOf(identity), ...signed, submission: submission.id };
+}
+
+/** The disk image's own signature, notarization and ticket (after dmgApp, from the stapled app). */
+export async function signAndNotarizeDmg(dmg, { identity, profile, log = () => {} }) {
+  const { notarize, signDmg, staple } = await import("./sign-mac.mjs");
+  signDmg(dmg, { identity });
+  const submission = notarize(dmg, { profile, log });
+  staple(dmg, { log });
+  log(`${path.basename(dmg)} is signed, notarized and stapled (submission ${submission.id})`);
+  return { submission: submission.id };
 }
 
 /** The zip of the bundle: the bundle as its one top folder, without resource forks, extended attributes or ACLs. */

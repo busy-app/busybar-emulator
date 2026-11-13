@@ -46,7 +46,16 @@ async function clickOn(find, what) {
   }, at);
 }
 const part = (name) => clickOn(`document.querySelector(${q(`.create-app [data-part='${name}']`)})`, `the ${name} button`);
-const way = (id) => clickOn(`document.querySelector(${q(`.create-app-way[data-way='${id}']`)})`, `the way ${id}`);
+// The click goes in as an input event and is handled later; while the pop-up still settles it can miss. So wait
+// for the tab to be the chosen one, and click again if it is not.
+async function way(id) {
+  const chosen = () => app.page(`document.querySelector(".create-app-way.on")?.dataset.way === ${q(id)}`);
+  for (let i = 0; i < 5 && !(await chosen()); i++) {
+    await clickOn(`document.querySelector(${q(`.create-app-way[data-way='${id}']`)})`, `the way ${id}`);
+    await until(chosen, `the way ${id} to be chosen`, 2_000, 50).catch(() => {});
+  }
+  assert.ok(await chosen(), `the way ${id} is chosen`);
+}
 const isOpen = () => app.page(`!(document.querySelector(".create-app-scrim")?.hidden ?? true)`);
 const said = () => app.page(`document.querySelector(".create-app-said")?.textContent ?? ""`);
 const pane = () => app.page(`document.querySelector(".create-app-pane")?.innerText ?? ""`);
@@ -88,7 +97,7 @@ test("Install a package: chosen in the dialog, asked about by name, id and versi
 
   await openCreateApp();
   await way("package");
-  assert.match(await pane(), /reads its manifest and checks it the way the BUSY Bar does/);
+  await until(async () => /reads its manifest and checks it the way the BUSY Bar does/.test(await pane()), "the package pane", 10_000, 50);
   await shot("1-package");
   // A broken archive: the command line's reason, and no question.
   await app.run((shell, _electron, file) => shell.folderDialogs.standIn(file), broken);

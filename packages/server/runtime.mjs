@@ -244,7 +244,7 @@ export class AppRuntime {
    * of that run, never by the host's setInterval: that one drops the runs it was late for and drifts by its own
    * lateness every period (a millisecond on macOS, up to 16 ms on Windows), and the app fell behind with it.
    */
-  arm(t) {
+  arm(t, delay = t.due - this.wall()) {
     clearTimeout(t.handle);
     t.handle = setTimeout(() => {
       t.handle = null;
@@ -252,13 +252,18 @@ export class AppRuntime {
       // the run starts when the host fired, so a run the host was late for, landed just before the next period, and
       // that next run, fired early, came in the same ms of the app's clock: one period run twice (EMU-294, a gate's
       // load: "200/0 0/0"). A run is never before its time.
-      if (this.wall() < t.due) {
-        this.arm(t);
-        return;
-      }
+      if (this.wall() < t.due) return this.arm(t);
+      // Nor, at the computer's speed, in the whole ms of the app's clock that its last run ended in. The app reads its
+      // clock in whole ms (Date.now()), and the firmware counts its timers in ticks of a ms: on the bar the run after a
+      // late one is due at the first of the timer's periods after the late one's tick, a later ms. Here the times have
+      // fractions of a ms: a run the host was late for could land a fraction of a ms before the next period's time, in
+      // the same whole ms, and the next run, on time, came in that ms too (EMU-294, the release's gate of 13.11:
+      // "200/0 0/1"). It waits for the app's next ms then: its period stays where it was, the run is under a ms later.
+      // That very ms only: a clock set back meanwhile is no reason to wait until it comes back to it.
+      if (!this.speed && Math.floor(this.appClock(this.wall())) === t.lastRunMs) return this.arm(t, 1 - (this.appClock(this.wall()) % 1));
       this.post((start) => this.runTimer(t, start), t.timer, t.due);
       if (!t.periodic) t.fired = true;
-    }, Math.max(0, t.due - this.wall()));
+    }, Math.max(0, delay));
   }
 
   /**
@@ -280,6 +285,18 @@ export class AppRuntime {
       this.arm(t);
     }
     this.M._emu_timer_fire(t.timer);
+    // The whole ms of the app's clock the run ended in: the next run comes in a later one (arm).
+    t.lastRunMs = Math.floor(this.appClock(this.now()));
+  }
+
+  /**
+   * The app's clock (its Date.now(), before JerryScript drops the fraction) at `at`, a time of the app's (now()): the
+   * bar's clock, on the app's time. clockOffset is how far that is from the ticks' clock: the computer's clock set back
+   * (computer-clock.mjs) and the bar's set apart from it (POST /api/time/timestamp). The time that passed at once
+   * (skip) is in the bar's clock already, so it is taken off the app's own here.
+   */
+  appClock(at) {
+    return at - this.skipped + (this.clockOffset?.() ?? 0);
   }
 
   /** The app's clock: inside a slice it advances by the bar's time for the work done so far. */
@@ -315,10 +332,8 @@ export class AppRuntime {
           this.consoleLine = "";
         }
       },
-      // Date.now(): the bar's clock, on the app's time. clockOffset is how far that is from the ticks' clock: the
-      // computer's clock set back (computer-clock.mjs) and the bar's set apart from it (POST /api/time/timestamp).
-      // The time that passed at once (skip) is in the bar's clock already, so it is taken off the app's own here.
-      now: () => this.now() - this.skipped + (this.clockOffset?.() ?? 0),
+      // Date.now(): the bar's clock, on the app's time (appClock).
+      now: () => this.appClock(this.now()),
       tza: () => (this.tzOffsetMin ? this.tzOffsetMin() : -new Date().getTimezoneOffset()) * 60000,
       fatal: (code) => {
         this.fatal = FATAL[code] ?? `code ${code}`;

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The entitlements of every program in the release's macOS app, signed with Developer ID and the hardened runtime
+  (sign-mac.mjs, EMU-204). Notarization requires the hardened runtime; these three are what the app needs under it,
+  and nothing more. The same list for every program: the app, its four helpers, Electron's frameworks and helpers,
+  the bundled Node and gh.
+-->
+<plist version="1.0">
+<dict>
+  <!-- V8 compiles JavaScript to machine code at run time, in Electron's processes and in the bundled Node. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- V8 and WebAssembly write code into memory that is not mapped with MAP_JIT (the engine runs as WebAssembly). -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- The bundled Node loads native modules (.node) that npm installs into people's projects; those are not signed by us. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

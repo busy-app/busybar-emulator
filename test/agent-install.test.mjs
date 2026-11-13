@@ -19,7 +19,9 @@
 // it) the sequence also runs on the real files:
 //   - the release's own file: downloaded, checked, installed, its command line answers `version`. It is not started:
 //     a release takes the user's own folders and port 8640. On macOS the installed app passes codesign --verify and
-//     carries no quarantine mark; on Windows the setup is not marked as coming from the internet.
+//     carries no quarantine mark; a release signed with Developer ID (EMU-204) is also accepted by Gatekeeper as
+//     notarized, an unsigned build keeps the ad hoc signature. On Windows the setup is not marked as coming from the
+//     internet.
 //   - the test variant packed under the release's name: the whole sequence, started hidden on a port of 8720-8729
 //     with the case's own folders, the command line read from the pointer file, `status`, then `quit`.
 //   - the release's file changed by one byte on its way: refused before anything is unpacked or run.
@@ -39,6 +41,7 @@ import { fileURLToPath } from "node:url";
 
 import { execProgram, spawnProgram } from "../packages/engine/programs.mjs";
 import { ALL_RELEASE_FILES, RELEASE_FILES } from "../packages/app/tools/packaging/names.mjs";
+import { attachScratchVolume } from "../packages/app/tools/packaging/scratch-volume.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, ".."); // emulator/
@@ -64,9 +67,12 @@ const children = new Set();
 let server;
 let base;
 
+const volumes = [];
+
 after(async () => {
   for (const child of children) child.kill();
   await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
+  for (const v of volumes) v.remove();
   for (const f of folders) rmSync(f, { recursive: true, force: true });
 });
 
@@ -227,6 +233,20 @@ function macCase(name) {
   const folder = tempFolder(name);
   const home = path.join(folder, "home");
   mkdirSync(home);
+  return { folder, home };
+}
+
+/**
+ * A case on a scratch volume of its own (packages/app/tools/packaging/scratch-volume.mjs), for a notarized release's
+ * app: once its command line has run, macOS's App Management protection lets no process of another team (this test)
+ * remove the app, and the volume goes whole instead.
+ */
+function macCaseOnVolume(name) {
+  const volume = attachScratchVolume(tempFolder(name), { name: "case" });
+  volumes.push(volume);
+  const folder = path.join(volume.mount, name);
+  const home = path.join(folder, "home");
+  mkdirSync(home, { recursive: true });
   return { folder, home };
 }
 
@@ -778,8 +798,8 @@ function processesUnder(folder) {
     .filter((l) => l.includes(folder) || l.includes(real));
 }
 
-test("macOS, the release's own archive: installed, signed ad hoc, no quarantine mark, its command line answers", { skip: macOnly || noBuild }, async () => {
-  const c = macCase("real-release");
+test("macOS, the release's own archive: installed, signed (Developer ID and notarized, or ad hoc), no quarantine mark, its command line answers", { skip: macOnly || noBuild }, async () => {
+  const c = macCaseOnVolume("real-release");
   const release = path.join(c.folder, "release");
   mkdirSync(release);
   cpSync(builtFolder("release", ZIP), path.join(release, ZIP));
@@ -792,12 +812,21 @@ test("macOS, the release's own archive: installed, signed ad hoc, no quarantine 
   const version = JSON.parse(r.out.trim().split("\n").at(-1));
   assert.equal(version.kind, "release", r.out);
   execProgram("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
-  const signature = await run("/usr/bin/codesign", ["-dv", app], process.env);
-  assert.match(signature.all, /^Signature=adhoc$/m, signature.all);
-  const xattrs = execProgram("/usr/bin/xattr", ["-r", app], { encoding: "utf8" });
-  assert.ok(!xattrs.includes("com.apple.quarantine"), "curl gives no quarantine mark, ditto adds none");
+  const signature = await run("/usr/bin/codesign", ["-dv", "--verbose=2", app], process.env);
+  // A release is signed with Developer ID and notarized; a build without an identity keeps the ad hoc signature.
+  const developerId = /^Authority=Developer ID Application: /m.test(signature.all);
+  if (!developerId) assert.match(signature.all, /^Signature=adhoc$/m, signature.all);
+  else assert.match(signature.all, /flags=0x[0-9a-f]+\([^)]*runtime/, signature.all);
+  // Only the marked files are listed: xattr -r lists every attribute of every file (com.apple.provenance on each of
+  // some 3,000), more than a child's output may be.
+  const marked = execProgram("/usr/bin/find", [app, "-xattrname", "com.apple.quarantine"], { encoding: "utf8" });
+  assert.equal(marked.trim(), "", "curl gives no quarantine mark, ditto adds none");
   const gatekeeper = await run("/usr/sbin/spctl", ["--assess", "--type", "execute", "-vv", app], process.env);
   console.log(`# spctl --assess: exit ${gatekeeper.code}: ${gatekeeper.all.trim().replace(/\n/g, " | ").replaceAll(c.home, "$HOME")}`);
+  if (developerId) {
+    assert.equal(gatekeeper.code, 0, gatekeeper.all);
+    assert.match(gatekeeper.all, /source=Notarized Developer ID/, gatekeeper.all);
+  }
   console.log(`# ${r.out.trim().split("\n").slice(0, -1).join("\n# ").replaceAll(c.home, "$HOME")}`);
 });
 

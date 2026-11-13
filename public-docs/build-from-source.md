@@ -2,7 +2,8 @@
 
 This repository holds everything a release of BUSY Bar Emulator is built from. The files a release publishes (the
 disk images and zips for macOS, the setup for Windows) are built from the release's tag here, with the commands
-below. A build you make yourself is the same app, unsigned.
+below. A build you make yourself is the same app, unsigned: the releases' macOS files are also signed with a
+Developer ID and notarized by Apple, which needs the maintainer's certificate.
 
 Each system builds its own files: a Mac the macOS ones, a Windows PC the setup.
 
@@ -45,11 +46,12 @@ was built from. The files land outside the repository:
 `--out <folder>` puts them elsewhere, but never inside the repository. A build takes under a minute once the
 downloads are in the cache: one architecture on a Mac, the setup on Windows.
 
-**Your build is not signed.** The releases are not either: not notarized on macOS, not signed on Windows. A file you
-built on your own computer carries no "downloaded from the internet" mark, so macOS and Windows open it without a
-warning there. Copied to another computer through a browser, a chat or a mail, it gets the mark, and the first start
-asks what [opening it for the first time](install.md#opening-it-for-the-first-time) describes: **System Settings →
-Privacy & Security → Open Anyway** on macOS, **More info → Run anyway** on Windows.
+**Your build is not signed.** On macOS it carries the ad hoc signature only, where a release is signed with a
+Developer ID and notarized; on Windows neither is signed. A file you built on your own computer carries no
+"downloaded from the internet" mark, so macOS and Windows open it without a warning there. Copied to another computer
+through a browser, a chat or a mail, it gets the mark, and the first start asks what an unsigned build needs: **System
+Settings → Privacy & Security → Open Anyway** on macOS (as for
+[releases before 0.1.0-beta.4](install.md#macos)), **More info → Run anyway** on Windows.
 
 ## Check the build
 

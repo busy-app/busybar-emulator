@@ -19,8 +19,9 @@ after(finish);
 
 const windows = process.platform === "win32";
 const ID = "app.test.loop";
-// The loop starts half a second after the launch, once the app runs.
-const LOOP = "console.log('started'); setTimeout(function () { for (;;) {} }, 500);";
+// The loop starts half a second after the launch, once the app runs. Its line goes out before the loop holds the
+// server's thread: the server writes its log to stdout as it comes.
+const LOOP = "console.log('started'); setTimeout(function () { console.log('looping'); for (;;) {} }, 500);";
 // How much later than the limit an answer may come: the stop itself is within a millisecond of the limit (the
 // halt handler asks every few thousand backward branches), the rest is a loaded machine.
 const LATE_MS = 3000;
@@ -43,12 +44,21 @@ async function serve(t) {
   return { child, base, dataDir, out: () => out, err: () => err };
 }
 
-/** Launches the app and waits until its loop has begun. Returns performance.now() at the start of the loop. */
+/**
+ * Launches the app and waits until its loop has begun: this launch's line that says so, not the line of a launch
+ * before. Returns performance.now() then, no earlier than the loop's start.
+ *
+ * It waited for the line "started" and then 700 ms before (EMU-294, the release's gate of 13.11): a second launch in
+ * one test found the first launch's line at once, and on a loaded computer the app started again more than 200 ms
+ * slower than the 700 ms allowed, so the presses meant for the loop came before it, reached the app and, after the
+ * stop, the APPS menu.
+ */
 async function launchLoop(server) {
+  const loops = () => server.out().split(`${ID} log: looping`).length - 1;
+  const before = loops();
   assert.equal((await request("POST", `${server.base}/api/apps/launch?app_id=${ID}`)).status, 200);
-  await until("the app's first line", () => server.out().includes(`${ID} log: started`));
-  await pause(700);
-  return performance.now() - 200;
+  await until("the app's loop", () => loops() > before);
+  return performance.now();
 }
 
 const running = async (base) => (await get(`${base}/_emu/state`)).json().running;
@@ -85,9 +95,13 @@ test("buttons pressed while the app loops do not reach the APPS menu after the s
   await pause(1000);
   assert.equal(await running(server.base), null, "the OK pressed during the loop did not start the app again");
   // The window's long Back, held and let go of during the loop, goes nowhere either: the screen stays.
-  await launchLoop(server);
-  const presses = [request("POST", `${server.base}/_emu/key?key=back&action=down`), pause(400).then(() => request("POST", `${server.base}/_emu/key?key=back&action=up`))];
-  for (const answer of await Promise.all(presses)) assert.equal(answer.status, 200);
+  const loop = await launchLoop(server);
+  const down = request("POST", `${server.base}/_emu/key?key=back&action=down`).then((answer) => ({ answer, at: performance.now() }));
+  const up = pause(400).then(() => request("POST", `${server.base}/_emu/key?key=back&action=up`));
+  const [held, letGo] = await Promise.all([down, up]);
+  assert.equal(held.answer.status, 200);
+  assert.equal(letGo.status, 200);
+  assert.ok(held.at - loop > 500, "the press waited for the loop: the test did not see the hang");
   await pause(500);
   const stopped = await screens(server.base);
   await pause(500);

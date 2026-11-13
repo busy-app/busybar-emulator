@@ -36,13 +36,11 @@ No BUSY Bar is needed. If you have one, run your app on it too before you send i
 
 ## 1. Install and open the emulator
 
-Download the file for your system from [the download table](README.md#busy-bar-emulator). The first releases are
-not notarized by Apple and not signed for Windows, so the system warns you once, the first time.
+Download the file for your system from [the download table](README.md#busy-bar-emulator). On macOS the app is
+signed and notarized by Apple; the Windows setup is not signed yet, so Windows warns you once, the first time.
 
 **macOS.** Open the `.dmg` and drag BUSY Bar Emulator to Applications. Open it from Applications, not from the disk
-image. macOS says it cannot verify the app: choose **Done**. Open **System Settings → Privacy & Security**, find the
-line about BUSY Bar Emulator under Security and choose **Open Anyway**, then **Open Anyway** again. macOS may ask for
-your login password.
+image. The first time, macOS asks whether to open an app downloaded from the internet: choose **Open**.
 
 **Windows.** Run `busybar-emulator-win-x64-setup.exe`. SmartScreen says "Windows protected your PC": choose **More
 info**, check that the file is `busybar-emulator-win-x64-setup.exe`, then **Run anyway**. The setup needs no

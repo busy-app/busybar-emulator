@@ -9,7 +9,8 @@ Windows; this page calls it `busy-emulator`.
 
 ### The system will not open the app the first time
 
-The app is not notarized by Apple and not signed for Windows yet. Allow it once, as
+On macOS this happens with releases before 0.1.0-beta.4, which are not notarized; from 0.1.0-beta.4 on, the app is
+signed and notarized by Apple. On Windows the setup is not signed yet. Allow it once, as
 [install.md](install.md#opening-it-for-the-first-time) shows; after that it opens like any other app.
 
 ### "Move BUSY Bar Emulator to Applications" (macOS)

@@ -372,9 +372,11 @@ const interruptSkip =
     : !builtApp
       ? "set BUSY_EMULATOR_SMOKE_APP to a test variant built by npm run dist -- --kind test"
       : false;
+// The third case lands while `record` runs, a step of seconds: the run that went on after a signal did so there.
 for (const [signal, after] of [
   ["SIGINT", /^smoke: start: ready/m],
   ["SIGTERM", /^smoke: app: /m],
+  ["SIGHUP", /^smoke: frame: /m],
 ]) {
   test(`${signal} in the middle of a run quits the app and leaves nothing (after "${after.source.slice(8)}")`, { skip: interruptSkip, timeout: 180_000 }, async () => {
     const app = path.resolve(builtApp);
@@ -400,6 +402,10 @@ for (const [signal, after] of [
     const code = await exited;
     assert.equal(code, 130, out);
     assert.match(out, new RegExp(`stopped by ${signal}`));
+    // The run goes no further than the signal: no step of it, and no failure, after the line that says so. It went
+    // on before (13.11, the release's gate of beta.2 and beta.4): to a screenshot, `record` against an app that was
+    // quitting and `busy-emulator mcp`, whose process was still running when the test ended.
+    assert.doesNotMatch(out.slice(out.indexOf(`stopped by ${signal}`)), /^smoke: (frame|record|mcp|FAIL)/m, out);
     assert.deepEqual(appProcesses(), [], `no process of the app is left:\n${out}`);
     const listening = await new Promise((resolve) => {
       const socket = net.connect({ host: "127.0.0.1", port });

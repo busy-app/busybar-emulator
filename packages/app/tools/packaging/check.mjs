@@ -10,7 +10,7 @@
 // well, under Rosetta; where they cannot be run they are read, and the check says they were not run.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -146,10 +146,11 @@ export function ghLayoutProblems(resources, platform) {
 
 /**
  * gh in a built app: the pinned version, run from the app's place with a configuration folder of its own; on macOS it
- * still carries GitHub's own signature. Nothing that would look into the system's store or ask GitHub: gh auth status
- * would find the active token of the person's own gh there, whatever the configuration folder (gh.mjs).
+ * carries GitHub's own signature, or, in an app signed with Developer ID (EMU-204), the app's: `appTeam` is the team
+ * of the app's signature, null for an ad hoc one. Nothing that would look into the system's store or ask GitHub: gh
+ * auth status would find the active token of the person's own gh there, whatever the configuration folder (gh.mjs).
  */
-export function ghProblems({ resources, platform, workDir, run = execFileSync }) {
+export function ghProblems({ resources, platform, workDir, appTeam = null, run = execFileSync }) {
   const problems = [];
   const results = {};
   const gh = path.join(resources, "gh", "bin", platform === "win32" ? "gh.exe" : "gh");
@@ -170,7 +171,11 @@ export function ghProblems({ resources, platform, workDir, run = execFileSync })
       problems.push(`codesign --verify --strict on gh: ${String(e.stderr ?? e.message).trim()}`);
     }
     results.ghSignature = signatureOf(gh, run);
-    if (results.ghSignature.team !== GITHUB_TEAM) problems.push(`gh is not signed by GitHub (team ${results.ghSignature.team ?? "none"}, not ${GITHUB_TEAM}): the build replaced its signature`);
+    if (appTeam) {
+      if (results.ghSignature.team !== appTeam) problems.push(`gh is not signed by the app's team (team ${results.ghSignature.team ?? "none"}, not ${appTeam}): the release's signature missed it`);
+    } else if (results.ghSignature.team !== GITHUB_TEAM) {
+      problems.push(`gh is not signed by GitHub (team ${results.ghSignature.team ?? "none"}, not ${GITHUB_TEAM}): the build replaced its signature`);
+    }
   }
   return { problems, results };
 }
@@ -340,7 +345,9 @@ export async function runProblems({ resources, platform, workDir, log = () => {}
   } catch (e) {
     problems.push(`busy-emulator version --json failed: ${e.message}`);
   }
-  const gh = ghProblems({ resources, platform, workDir });
+  // The team of the app's own signature: an app signed with Developer ID signs gh too (sign-mac.mjs).
+  const appTeam = platform === "darwin" && process.platform === "darwin" ? signatureOf(path.join(resources, "..", "MacOS", "BUSY Bar Emulator")).team : null;
+  const gh = ghProblems({ resources, platform, workDir, appTeam });
   problems.push(...gh.problems);
   Object.assign(results, gh.results);
   log("starting the server from the app on the bundled Node");
@@ -421,31 +428,82 @@ function setWritable(folder, writable) {
   walk(folder);
 }
 
-async function checkMacZip(file, { scratch, arch, runHere, log }) {
-  const to = path.join(scratch, "zip");
-  log(`unpacking ${path.basename(file)}`);
-  unpackZip(file, to);
-  const top = readdirSync(to);
-  const problems = [];
-  if (JSON.stringify(top) !== JSON.stringify([APP_BUNDLE])) problems.push(`the zip holds ${top.join(", ")}, expected only ${APP_BUNDLE}`);
-  const app = path.join(to, APP_BUNDLE);
-  const result = existsSync(app) ? await macAppProblems(app, arch) : { problems: [] };
-  problems.push(...result.problems);
-  if (runHere && existsSync(app)) {
-    setWritable(app, false);
+/**
+ * The checks of a release signed with Developer ID and notarized (dist.mjs check --signed), on the app as it lies in
+ * the zip or the disk image. Gatekeeper with the quarantine mark of a download is asked on the disk image only
+ * (quarantinedDmgProblems), where the app lies on a read-only volume: a notarized app that Gatekeeper has assessed
+ * with the mark comes under macOS's App Management protection, and a process of another team (this check, run from a
+ * terminal) can then neither change nor remove it. The zip is what agents fetch with curl, which leaves no mark.
+ */
+async function signedChecks(app, { log }) {
+  const { signedAppProblems } = await import("./sign-mac.mjs");
+  log(`the signature of every program, the ticket, Gatekeeper: ${path.basename(app)}`);
+  const signed = signedAppProblems(app);
+  return { problems: signed.problems, results: signed.results };
+}
+
+/** The disk image as a browser leaves it: a copy (a clone, on APFS) with the quarantine mark, attached; its app is assessed. */
+async function quarantinedDmgProblems(file, { scratch, log }) {
+  const { quarantine, quarantined, quarantinedAppProblem } = await import("./sign-mac.mjs");
+  const copy = path.join(scratch, `downloaded-${path.basename(file)}`);
+  copyFileSync(file, copy, fsConstants.COPYFILE_FICLONE);
+  const mount = path.join(scratch, "dmg-downloaded");
+  mkdirSync(mount, { recursive: true });
+  try {
+    quarantine(copy);
+    log(`attaching ${path.basename(file)} with the quarantine mark of a download`);
+    execFileSync("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mount, copy]);
     try {
+      const app = path.join(mount, APP_BUNDLE);
+      // The system mounts a quarantined image with the quarantine option: what lies on it counts as downloaded,
+      // without a mark of its own on each file.
+      const real = realpathSync(mount);
+      const flags = execFileSync("/sbin/mount", [], { encoding: "utf8" }).split("\n").find((l) => l.includes(` on ${real} (`)) ?? "";
+      const problem = /\bquarantine\b/.test(flags) || quarantined(app) ? quarantinedAppProblem(app, { mounted: true }) : `the disk image with the quarantine mark is not mounted as quarantined (${flags || "not in the list of mounts"}), so the check would prove nothing`;
+      return { problems: problem ? [problem] : [], result: problem ?? "mounts as quarantined; the app on it is accepted as notarized" };
+    } finally {
+      execFileSync("/usr/bin/hdiutil", ["detach", "-quiet", mount]);
+    }
+  } finally {
+    rmSync(copy, { force: true });
+  }
+}
+
+async function checkMacZip(file, { scratch, arch, runHere, signed = false, log }) {
+  // On a volume of its own (scratch-volume.mjs): once the programs of a notarized app have run, macOS lets no process
+  // of another team change or remove it, and the volume goes whole.
+  const { attachScratchVolume } = await import("./scratch-volume.mjs");
+  const volume = attachScratchVolume(scratch, { name: "zip" });
+  try {
+    const to = path.join(volume.mount, "unpacked");
+    log(`unpacking ${path.basename(file)}`);
+    unpackZip(file, to);
+    const top = readdirSync(to);
+    const problems = [];
+    if (JSON.stringify(top) !== JSON.stringify([APP_BUNDLE])) problems.push(`the zip holds ${top.join(", ")}, expected only ${APP_BUNDLE}`);
+    const app = path.join(to, APP_BUNDLE);
+    const result = existsSync(app) ? await macAppProblems(app, arch) : { problems: [] };
+    problems.push(...result.problems);
+    if (signed && existsSync(app)) {
+      const s = await signedChecks(app, { log });
+      problems.push(...s.problems);
+      result.signature = s.results;
+    }
+    if (runHere && existsSync(app)) {
+      // Read-only, as an app is when macOS runs it from a disk image or a random place; it stays so, the volume goes.
+      setWritable(app, false);
       const work = mkdtempSync(path.join(scratch, "run-"));
       const ran = await runProblems({ resources: path.join(app, "Contents", "Resources"), platform: "darwin", workDir: work, log });
       problems.push(...ran.problems);
       result.run = ran.results;
-    } finally {
-      setWritable(app, true);
     }
+    return { ...result, problems };
+  } finally {
+    volume.remove();
   }
-  return { ...result, problems };
 }
 
-async function checkMacDmg(file, { scratch, arch, runHere, log }) {
+async function checkMacDmg(file, { scratch, arch, runHere, signed = false, log }) {
   const mount = path.join(scratch, "dmg-mount");
   mkdirSync(mount, { recursive: true });
   log(`attaching ${path.basename(file)} read-only, out of sight of the Finder`);
@@ -460,6 +518,14 @@ async function checkMacDmg(file, { scratch, arch, runHere, log }) {
     const app = path.join(mount, APP_BUNDLE);
     if (existsSync(app)) result = await macAppProblems(app, arch);
     problems.push(...result.problems);
+    if (signed && existsSync(app)) {
+      const { signedDmgProblems } = await import("./sign-mac.mjs");
+      const image = signedDmgProblems(file);
+      problems.push(...image.problems);
+      const s = await signedChecks(app, { log });
+      problems.push(...s.problems);
+      result.signature = { dmg: image.results, app: s.results };
+    }
     // The image is mounted read-only, as macOS runs an app opened from it: what runs must not write into the app.
     if (runHere && existsSync(app)) {
       const work = mkdtempSync(path.join(scratch, "run-"));
@@ -470,6 +536,11 @@ async function checkMacDmg(file, { scratch, arch, runHere, log }) {
   } finally {
     execFileSync("/usr/bin/hdiutil", ["detach", "-quiet", mount]);
   }
+  if (signed) {
+    const downloaded = await quarantinedDmgProblems(file, { scratch, log });
+    problems.push(...downloaded.problems);
+    if (result.signature) result.signature.downloaded = downloaded.result;
+  }
   return { ...result, problems };
 }
 
@@ -478,8 +549,9 @@ async function checkMacDmg(file, { scratch, arch, runHere, log }) {
  * @param {object} o
  * @param {string} o.folder
  * @param {boolean} [o.partial]  only this system's files are there yet (before SHA256SUMS is written)
+ * @param {boolean} [o.signed]   the macOS files must be signed with Developer ID and notarized (EMU-204)
  */
-export async function checkRelease({ folder, partial = false, log = () => {} }) {
+export async function checkRelease({ folder, partial = false, signed = false, log = () => {} }) {
   const names = readdirSync(folder);
   const problems = [];
   const host = targetOfHost();
@@ -499,7 +571,7 @@ export async function checkRelease({ folder, partial = false, log = () => {} }) 
       mkdirSync(sub, { recursive: true });
       let result;
       try {
-        result = await checkOne(name, file, { sub, host, log });
+        result = await checkOne(name, file, { sub, host, signed, log });
       } catch (e) {
         result = { problems: [`the check could not go on: ${e.message}`] };
       }
@@ -528,10 +600,10 @@ export async function checkRelease({ folder, partial = false, log = () => {} }) 
   publication.reasons = [...new Set(publication.reasons)];
   const skipped = Object.entries(files).filter(([, r]) => r.skipped).map(([name, r]) => `${name}: ${r.skipped}`);
   return {
-    skipped, folder, host, partial, checked: new Date().toISOString(), sizes: sizesOf(folder, ALL_RELEASE_FILES), files, problems, publication };
+    skipped, folder, host, partial, signed, checked: new Date().toISOString(), sizes: sizesOf(folder, ALL_RELEASE_FILES), files, problems, publication };
 }
 
-async function checkOne(name, file, { sub, host, log }) {
+async function checkOne(name, file, { sub, host, signed = false, log }) {
   const target = targetOfFile(name);
   if (target === "win32-x64") {
     const { checkSetup } = await import("./windows-check.mjs");
@@ -541,7 +613,7 @@ async function checkOne(name, file, { sub, host, log }) {
   // The programs inside run on this Mac when they are of its own architecture, and Intel's on Apple Silicon when
   // Rosetta is installed. Otherwise the file is read but not run, and the check says so.
   const runHere = runsHere(target, host);
-  const result = await (name.endsWith(".zip") ? checkMacZip : checkMacDmg)(file, { scratch: sub, arch: target.split("-")[1], runHere, log });
+  const result = await (name.endsWith(".zip") ? checkMacZip : checkMacDmg)(file, { scratch: sub, arch: target.split("-")[1], runHere, signed, log });
   if (!runHere) result.skipped = `read, but its programs were not run: this Mac (${host}) does not run ${target}${host === "darwin-arm64" ? " without Rosetta" : ""}`;
   else result.ranUnder = target === host ? "this Mac's own architecture" : "Rosetta";
   return result;

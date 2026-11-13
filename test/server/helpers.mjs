@@ -20,6 +20,11 @@ export const serverModule = (name) => join(serverDir, name);
 // leaves nothing behind either.
 const folders = new Set();
 const children = new Set();
+// The children each test started (node below). A test's folders are removed only once they have ended: node:test runs
+// a test's `after` hooks in the order they were added, a test makes a server's data folder before it starts the
+// server, and the folder was removed while the server still wrote there (EMU-294, the gate of 13.11 on a loaded
+// machine: cli.test.mjs, ENOTEMPTY on bar/1.3.1/ext with an app running).
+const childrenOf = new WeakMap(); // test context -> Set of children
 // A child that is still writing can make a folder again or keep a file in it open (Windows): try a few times.
 const removeFolder = (dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 /**
@@ -82,7 +87,13 @@ export function tempDir(t) {
   // It stays on the list: a child that outlives the test by a moment can make it again, and the end of the process
   // takes it away once more.
   folders.add(dir);
-  t.after(() => removeFolder(dir));
+  t.after(async () => {
+    for (const child of childrenOf.get(t) ?? []) {
+      child.kill("SIGKILL");
+      await child.exit;
+    }
+    removeFolder(dir);
+  });
   return dir;
 }
 
@@ -94,6 +105,8 @@ export function tempDir(t) {
 export function node(t, args, options = {}) {
   const child = spawn(process.execPath, args, options);
   children.add(child);
+  if (!childrenOf.has(t)) childrenOf.set(t, new Set());
+  childrenOf.get(t).add(child);
   child.exit = once(child, "exit").then(([code, signal]) => {
     children.delete(child);
     return code ?? signal;

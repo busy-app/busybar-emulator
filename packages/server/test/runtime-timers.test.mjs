@@ -12,7 +12,7 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { barSpeed } from "../bar-speed.mjs";
-import { computerNow } from "../computer-clock.mjs";
+import { computerClock, computerNow } from "../computer-clock.mjs";
 import { loadFirmware } from "../firmware.mjs";
 import { AppRuntime } from "../runtime.mjs";
 import { MAX_CATCH_UP_MS } from "../tick-clock.mjs";
@@ -102,9 +102,60 @@ for (const name of firmwares) {
       const { runs } = await run({ firmware, speed: null, ms: 2600, stalls });
       const said = `step/behind: ${report(runs)}`;
       assert.deepEqual(ahead(runs), [], `ahead of the computer's clock; ${said}`);
-      // Never twice for one period (the host's timer may fire a fraction of a ms early).
+      // Never twice for one period, nor two runs in one ms of the app's clock (the host's timer may fire a fraction of a
+      // ms early; a late run may land a fraction of a ms before the next period: the test below).
       assert.ok(steps(runs).every((d) => d > 0), said);
       assert.ok(runs.length <= 2600 / PERIOD + 2, `${runs.length} runs; ${said}`);
+    });
+
+    // The case the test above meets by chance on a loaded computer (EMU-294, the release's gate of 13.11: "200/0 0/1"),
+    // set up exactly: the host's timers and the computer's clock are node:test's mock timers. The app reads its clock
+    // in whole ms; the host is late for its timer by 150 ms and fires it at x.25, half a ms before the next period's
+    // time x.75. That run stands for the runs the host was late for; the next period's run, at x.75 by the host's
+    // timer, would come in the same whole ms of the app's clock, which the bar's tick of a ms never gives: it comes
+    // at the app's next ms, and the period stays on its beat after it.
+    test("at the computer's speed: the run after a late one is in a later whole ms of the app's clock, though the next period is half a ms away", async (t) => {
+      const base = 1_000_000.75;
+      t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: base });
+      const { monotonic, timeOfDay } = computerClock;
+      computerClock.monotonic = computerClock.timeOfDay = () => Date.now();
+      t.after(() => Object.assign(computerClock, { monotonic, timeOfDay }));
+      const seen = [];
+      let offset = 0;
+      const runtime = new AppRuntime({
+        firmware,
+        appId: "app.test.timer",
+        heapKib: 96,
+        entry: "/test.js",
+        readFile: (p) => (p === "/test.js" ? new TextEncoder().encode(SCRIPT) : null),
+        writeFile: () => false,
+        localApi: async () => ({ status: 404, headers: [], body: new Uint8Array() }),
+        clockOffset: () => offset,
+        onConsole: (_, text) => seen.push(Number(text.slice(4)) - Math.floor(base)),
+        onLog: () => {},
+        onExit: () => {},
+        speed: null,
+      });
+      await runtime.start();
+      t.after(() => runtime.terminate());
+      // Due at .75 + 50; the host fires it 150 ms late, at 200.25: one run for the three periods.
+      t.mock.timers.tick(199.5);
+      assert.deepEqual(seen, [200]);
+      // The next period's time, 200.75: the app's clock is still in ms 200.
+      t.mock.timers.tick(0.5);
+      assert.deepEqual(seen, [200], "a second run in the app's ms 200");
+      t.mock.timers.tick(0.25);
+      assert.deepEqual(seen, [200, 201]);
+      // On the beat again: 250.75.
+      t.mock.timers.tick(49.5);
+      assert.deepEqual(seen, [200, 201]);
+      t.mock.timers.tick(0.25);
+      assert.deepEqual(seen, [200, 201, 250]);
+      // The bar's clock set back 10 s (POST /api/time/timestamp): its ms are all before the last run's, and the timer
+      // goes on by the period; it does not wait for the clock to come back to that ms.
+      offset = -10_000;
+      t.mock.timers.tick(50);
+      assert.deepEqual(seen, [200, 201, 250, 300 - 10_000]);
     });
 
     test("at bar speed: a stall longer than is made up is skipped; one run, then the period again, the app on the computer's clock", async () => {

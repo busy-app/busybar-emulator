@@ -2,6 +2,20 @@
 
 What changes in each release of BUSY Bar Emulator. The newest release is first.
 
+## 0.1.0-beta.5
+
+A timer fix and a release with its source: the code of the signed macOS builds is in this repository again.
+
+- With the emulator at the computer's speed, a timer the computer ran late could fire twice in one millisecond of the app's clock; a BUSY Bar never does, and now neither does the emulator.
+- The release checks are steadier on a busy computer, so fixes reach you sooner.
+
+## 0.1.0-beta.4
+
+The macOS downloads are signed and notarized by Apple: they open with no security warning.
+
+- On macOS the app opens straight from the dmg or the zip; Windows still shows SmartScreen on the first start.
+- To remove the macOS app, drag it to the Trash: macOS keeps other programs from deleting a notarized app.
+
 ## 0.1.0-beta.3
 
 The emulator now looks for a new version every time it starts, so a fix reaches you the next time you open it.

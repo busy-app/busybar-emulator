@@ -125,8 +125,15 @@ test("a GIF too large to post is refused at once, naming the limits; nothing is 
 
 test("the bar answers while a GIF of a moving screen at scale 26 is taken and encoded", async (t) => {
   // The server runs in this process, as does the client that asks it: a server's thread blocked by an encode blocks
-  // the asking too, so what is measured is the longest time between two answers, which such a block lengthens. The
-  // encode the GIF had before (every step drawn in RGB and encoded on the server's thread) held it here for 5 s.
+  // the asking too. The encode the GIF had before (every step drawn in RGB and encoded on the server's thread) held it
+  // here for 5 s. What is measured is the thread's own work between two answers (its processor time): a block by an
+  // encode is that. The time by the clock between two answers is not measured: on a loaded computer it holds the time
+  // the thread waited for a core too (EMU-294: 543 ms by the clock between two answers in a gate's server suite at load
+  // 7, with the encode on its own thread).
+  const work = () => {
+    const { user, system } = process.threadCpuUsage();
+    return (user + system) / 1000;
+  };
   const emulator = await start(t);
   const drawn = await request("POST", `${emulator.url}/api/display/draw`, Buffer.from(SCENE));
   assert.equal(drawn.status, 200, drawn.text);
@@ -136,20 +143,21 @@ test("the bar answers while a GIF of a moving screen at scale 26 is taken and en
     while (!done) {
       const answer = await request("GET", `${emulator.url}/api/status`);
       assert.equal(answer.status, 200);
-      answered.push(performance.now());
+      answered.push({ at: performance.now(), work: work() });
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   })();
   const answer = await control(emulator, "POST", "/_emu/record?format=gif&seconds=5&fps=25&scale=26");
   // The record's own answer closes the last gap: a blocked thread answers it first, when the block ends.
-  answered.push(performance.now());
+  answered.push({ at: performance.now(), work: work() });
   done = true;
   await asking;
   assert.equal(answer.status, 200, JSON.stringify(answer.json));
   assert.deepEqual([answer.json.width, answer.json.height, answer.json.frames], [1872, 416, 125]);
   assert.ok(answer.json.distinct_frames > 10, `the animation moves: ${answer.json.distinct_frames} distinct frames`);
   assert.ok(answered.length > 50, `${answered.length} answers`);
-  const gaps = answered.slice(1).map((at, i) => at - answered[i]);
-  const longest = Math.max(...gaps);
-  assert.ok(longest < 200, `${Math.round(longest)} ms between two answers of /api/status (the GIF's encoding took ${answer.json.encode_ms} ms)`);
+  const gaps = answered.slice(1).map((a, i) => ({ work: a.work - answered[i].work, clock: a.at - answered[i].at }));
+  const busiest = gaps.reduce((a, b) => (b.work > a.work ? b : a));
+  const longest = Math.max(...gaps.map((g) => g.clock));
+  assert.ok(busiest.work < 200, `${Math.round(busiest.work)} ms of the server's thread's work between two answers of /api/status, in ${Math.round(busiest.clock)} ms by the clock (the longest gap by the clock ${Math.round(longest)} ms; the GIF's encoding took ${answer.json.encode_ms} ms)`);
 });
