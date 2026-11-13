@@ -165,8 +165,21 @@ export function writeFileAtomic(file, text, { mode = 0o600 } = {}) {
   }
 }
 
-/** How a broken file is told about by default: one line on stderr (stdout carries the command line's answers). */
-const reportOnStderr = ({ file, aside, why }) => process.stderr.write(`busy-emulator: ${file} could not be read: ${why}. It is kept as ${aside}, and a new one is started.\n`);
+/**
+ * Where a broken file is told about by default: one line on stderr (stdout carries the command line's answers). The
+ * command line names its own writer of stderr (cli/console.mjs) with reportBrokenFilesTo, so that the line is written
+ * as everything else it prints.
+ */
+let brokenFileLine = (line) => process.stderr.write(`${line}\n`);
+
+/** Tells broken files, from now on, through `writeLine` (a line, without its new line); gives the writer before. */
+export function reportBrokenFilesTo(writeLine) {
+  const before = brokenFileLine;
+  brokenFileLine = writeLine;
+  return before;
+}
+
+const reportOnStderr = ({ file, aside, why }) => brokenFileLine(`busy-emulator: ${file} could not be read: ${why}. It is kept as ${aside}, and a new one is started.`);
 
 /**
  * Changes a JSON file under its lock: reads it (a broken one is set aside and reported, and `fallback()` stands for

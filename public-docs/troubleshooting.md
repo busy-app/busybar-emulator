@@ -135,7 +135,7 @@ says why. Wait with `setTimeout` or `await` instead of a loop:
 
 An app can leave BUSY Bar taking no keys: the supervisor's warning after its JavaScript memory filled up, or a screen
 that nothing changes. On a real BUSY Bar you hold Back and Start together; here press **Restart BUSY Bar** on its
-card in the window, or run `busy-emulator restart-bar` (the MCP tool `restart_bar`), which waits until it answers
+card in the window (under the back display), or run `busy-emulator restart-bar` (the MCP tool `restart_bar`), which waits until it answers
 again. Installed apps and their settings are kept. If the app hangs again once it is started, `busy-emulator
 uninstall` it and fix it.
 

@@ -198,11 +198,11 @@ async function state(name) {
     if (${q(mode)} === "all" && side.dataset.mode !== "all") document.querySelector("#all-apps").click();
     if (${q(mode)} === "app") {
       if (side.dataset.mode !== "app") document.querySelector('#apps li.app[data-id="app.example.focus_timer"]').click();
-      document.querySelector("#tab-" + (${q(tab)} === "collapsed" ? "overview" : ${q(tab)})).click();
+      document.querySelector("#tab-" + (${q(tab)} === "collapsed" ? "catalog" : ${q(tab)})).click();
     }
     return true;
   })()`);
-  const ready = { overview: ".keycap", collapsed: ".keycap", files: ".files li", settings: ".settings .field" }[tab];
+  const ready = { catalog: ".ac-folds", collapsed: ".ac-folds", files: ".files li", settings: ".settings .field" }[tab];
   if (!ready) return;
   try {
     await until(() => page(`Boolean(document.querySelector("#app-body ${ready}"))`), `the ${tab} page`);
@@ -211,7 +211,7 @@ async function state(name) {
   }
 }
 
-const STATES = ["all", "app-overview", "app-settings", "app-files", "app-collapsed"];
+const STATES = ["all", "app-settings", "app-catalog", "app-files", "app-collapsed"];
 
 async function check(view, t, states = STATES) {
   for (const size of SIZES) {
@@ -243,31 +243,41 @@ test("2D: no scroll, no overlap, heads and names fit, in both modes and on every
   await check("2d", t);
 });
 
-test("the opened app's Overview shows the project's texts, its icons and what its controls do; its folder is over it", { skip }, async () => {
+test("the opened app's Catalog: a row a field, each opens in place; the icons and what the controls do; its folder is over it", { skip }, async () => {
   await resize([1440, 900]);
-  await state("app-overview");
+  await state("app-catalog");
+  const open = (key) => page(`(document.querySelector('#app-body .ac-fold[data-key="${key}"] .ac-fold-row').click(), true)`);
+  await open("icons");
+  await open("usage");
   const shown = await page(`({
-    name: document.querySelector("#ov-name").value,
+    rows: [...document.querySelectorAll("#app-body .ac-fold-label")].map((label) => label.textContent),
+    name: document.querySelector('#app-body .ac-fold[data-key="name"] .ac-fold-value').textContent,
+    version: document.querySelector('#app-body .ac-fold[data-key="version"] .ac-fold-value').textContent,
+    opened: [...document.querySelectorAll("#app-body .ac-fold-row[aria-expanded=true]")].map((row) => row.closest(".ac-fold").dataset.key),
     keycaps: [...document.querySelectorAll("#app-body .keycap")].map((k) => k.textContent),
     icons: [...document.querySelectorAll("#app-body .icon-tile img")].length,
     uploads: [...document.querySelectorAll("#app-body .icon-tile button")].map((b) => b.ariaLabel),
     chips: [...document.querySelectorAll("#app-body .keycap img")].map((img) => img.complete && img.naturalWidth > 0),
-    folder: document.querySelector("#app-folder .folder-line .path")?.title ?? null,
+    folder: document.querySelector("#app-folder .ac-path")?.dataset.tipDetail ?? null,
   })`);
+  assert.deepEqual(shown.rows, ["Name", "Icons", "Short description", "Description", "Category", "Controls", "Version"]);
   assert.equal(shown.name, "Focus Timer");
+  assert.match(shown.version, /^\d+\.\d+\.\d+/);
+  assert.deepEqual(shown.opened, ["icons", "usage"]);
   assert.deepEqual(shown.keycaps, ["Start", "Wheel turn", "Wheel press", "Back"]);
   assert.equal(shown.icons, 2, "the front and the back icon");
   assert.deepEqual(shown.uploads, ["Upload the front icon", "Upload the back icon"]);
   assert.deepEqual(shown.chips, [true, true, true, true], "each control's chip");
   if (SHOTS) {
-    // What the controls do, scrolled into view.
     await page(`(document.querySelector("#app-body .controls-list").scrollIntoView({ block: "center" }), true)`);
     await page("new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
     await sleep(600);
     const png = await app.run(async (shell) => (await shell.windows.current.win.webContents.capturePage()).toPNG().toString("base64"));
-    writeFileSync(path.join(SHOTS, "2d-app-overview-controls-1440x900.png"), Buffer.from(png, "base64"));
+    writeFileSync(path.join(SHOTS, "2d-app-catalog-controls-1440x900.png"), Buffer.from(png, "base64"));
   }
   assert.equal(shown.folder, realpathSync(path.join(work, "focus-timer")));
+  await open("icons");
+  await open("usage");
   await state("all");
 });
 
@@ -279,7 +289,7 @@ test("with the window's own title bar, as on Windows (36 px over the page): the 
   try {
     await page("new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))");
     assert.equal(await page(`parseFloat(getComputedStyle(document.body).paddingTop)`), 36, "the page starts under the BUSY Bar");
-    for (const name of ["all", "app-overview"]) {
+    for (const name of ["all", "app-catalog"]) {
       await state(name);
       assert.deepEqual(await page(PROBLEMS), [], `2D, ${name}, at ${w}×${h} with the title bar`);
     }
@@ -294,7 +304,7 @@ test("3D: no scroll, no overlap, heads and names fit, at every size", { skip }, 
   await resize([1200, 800]);
   await page(`document.querySelector("#view-3d").click(), true`);
   await until(() => page(`Boolean(document.querySelector("#device-view .stage3d")) && !document.querySelector("#camera-views").hidden`), "the 3D view");
-  await check("3d", t, ["all", "app-overview", "app-collapsed"]);
+  await check("3d", t, ["all", "app-catalog", "app-collapsed"]);
   await page(`document.querySelector("#view-2d").click(), true`);
   await until(() => page(`!document.querySelector("#device-view .stage3d")`), "the 2D view again");
 });

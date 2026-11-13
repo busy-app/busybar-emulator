@@ -61,9 +61,9 @@ export const MAX_BOXES = 50;
 export const MAX_BOX_LENGTH = 500;
 /**
  * The catalog's pull request template, for when the catalog's own cannot be read: a copy of
- * busy-app/busy-apps-catalog's .github/PULL_REQUEST_TEMPLATE.md as of 12 Nov 2026 (the dev copy has the same). Its checklist is the catalog's
- * condition for authors (the lawyers'): the window shows every item as it is written and sends nothing until all are
- * ticked.
+ * busy-app/busy-apps-catalog's .github/PULL_REQUEST_TEMPLATE.md as of 12 Nov 2026, with the contest item of its
+ * commit c792ed6b. Its checklist is the catalog's condition for authors (the lawyers'): the window shows every item as
+ * it is written and sends nothing until all are ticked but the "(optional)" ones.
  */
 export const BUNDLED_TEMPLATE = `# Author checklist
 
@@ -73,6 +73,7 @@ export const BUNDLED_TEMPLATE = `# Author checklist
 - [ ] The manifest follows the catalog manifest format
 - [ ] I've tested the app on a BUSY Bar with the latest release firmware
 - [ ] The screenshots are taken from the bar
+- [ ] (optional) My app takes part in the BUSY JS Apps Contest, and I accept the [contest rules](https://go.busy.app/terms-of-js-apps-contest)
 
 # AI usage
 
@@ -318,20 +319,23 @@ export function parseChecklist(markdown) {
  * and every box of the checklist (`list`, checklist()), with one tick for all of them. A catalog that is not BUSY's is
  * said in the first question's own words and at the head of its text, and a second question asks about it by its
  * name (security review L3). `catalog`: { owner, name }; `target`: the repository and commit the request names.
+ * The optional items are asked between the two, one question each (optionalQuestions).
  */
 export function requestQuestions({ folder, catalog, target, ai, list }) {
   const named = `${catalog.owner}/${catalog.name}`;
   const other = !isBusyCatalog(catalog);
   const warning = other ? `${named} is not BUSY's catalog (${BUSY_CATALOGS[0]}). The project's catalog.json or the command names it; whoever keeps ${named} gets the request, from your GitHub account.\n\n` : "";
   const usage = { none: "no AI was used", partly: "partly AI-assisted", full: "fully AI-generated" }[ai] ?? "not said";
-  const boxes = list.boxes.map((one) => `[ ] ${isOptionalBox(one) ? "Optional, left unticked: " : ""}${boxLabel(one).replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)").replace(/`/g, "")}`).join("\n");
+  const optional = list.boxes.some(isOptionalBox);
+  const boxes = list.boxes.map((one) => `[ ] ${isOptionalBox(one) ? "Optional, you choose next: " : ""}${plainBox(one)}`).join("\n");
   const first = {
     about: `publish pr ${folder}`,
     message: other ? `Send this app to ${named}, which is not BUSY's catalog?` : "Send this app to the catalog?",
     detail: `${warning}${folder}\n\nA program on this computer (busy-emulator publish pr, most likely your coding agent) asks to open a pull request to the catalog ${named} from your GitHub account, naming github.com/${target.owner}/${target.name} at ${target.commit.slice(0, 12)}. AI usage: ${usage}.\n\nThe catalog's author checklist${list.source === "bundled" ? " (the copy that comes with the emulator: the catalog's own could not be read)" : ""}:\n${boxes}`,
-    buttons: ["Cancel", "Send"],
+    // With optional items, the person ticks them in the questions that follow (optionalQuestions): this one goes on.
+    buttons: ["Cancel", optional ? "Continue" : "Send"],
     yes: 1,
-    checkboxLabel: list.boxes.some(isOptionalBox) ? "Every item of the checklist above is true, but the optional ones" : "Every item of the checklist above is true",
+    checkboxLabel: optional ? "Every item of the checklist above is true, except the optional ones" : "Every item of the checklist above is true",
   };
   if (!other) return [first];
   const second = {
@@ -342,6 +346,68 @@ export function requestQuestions({ folder, catalog, target, ai, list }) {
     yes: 1,
   };
   return [first, second];
+}
+
+/** A box's text as a dialog of the system's shows it: no prefix, a link as its text and address, no backticks. */
+const plainBox = (text) => boxLabel(text).replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)").replace(/`/g, "");
+
+/**
+ * The questions of publish pr after the first (requestQuestions), one for each optional item of the checklist
+ * (EMU-313): the item, and a checkbox for it, unticked. A dialog of the system's holds one checkbox, so each item has
+ * its own question. Only the person's tick in that dialog ticks the item; no option of the command line does. Cancel
+ * sends nothing, as in the first. `more`: another question follows the last (a catalog that is not BUSY's, asked by
+ * its name), so its button is Continue, not Send. Each question carries `box`, the item's text as written: the request
+ * ticks it when the dialog's checkbox is ticked.
+ */
+export function optionalQuestions({ folder, list, more = false }) {
+  const optional = list.boxes.filter(isOptionalBox);
+  return optional.map((box, at) => {
+    const sends = at === optional.length - 1 && !more;
+    return {
+      about: `publish pr ${folder}: optional item ${at + 1} of ${optional.length}`,
+      message: optional.length > 1 ? `Tick optional item ${at + 1} of ${optional.length} of the checklist?` : "Tick the checklist's optional item?",
+      detail: `${plainBox(box)}\n\nThe catalog's author checklist marks this item optional. Tick it only if it is true for you; the pull request then shows it ticked. ${sends ? "Send sends the request" : "Continue goes on"}, ticked or not; Cancel sends nothing.`,
+      buttons: ["Cancel", sends ? "Send" : "Continue"],
+      yes: 1,
+      checkboxLabel: "Tick this item",
+      box,
+    };
+  });
+}
+
+/**
+ * publish pr's questions put to the person, in their order (EMU-313): the first (requestQuestions), whose one tick
+ * covers the required items; then one for each optional item (optionalQuestions); then, for a catalog that is not
+ * BUSY's, the one that names it. `confirm`: person-question.mjs's confirm. Resolves with { answer: "yes", ticked }
+ * (requestTicks: the boxes to tick) or { answer: "no" | "unavailable" | "not_ticked", reason?, other } where `other`
+ * says the question about the other catalog was the one refused; nothing is sent then.
+ */
+export async function askRequest({ confirm, folder, catalog, target, ai, list }, signal) {
+  const [first, other] = requestQuestions({ folder, catalog, target, ai, list });
+  const asked = await confirm(first, signal);
+  if (asked.answer !== "yes") return { answer: asked.answer, reason: asked.reason, other: false };
+  if (!asked.checked) return { answer: "not_ticked", other: false };
+  const chosen = [];
+  for (const one of optionalQuestions({ folder, list, more: Boolean(other) })) {
+    const { box, ...question } = one;
+    const said = await confirm(question, signal);
+    if (said.answer !== "yes") return { answer: said.answer, reason: said.reason, other: false };
+    if (said.checked) chosen.push(box);
+  }
+  if (other) {
+    const again = await confirm(other, signal);
+    if (again.answer !== "yes") return { answer: again.answer, reason: again.reason, other: true };
+  }
+  return { answer: "yes", ticked: requestTicks(list, chosen), other: Boolean(other) };
+}
+
+/**
+ * The boxes a request from publish pr ticks: every required item, which the first question's one tick covers, and the
+ * optional ones the person ticked in their own questions (`chosen`, their texts); nothing else.
+ */
+export function requestTicks(list, chosen = []) {
+  const picked = new Set(chosen);
+  return [...list.required, ...list.boxes.filter((one) => isOptionalBox(one) && picked.has(one))];
 }
 
 /**
@@ -1327,7 +1393,9 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
         title,
         body: fillTemplate(template, { ai, ticked, testing }),
       });
-      return { url: made.url, number: made.number, created: made.created, direct: made.direct, branch: made.branch, catalog: `${catalog.owner}/${catalog.name}`, repo: `https://github.com/${repo.owner}/${repo.name}`, commit: repo.commit, update: found.exists, title };
+      // The optional items, and whether the request has them ticked: an agent can say so to the person (EMU-313).
+      const optional = shown.boxes.filter(isOptionalBox).map((one) => ({ item: boxLabel(one), ticked: ticked.includes(one) }));
+      return { url: made.url, number: made.number, created: made.created, direct: made.direct, branch: made.branch, catalog: `${catalog.owner}/${catalog.name}`, repo: `https://github.com/${repo.owner}/${repo.name}`, commit: repo.commit, update: found.exists, title, optional };
     } catch (e) {
       if (e instanceof PublishError) throw e;
       if (e.code === "unauthorized") markStale();

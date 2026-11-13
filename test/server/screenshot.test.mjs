@@ -106,7 +106,7 @@ test("--out with spaces and letters outside Latin, and the text a person reads",
   const file = join(realpathSync(cwd), out);
   assertPixels(file, "front", golden.front);
   const lines = shot.stdout.trimEnd().split(/\r?\n/);
-  assert.equal(lines[0], `Saved the front display, 72×16 px: ${file}`);
+  assert.equal(lines[0], `Saved the front display, 72x16 px: ${file}`);
   assert.equal(lines[1], existsSync(CHECKER) ? "The catalog takes it as a front screenshot (its check screenshot_png)." : "This copy of the emulator does not have the catalog's rules: the file was not checked against them.");
   assert.equal(lines.length, 2);
 });

@@ -121,7 +121,9 @@
   // ---------------------------------------------------------------- opening and closing
 
   /** Opens the flow for a project: { folder, name }. It opens on the first step not done. */
-  async function open({ folder, name }) {
+  // account: "switch" or "add" (the top bar's account menu) opens Publish on Choose a GitHub account, with another
+  // account to choose, or with "Another account" chosen to sign in.
+  async function open({ folder, name, account = null }) {
     if (!mounted) {
       document.body.append(root);
       mounted = true;
@@ -165,6 +167,14 @@
     if (!loaded || !flow.status) return render();
     // stale-check: a file changed since the check or the package while the dialog was closed.
     if (flow.step && (flow.step === "check" || steps.afterCheck(flow.step)) && goBackIfStale()) return;
+    if (account === "switch" || account === "add") {
+      flow.step = "github";
+      flow.accountMode = true;
+      if (account === "add") flow.pick = NEW_ACCOUNT;
+      render();
+      enter(flow.step);
+      return;
+    }
     // Opened again: on the step it was left at, unless that one is done, then on the first one not done.
     if (!flow.step || steps.isDone(flow.step, flow.status)) flow.step = steps.firstOpen(flow.status);
     render();

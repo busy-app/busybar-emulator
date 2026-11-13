@@ -45,6 +45,7 @@ const LICENSE_NAMES = Object.freeze({
   "LicenseRef-Tride-Players-1.2": "Tride Players Licence 1.2",
   // No license at all: a work of the emulator's own copyright holder, shipped by it.
   "LicenseRef-Flipper-FZCO": "All rights reserved; shipped in the emulator by its copyright holder",
+  "LicenseRef-Icons8": "Icons8 free license, with a link to Icons8",
 });
 
 const json = (file) => JSON.parse(readFileSync(file, "utf8"));
@@ -116,7 +117,7 @@ export function noticeSources({ appDir = APP_DIR, engineDir = ENGINE_DIR, buildS
   for (const lib of own) {
     if (!LICENSE_NAMES[lib.license]) throw new Error(`app-libraries.json: ${lib.id} has a license the summary has no name for: ${lib.license}`);
     const file = path.join(appDir, "..", "..", ...lib.file.split("/"));
-    if (!/^packages\/(app|stage|engine)\//.test(lib.file) || !existsSync(file)) throw new Error(`app-libraries.json: ${lib.id} names ${lib.file}, which the app does not have`);
+    if (!/^packages\/(app|stage|engine|server)\//.test(lib.file) || !existsSync(file)) throw new Error(`app-libraries.json: ${lib.id} names ${lib.file}, which the app does not have`);
     // A part without a license text of its own (a work of the emulator's own copyright holder) has none to print.
     if (lib.text) texts[`app/${lib.text}`] = readFileSync(path.join(HERE, "app-texts", lib.text), "utf8");
   }

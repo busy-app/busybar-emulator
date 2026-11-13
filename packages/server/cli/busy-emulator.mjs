@@ -16,6 +16,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveContext } from "./context.mjs";
 import { commandLine } from "./lifecycle.mjs";
 import { CliError, emit, unknownCommand } from "./output.mjs";
+import { lineWriter } from "./console.mjs";
+import { reportBrokenFilesTo } from "../json-store.mjs";
 import { system } from "./system.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +159,9 @@ if (startedHere()) {
     execPath: process.execPath,
     nodeVersion: process.versions.node,
   });
-  const code = await main(process.argv.slice(2), { ctx, sys: system, out: (line) => process.stdout.write(`${line}\n`), err: (line) => process.stderr.write(`${line}\n`) });
+  const err = lineWriter(process.stderr, ctx.unicodeOutput);
+  // A data file found broken (json-store.mjs) is told on stderr as everything else.
+  reportBrokenFilesTo(err);
+  const code = await main(process.argv.slice(2), { ctx, sys: system, out: lineWriter(process.stdout, ctx.unicodeOutput), err });
   process.exitCode = code;
 }

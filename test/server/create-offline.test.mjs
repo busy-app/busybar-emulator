@@ -150,7 +150,7 @@ test("a registry that takes the request and never answers: npm is stopped after 
   assert.equal(run.json.code, "network_stalled", JSON.stringify(run.json));
   assert.match(run.json.message, /got no answer from http:\/\/127\.0\.0\.1:\d+\/ for 4 s, so it was stopped: the connection hangs/);
   assert.equal(run.json.created, true, JSON.stringify(run.json) + run.stderr);
-  assert.match(run.stderr, /No answer from the npm registry for \d+ s…/);
+  assert.match(run.stderr, /No answer from the npm registry for \d+ s\.\.\./);
   assert.ok(run.ms < 60_000, `it took ${run.ms} ms`);
   const [project] = await listed(t, at);
   assert.equal(project.dependencies.state, "failed");

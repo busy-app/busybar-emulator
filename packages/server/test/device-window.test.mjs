@@ -92,6 +92,10 @@ function element(tag = "div") {
     getAttribute(name) {
       return this.attributes[name] ?? null;
     },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
+    getClientRects: () => [],
     querySelector(selector) {
       if (!inner.has(selector)) inner.set(selector, element());
       return inner.get(selector);
@@ -191,7 +195,7 @@ function openWindow({ AudioContext = audioContextClass({ initial: "suspended" })
     // The console's filters, when a test gives them: [kind, checked].
     ".filters input": filters.map(([kind, checked]) => Object.assign(element("input"), { dataset: { kind }, checked })),
     // The opened app's tabs (layout V2).
-    "#app-tabs [data-tab]": withData("tab", ["overview", "settings", "files"]),
+    "#app-tabs [data-tab]": withData("tab", ["settings", "catalog", "files"]),
   };
   const document = {
     querySelector(selector) {
@@ -254,12 +258,13 @@ function openWindow({ AudioContext = audioContextClass({ initial: "suspended" })
     ResizeObserver: class {
       observe() {}
     },
+    getComputedStyle: () => ({}),
     addEventListener: (type, fn) => (windowListeners[type] ??= []).push(fn),
     performance: { now },
     location: { host: "127.0.0.1:8861", origin: "http://127.0.0.1:8861", hash },
     ...(actions ? { emulatorActions: actions } : {}),
     // The publishing flow (publish.js) is a script of its own, with tests of its own: here it notes that it was opened.
-    ...(actions ? { emulatorPublish: { open: ({ folder }) => actions.calls?.push(["publish.open", folder]) } } : {}),
+    ...(actions ? { emulatorPublish: { open: ({ folder, account }) => actions.calls?.push(account ? ["publish.open", folder, account] : ["publish.open", folder]) } } : {}),
     // Create app's pop-up (create-app.js) too: here it keeps what the window opened it with, for a test to press Create.
     ...(actions ? { emulatorCreateApp: { open: (context) => (actions.calls?.push(["createApp.open", { examples: context.examples.map((one) => one.name), taken: context.taken }]), (actions.popUp = context)) } } : {}),
     ...(stage3d ? { emulatorStage3D: stage3d } : {}),
@@ -453,6 +458,8 @@ test("every icon of the window is one of BUSY's own set, and the window draws no
   const inScript = [
     ...script.matchAll(/\bicon\((?:[^()"`]*\? )?"([a-z0-9-]+)"(?: : "([a-z0-9-]+)")?\)/g),
     ...script.split("\n").filter((line) => line.includes("button(")).flatMap((line) => [...line.matchAll(/, (?:on \? )?"([a-z0-9-]+)"(?: : "([a-z0-9-]+)")?\)[;,]?$/g)]),
+    // An icon put in only when it is another one (setIcon): the battery, the speaker, Record.
+    ...script.matchAll(/\bsetIcon\([^,]+, (?:[^"()]*\? )?"([a-z0-9-]+)"(?: : "([a-z0-9-]+)")?\)/g),
     // An item of a menu: its words, then its picture.
     ...script.matchAll(/\bmenuItem\([^,]+, (?:on \? )?"([a-z0-9-]+)"(?: : "([a-z0-9-]+)")?/g),
   ].flatMap((m) => m.slice(1).filter(Boolean));
@@ -1110,32 +1117,36 @@ const listed = (page) =>
     chosen: row.classList.contains("chosen"),
     on: row.classList.contains("on"),
   }));
+/** The opened app's name: the words of the button in its title (a click copies its id), or the title's own. */
+const titleOf = (page) => page.$("#app-title").children[0]?.children[0]?.textContent ?? page.$("#app-title").textContent;
 /** The chosen app opened in the side column (layout V2), on a tab. */
 function openTab(page, tab) {
   page.$("#apps").children.find((row) => row.classList.contains("chosen"))?.fire("click");
   page.all("#app-tabs [data-tab]").find((button) => button.dataset.tab === tab).fire("click");
 }
 /**
- * The parts of the opened app, by their class: its facts under its name, what its work said (#app-status), the page of
+ * The parts of the opened app, by their class: its state under its name, what its work said (#app-status), the page of
  * its tab (#app-body; the settings form is the Settings tab's).
  */
 function part(page, className) {
-  if (className === "facts") return page.$("#app-facts");
+  if (className === "facts") return page.$("#app-facts").children[0] ?? null;
   if (className === "settings") openTab(page, "settings");
-  // app-column: the folder's line is at the top of the opened app, under its id.
+  // The folder's field (or, for an app from a package, its line) is at the top of the opened app, under its name.
   if (className === "folder") return page.$("#app-folder").children[0] ?? null;
   const page_ = page.$("#app-body").children;
   return [...inApp(page), ...page_.flatMap((el) => el.children ?? [])].find((el) => typeof el === "object" && el.className.split(" ")[0] === className) ?? null;
 }
 /** What the opened app's work said (#app-status), then the page of its tab (#app-body). */
 const inApp = (page) => [...page.$("#app-status").children, ...page.$("#app-body").children];
-/** The buttons of the project's actions, by their words: Run, Stop and Refresh on the page, the rest in its More. */
+/** The opened app's buttons on the page, left to right, by their names: Copy prompt for AI, Stop, Run (Refresh). */
+const pageButtons = (page) => (page.$("#app-actions").children[0]?.children ?? []).filter((b) => b.tagName === "BUTTON");
+const named = (b) => [b.ariaLabel || (b.children[0]?.textContent ?? b.title), b];
+/** The buttons of the project's actions, by their names: those on the page, then those in its More. */
 function actionButtons(page) {
-  const named = (b) => [b.children[0]?.textContent ?? b.title, b];
   page.$("#app-more").fire("click", { detail: 1 });
   const menu = page.global.document.body.children.at(-1);
   const items = (menu?.children ?? []).filter((item) => item.className.startsWith("menu-item"));
-  return Object.fromEntries([...page.$("#app-actions").children, ...items].map(named));
+  return Object.fromEntries([...pageButtons(page), ...items].map(named));
 }
 
 test("an app that runs has a row and its numbers even when the list does not name it", async () => {
@@ -1146,13 +1157,13 @@ test("an app that runs has a row and its numbers even when the list does not nam
   assert.deepEqual(listed(page), [{ name: "app.test.one", note: "", buttons: ["Stop"], chosen: true, on: true }]);
   assert.equal(page.$("#apps").children[0].querySelector(".row-actions").children.at(-1).title, "More", "the row's menu is behind its More button");
   // It is the chosen app, and its numbers are in its section.
-  assert.equal(page.$("#app-title").textContent, "app.test.one");
-  assert.equal(part(page, "running").querySelector(".heap-text").textContent, "Heap 2.0 of 128 KiB, peak 4.0");
+  assert.equal(titleOf(page), "app.test.one");
+  assert.equal(part(page, "ac-heap").querySelector(".ac-heap-text").textContent, "Heap 2.0 of 128 KiB");
   // Stopped, it leaves the list it was not in.
   page.stream.emit("state", state());
   await settle();
   assert.equal(page.$("#apps").children.length, 0);
-  assert.equal(page.$("#app-title").textContent, "App");
+  assert.equal(titleOf(page), "App");
 });
 
 test("the running app is the one with Stop and is the chosen one; a click on a row chooses another", async () => {
@@ -1164,19 +1175,19 @@ test("the running app is the one with Stop and is the chosen one; a click on a r
     { name: "One", note: "1.0", buttons: ["Start"], chosen: false, on: false },
     { name: "Two", note: "2.0", buttons: ["Stop"], chosen: true, on: true },
   ]);
-  assert.equal(page.$("#app-title").textContent, "Two");
-  assert.deepEqual(part(page, "facts").children.map((el) => el.textContent), ["Running", "2.0", "app.test.two"]);
-  assert.ok(part(page, "running"), "the running app's heap and draws");
+  assert.equal(titleOf(page), "Two");
+  assert.deepEqual(part(page, "facts").children.map((el) => el.textContent), ["Running"]);
+  assert.ok(part(page, "ac-heap"), "the running app's heap");
 
   page.$("#apps").children[0].fire("click");
   await settle();
-  assert.equal(page.$("#app-title").textContent, "One");
-  assert.deepEqual(part(page, "facts").children.map((el) => el.textContent), ["Stopped", "1.0", "app.test.one"]);
-  assert.equal(part(page, "running"), null, "an app that does not run has no numbers");
-  // Its Start, in the row and in the section's heading, starts it on the bar.
+  assert.equal(titleOf(page), "One");
+  assert.deepEqual(part(page, "facts").children.map((el) => el.textContent), ["Stopped"]);
+  assert.equal(part(page, "ac-heap"), null, "an app that does not run has no numbers");
+  // Its Start in the row and its Run on the page start it on the bar.
   page.sent();
   page.$("#apps").children[0].querySelector(".row-actions").children[0].fire("click");
-  page.$("#app-actions").children[0].fire("click");
+  Object.fromEntries(pageButtons(page).map(named)).Run.fire("click");
   assert.deepEqual(page.sent(), ["POST /api/apps/launch?app_id=app.test.one", "POST /api/apps/launch?app_id=app.test.one"]);
 });
 
@@ -1189,7 +1200,7 @@ test("in a browser the actions of a project are not there to be pressed, and say
   assert.equal(page.$("#create-app").title, "Available in the BUSY Bar Emulator app");
   const buttons = actionButtons(page);
   // Run and Stop are the bar's for an app without a project; what is the project's is the desktop app's.
-  assert.deepEqual(Object.keys(buttons), ["Run", "Stop", "Refresh", "Build", "Watch the folder", "Publish…", "Delete…"]);
+  assert.deepEqual(Object.keys(buttons), ["Stop", "Run", "Build", "Watch the folder", "Publish…", "Delete…"]);
   for (const [name, b] of Object.entries(buttons).filter(([name]) => !["Run", "Stop"].includes(name))) {
     assert.equal(b.ariaDisabled, "true", name);
     assert.equal(b.title, "Available in the BUSY Bar Emulator app", name);
@@ -1342,25 +1353,27 @@ test("rows of the same name say their folders; the pop-up is told of the apps th
   assert.deepEqual(listed(page).filter((row) => row.chosen).map(({ note }) => note), ["focus-timer-2, Dependencies not installed: no network"]);
 });
 
-test("the chosen project's folder is one line with its start and its name apart, Copy and Open in Finder", async () => {
-  const shell = shellActions({ projects: [PROJECT] });
+test("the chosen project's folder is a read-only field with Copy and Open in Finder in it", async () => {
+  const shell = shellActions({ projects: [{ ...PROJECT, shownFolder: "~/Projects/experiments/one" }] });
   const page = await openShell(shell);
-  const [, path, copy, show] = part(page, "folder").children;
-  assert.equal(path.title, PROJECT.folder);
-  assert.deepEqual(path.children.map((el) => [el.className, el.textContent]), [["head", "/Users/you/Projects/experiments/"], ["tail", "one"]]);
+  const [path, copy, show] = part(page, "folder").children;
+  assert.equal(path.tagName, "INPUT");
+  assert.equal(path.readOnly, true);
+  assert.equal(path.value, "~/Projects/experiments/one");
+  assert.deepEqual([path.dataset.tip, path.dataset.tipDetail], ["The project's folder", PROJECT.folder]);
   copy.fire("click");
   show.fire("click");
   await settle();
   assert.deepEqual(plain(shell.calls), [["copy", PROJECT.folder], ["reveal", PROJECT.folder]]);
-  assert.equal(copy.title, "Copied");
-  assert.match(show.children[0].textContent, /^(Open in Finder|Show in Explorer)$/);
+  assert.equal(copy.dataset.tip, "Copied");
+  assert.match(show.ariaLabel, /^(Open in Finder|Show in Explorer)$/);
 });
 
 test("a project's app that runs is stopped by the desktop app, as its project is; another app by the BUSY Bar", async () => {
   const shell = shellActions({ projects: [PROJECT] });
   const page = await openShell(shell, { apps: [APP, { id: "app.test.two", name: "Two", version: "2.0" }], running: RUNNING("app.test.one") });
   page.sent();
-  page.$("#app-actions").children[1].fire("click");
+  Object.fromEntries(pageButtons(page).map(named)).Stop.fire("click");
   await settle();
   assert.deepEqual(plain(shell.calls), [["stop", PROJECT.folder]]);
   assert.deepEqual(page.sent().filter((line) => line.includes("/api/apps/quit")), []);
@@ -1368,7 +1381,7 @@ test("a project's app that runs is stopped by the desktop app, as its project is
   page.stream.emit("state", { ...state(), running: RUNNING("app.test.two") });
   await settle();
   page.sent();
-  page.$("#app-actions").children[1].fire("click");
+  Object.fromEntries(pageButtons(page).map(named)).Stop.fire("click");
   assert.deepEqual(page.sent(), ["POST /api/apps/quit"]);
 });
 
@@ -1377,9 +1390,10 @@ test("an app on the BUSY Bar without a project says so, and its project's action
   const page = await openShell(shell);
   assert.equal(part(page, "folder").children[0].textContent, "Installed from a package");
   const buttons = actionButtons(page);
-  assert.equal(buttons.Refresh.ariaDisabled, "true");
-  assert.equal(buttons.Refresh.title, "This app has no project folder");
-  buttons.Refresh.fire("click");
+  assert.equal(buttons["Copy prompt for AI"], undefined, "no prompt without a project");
+  assert.equal(buttons.Build.ariaDisabled, "true");
+  assert.equal(buttons.Build.title, "This app has no project folder");
+  buttons.Build.fire("click");
   assert.deepEqual(plain(shell.calls), []);
 });
 
@@ -1461,10 +1475,73 @@ test("an action the desktop app refuses for want of a click says quietly: Click 
   assert.deepEqual(part(page, "job").children.map((el) => [el.className, el.textContent]), [["job-line quiet", "Click again"]]);
   assert.equal(listed(page)[0].note, "1.0", "nothing failed");
   shell.copy = noGesture;
-  const copy = part(page, "folder").children[2];
+  const copy = part(page, "folder").children[1];
   copy.fire("click");
   await settle();
-  assert.equal(copy.title, "Click again");
+  assert.equal(copy.dataset.tip, "Click again");
+});
+
+// ---- the account menu, the link to the server, icons that do not blink
+
+test("the account menu's Switch account… and Add account… open Publish on Choose a GitHub account for the open app", async () => {
+  const shell = shellActions({ projects: [PROJECT] });
+  shell.github = { status: async () => ({ configured: true, signedIn: true, login: "octo-person" }), signOut: async () => ({ ok: true }) };
+  const page = await openShell(shell);
+  await settle();
+  assert.equal(page.$("#account").hidden, false);
+  assert.equal(page.$("#account-name").textContent, "octo-person");
+  assert.equal(page.$("#account-avatar").dataset.mark, "github", "GitHub's mark, signed in or not");
+  const menu = () => {
+    page.$("#account").fire("click");
+    const el = page.global.document.body.children.at(-1);
+    return Object.fromEntries(el.children.filter((item) => item.className === "menu-item").map((item) => [item.children[0]?.textContent, item]));
+  };
+  const items = menu();
+  assert.deepEqual(Object.keys(items), ["Open on GitHub", "Switch account…", "Add account…", "Sign out"]);
+  items["Switch account…"].fire("click");
+  menu()["Add account…"].fire("click");
+  assert.deepEqual(plain(shell.calls.filter(([name]) => name === "publish.open")), [["publish.open", PROJECT.folder, "switch"], ["publish.open", PROJECT.folder, "add"]]);
+});
+
+test("without an app with a project open, Switch account… and Add account… are not there to be pressed", async () => {
+  const shell = shellActions();
+  shell.github = { status: async () => ({ configured: true, signedIn: true, login: "octo-person" }) };
+  const page = await openShell(shell);
+  await settle();
+  page.$("#account").fire("click");
+  const items = page.global.document.body.children.at(-1).children.filter((item) => item.className === "menu-item");
+  const switchItem = items.find((item) => item.children[0]?.textContent === "Switch account…");
+  assert.equal(switchItem.getAttribute("aria-disabled"), "true");
+  switchItem.fire("click");
+  assert.deepEqual(shell.calls.filter(([name]) => name === "publish.open"), []);
+});
+
+test("a lost link to the emulator's server says Reconnecting…; while it holds, the dashboard says nothing of it", async () => {
+  const page = openWindow();
+  page.stream.emit("hello", hello);
+  page.stream.emit("state", state());
+  await settle();
+  assert.equal(page.$("#link").classList.contains("live"), true);
+  page.stream.onerror();
+  assert.equal(page.$("#link").textContent, "Reconnecting…");
+  assert.equal(page.$("#link").classList.contains("live"), false);
+});
+
+test("an icon that changes with each state is put in only when it is another one: the same one is not drawn again", async () => {
+  const page = openWindow();
+  page.stream.emit("hello", hello);
+  const battery = page.$("#battery-icon");
+  let drawn = 0;
+  let html = "";
+  Object.defineProperty(battery, "innerHTML", { get: () => html, set: (value) => ((html = value), (drawn += 1)) });
+  for (let i = 0; i < 5; i++) page.stream.emit("state", state({ battery: 90, usb: false }));
+  await settle();
+  assert.equal(drawn, 1, "five states of the same charge draw the icon once");
+  assert.match(html, /#bi-battery-5"/);
+  page.stream.emit("state", state({ battery: 90, usb: true }));
+  page.stream.emit("state", state({ battery: 30, usb: true }));
+  assert.equal(drawn, 3);
+  assert.match(html, /#bi-battery-charging-2"/);
 });
 
 // ---- the console in the system's terminal
@@ -1553,7 +1630,7 @@ test("a job the list names, started elsewhere, is shown on the row and in the se
   assert.equal(part(page, "job").children[0].textContent, "Watching the folder");
   // Dev is under way: its button stops it; the others wait.
   const buttons = actionButtons(page);
-  assert.deepEqual(Object.keys(buttons), ["Run", "Stop", "Refresh", "Build", "Stop watching", "Publish…", "Show in Finder", "Delete…"]);
+  assert.deepEqual(Object.keys(buttons), ["Copy prompt for AI", "Stop", "Run", "Build", "Stop watching", "Publish…", "Show in Finder", "Copy the path", "Delete…"]);
   buttons.Build.fire("click");
   buttons["Stop watching"].fire("click");
   await settle();
@@ -1600,10 +1677,10 @@ test("Create app opens its pop-up with the examples and the ids in use; what it 
   assert.deepEqual(await shell.popUp.create(request), made);
   assert.deepEqual(plain(shell.calls.at(-1)), ["create", request]);
   assert.deepEqual(listed(page).map(({ name, chosen }) => [name, chosen]), [["One", false], ["Made", true]]);
-  assert.equal(part(page, "folder").children[1].title, "/p/made");
+  assert.equal(part(page, "folder").children[0].value, "/p/made");
 });
 
-test("Create app ends with the app running: the Refresh that followed is said in the app's section, as the Refresh button's", async () => {
+test("Create app ends with the app running: the Refresh that followed is the Refresh button's, said by the state alone", async () => {
   const made = { id: "app.test.made", name: "Made", folder: "/p/made", exists: true, refreshed: { ok: true, message: "app.test.made is running." } };
   const projects = [PROJECT];
   const shell = shellActions({ projects, answers: { create: made } });
@@ -1614,7 +1691,8 @@ test("Create app ends with the app running: the Refresh that followed is said in
   await shell.popUp.create({ example: null, name: "Made", id: "app.test.made", place: { parent: "/p", folder: "made" } });
   await settle();
   assert.deepEqual(listed(page).filter((row) => row.chosen).map(({ name }) => name), ["Made"]);
-  assert.equal(inApp(page).find((el) => el.className === "job").children[0].textContent, "app.test.made is running.");
+  // "… is running." says no more than the state under the name: the section does not repeat it.
+  assert.equal(inApp(page).find((el) => el.className === "job"), undefined);
 });
 
 test("the app menu's New App… opens the same pop-up; another item of the menu does nothing here", async () => {
@@ -1683,7 +1761,7 @@ test("\"I'll write the code\": the window's Create app, then the new app's three
   await settle();
   await shell.popUp.create({ example: null });
   await settle();
-  assert.equal(page.$("#app-title").textContent, "Other");
+  assert.equal(titleOf(page), "Other");
   assert.notEqual(page.$("#app-status").children[0]?.className, "first-steps");
 });
 
@@ -1728,7 +1806,7 @@ test("the script writes markup of its own only: what it puts into innerHTML hold
     if (value.startsWith("`")) {
       // A template of the script's own: what it takes in is an icon by a name written right there.
       for (const [, taken] of value.matchAll(/\$\{([^}]*)\}/g)) assert.match(taken, /^icon\("[a-z0-9-]+"\)$/, value.slice(0, 80));
-    } else assert.match(value, /^icon\(/, `only an icon is written without a template: ${value.slice(0, 80)}`);
+    } else assert.match(value, /^(icon\(|GITHUB_MARK$)/, `only an icon is written without a template: ${value.slice(0, 80)}`);
   }
   // Nothing else makes markup or runs text.
   assert.doesNotMatch(script, /insertAdjacentHTML|outerHTML|document\.write|\beval\(|new Function|setAttribute\("on/);
@@ -1753,9 +1831,9 @@ test("the names of a project, its folder, a job's lines and a check's words go t
   await settle();
   page.stream.emit("log", { kind: "error", text: hostile, time: 0 });
   // It is all there, as text.
-  assert.equal(page.$("#app-title").textContent, hostile);
+  assert.equal(titleOf(page), hostile);
   assert.equal(listed(page)[0].name, hostile);
-  assert.equal(part(page, "folder").children[1].children[1].textContent, hostile);
+  assert.equal(part(page, "folder").children[0].value, `/p/${hostile}`);
   // And in no markup the script wrote, anywhere on the page.
   const markup = (el) => (typeof el === "string" ? [] : [el._html, ...el.children.flatMap(markup)]);
   for (const id of ["#apps", "#app-status", "#app-folder", "#app-body", "#app-title", "#app-facts", "#app-actions", "#console"]) {
@@ -2438,4 +2516,23 @@ test("Record stops by itself at its longest: the page is told, then of the file;
   page3.$("#shot-take").fire("click");
   await settle();
   assert.equal(page3.$("#capture-said").textContent, "Click again");
+});
+
+test("an app ended by the BUSY Bar's restart or power-off has not crashed; one ended by an error has", async () => {
+  const shell = shellActions();
+  const page = await openShell(shell);
+  page.$("#apps").children[0].fire("click");
+  await settle();
+  const crashed = () => page.$("#app-facts").innerText.includes("Ended with an error");
+  const end = (reason) => {
+    page.stream.emit("log", { kind: "app", text: `Launch ${PROJECT.id} (heap 96 KiB)`, time: 0 });
+    page.stream.emit("log", { kind: "app", text: `App ${PROJECT.id} exited: ${reason}; heap peak 3.0 of 96 KiB`, time: 0 });
+  };
+  assert.equal(crashed(), false, "nothing ended yet");
+  end("power");
+  await settle();
+  assert.equal(crashed(), false, "Restart BUSY Bar ends the app with the reason power: not a crash");
+  end("error app main.js: boom");
+  await settle();
+  assert.equal(crashed(), true, "an error is a crash");
 });

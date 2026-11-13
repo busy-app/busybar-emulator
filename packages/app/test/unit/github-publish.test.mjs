@@ -10,7 +10,8 @@ import { after, before, test } from "node:test";
 
 import { ghEnvironment, ghFolders, ghRunner } from "../../src/github/gh.mjs";
 import { fakeSignedIn, runFakeGh } from "../fixtures/fake-gh.mjs";
-import { BUNDLED_TEMPLATE, BUSY_CATALOGS, changedSinceCheck, compareVersions, isOptionalBox, createGithubPublish, MAX_BOX_LENGTH, MAX_BOXES, requestQuestions, fillTemplate, parseCatalog, parseChecklist, parseRepository, readCatalogManifest, withChangelog } from "../../src/github/publish-flow.mjs";
+import { askRequest, BUNDLED_TEMPLATE, BUSY_CATALOGS, changedSinceCheck, compareVersions, isOptionalBox, createGithubPublish, MAX_BOX_LENGTH, MAX_BOXES, optionalQuestions, requestQuestions, requestTicks, fillTemplate, parseCatalog, parseChecklist, parseRepository, readCatalogManifest, withChangelog } from "../../src/github/publish-flow.mjs";
+import { createPersonQuestions } from "../../src/person-question.mjs";
 import { createPublishRecord } from "../../src/github/publish-record.mjs";
 import { FAKE_GH } from "../fixtures/fake-gh.mjs";
 import { startGithubStub } from "../fixtures/github-stub.mjs";
@@ -55,7 +56,7 @@ function project(name) {
  * `store()`: the stand-in's "system store"; `hosts()`: the person's hosts.yml.
  */
 /** BUSY's catalogs and the stand-ins for one the tests send to, which need no second confirmation here (L3). */
-const standInCatalogs = () => [...BUSY_CATALOGS, ...["catalog-owner/busy-apps-catalog-demo", "other-owner/apps-catalog", "empty-owner/empty-catalog", "busy-app/not-open-yet", "located-owner/located-catalog", "versions-owner/versions-catalog", "update-owner/update-catalog", "hijack-owner/hijack-catalog"], `${stub.login}/own-catalog`];
+const standInCatalogs = () => [...BUSY_CATALOGS, ...["catalog-owner/busy-apps-catalog-demo", "other-owner/apps-catalog", "empty-owner/empty-catalog", "busy-app/not-open-yet", "located-owner/located-catalog", "versions-owner/versions-catalog", "update-owner/update-catalog", "hijack-owner/hijack-catalog", "contest-owner/contest-catalog"], `${stub.login}/own-catalog`];
 
 function flowFor({ env = {}, dataDir = mkdtempSync(path.join(root, "data-")), personGh = null, catalogs = standInCatalogs(), downloads = { origins: [{ protocol: "http:", host: new URL(stub.base).host }] } } = {}) {
   const opened = [];
@@ -946,15 +947,17 @@ test("the catalog's checklist: every box of the template as it is written, the A
     "The manifest follows the catalog manifest format",
     "I've tested the app on a BUSY Bar with the latest release firmware",
     "The screenshots are taken from the bar",
+    "(optional) My app takes part in the BUSY JS Apps Contest, and I accept the [contest rules](https://go.busy.app/terms-of-js-apps-contest)",
   ]);
-  assert.deepEqual(list.blocks.map((one) => one.kind), ["heading", "box", "box", "box", "box", "box", "box", "heading", "instruction", "ai"]);
+  assert.equal(list.required.length, 6, "the contest item is optional");
+  assert.deepEqual(list.blocks.map((one) => one.kind), ["heading", "box", "box", "box", "box", "box", "box", "box", "heading", "instruction", "ai"]);
   assert.deepEqual(list.ai, [
     { id: "none", text: "No AI was used." },
     { id: "partly", text: "Partly AI-assisted: which parts, and what they do." },
     { id: "full", text: "Fully AI-generated: what the generated code does." },
   ]);
   const body = fillTemplate(BUNDLED_TEMPLATE, { ai: "full", ticked: list.boxes, testing: "Tested in BUSY Bar Emulator." });
-  assert.equal((body.match(/^- \[x\] /gm) ?? []).length, 6);
+  assert.equal((body.match(/^- \[x\] /gm) ?? []).length, 7);
   assert.doesNotMatch(body, /- \[ \]|Keep ONE option|No AI was used|Partly AI-assisted/);
   assert.match(body, /^- Fully AI-generated: what the generated code does\.$/m);
   assert.match(body, /\(https:\/\/github\.com\/busy-app\/busy-apps-catalog\/blob\/main\/TERMS\.md\)/, "the links stay");
@@ -1085,12 +1088,12 @@ test("stale-check: the bytes a push reads are compared, file by file, with the o
 test("an optional item of the checklist: shown without its prefix, not required, its state kept in the request, and said so in publish pr's question", () => {
   const template = BUNDLED_TEMPLATE.replace("# AI usage", "- [ ] (Optional) Takes part in a contest, and I accept its [rules](https://example.com/rules)\n\n# AI usage");
   const list = parseChecklist(template);
-  assert.equal(list.boxes.length, 7);
+  assert.equal(list.boxes.length, 8, "the bundled template's contest item and this one");
   assert.equal(list.required.length, 6);
   assert.equal(list.required.some(isOptionalBox), false);
   const optional = list.blocks.filter((one) => one.kind === "box").at(-1);
   assert.deepEqual([optional.optional, optional.label], [true, "Takes part in a contest, and I accept its [rules](https://example.com/rules)"]);
-  assert.equal(list.blocks.filter((one) => one.kind === "box" && one.optional).length, 1);
+  assert.equal(list.blocks.filter((one) => one.kind === "box" && one.optional).length, 2);
   // Unticked stays unticked; ticked stays ticked.
   const without = fillTemplate(template, { ai: "none", ticked: list.required });
   assert.match(without, /^- \[ \] \(Optional\) Takes part/m);
@@ -1099,6 +1102,85 @@ test("an optional item of the checklist: shown without its prefix, not required,
   assert.match(withIt, /^- \[x\] \(Optional\) Takes part/m);
   const target = { owner: "octo", name: "clock", commit: "c".repeat(40) };
   const [first] = requestQuestions({ folder: "/p/clock", catalog: { owner: "busy-app", name: "busy-apps-catalog" }, target, ai: "none", list });
-  assert.match(first.detail, /\n\[ \] Optional, left unticked: Takes part in a contest, and I accept its rules \(https:\/\/example\.com\/rules\)(\n|$)/);
-  assert.match(first.checkboxLabel, /but the optional ones$/);
+  assert.match(first.detail, /\n\[ \] Optional, you choose next: Takes part in a contest, and I accept its rules \(https:\/\/example\.com\/rules\)(\n|$)/);
+  assert.equal(first.checkboxLabel, "Every item of the checklist above is true, except the optional ones");
+  assert.deepEqual(first.buttons, ["Cancel", "Continue"], "the optional items are asked next");
+});
+
+test("publish pr's optional items (EMU-313): one question each, its checkbox unticked, the last one Send; Continue when the other catalog's question follows", () => {
+  const list = parseChecklist(BUNDLED_TEMPLATE.replace("# AI usage", "- [ ] (optional) Second [thing](https://example.com/2)\n\n# AI usage"));
+  const asked = optionalQuestions({ folder: "/p/clock", list });
+  assert.equal(asked.length, 2);
+  assert.deepEqual(asked.map((one) => one.message), ["Tick optional item 1 of 2 of the checklist?", "Tick optional item 2 of 2 of the checklist?"]);
+  assert.deepEqual(asked.map((one) => one.buttons), [["Cancel", "Continue"], ["Cancel", "Send"]]);
+  assert.deepEqual(asked.map((one) => [one.checkboxLabel, one.yes]), [["Tick this item", 1], ["Tick this item", 1]]);
+  assert.match(asked[0].detail, /^My app takes part in the BUSY JS Apps Contest, and I accept the contest rules \(https:\/\/go\.busy\.app\/terms-of-js-apps-contest\)\n\nThe catalog's author checklist marks this item optional\./);
+  assert.match(asked[1].detail, /Send sends the request, ticked or not; Cancel sends nothing\.$/);
+  assert.equal(asked[0].box, list.boxes.find(isOptionalBox), "the item as written, which the request ticks");
+  const one = optionalQuestions({ folder: "/p/clock", list: parseChecklist(BUNDLED_TEMPLATE) });
+  assert.equal(one[0].message, "Tick the checklist's optional item?");
+  assert.deepEqual(optionalQuestions({ folder: "/p/clock", list: parseChecklist(BUNDLED_TEMPLATE), more: true })[0].buttons, ["Cancel", "Continue"]);
+  assert.deepEqual(optionalQuestions({ folder: "/p", list: parseChecklist(TEMPLATE) }), [], "no optional items, no questions");
+  // The ticks sent: every required item, and of the optional ones only those chosen; a text not in the list is none.
+  assert.deepEqual(requestTicks(list), list.required);
+  assert.deepEqual(requestTicks(list, [list.boxes.at(-1), "I made it up", list.required[0]]), [...list.required, list.boxes.at(-1)]);
+});
+
+test("publish pr's dialogs (EMU-313): the person's ticks alone go into the request, through the system's dialogs as the app shows them", async () => {
+  const target = { owner: "octo", name: "clock", commit: "c".repeat(40) };
+  const list = parseChecklist(BUNDLED_TEMPLATE);
+  const contest = list.boxes.find(isOptionalBox);
+  /** The app's questions (person-question.mjs) with a stand-in for the system's dialog: `clicks` answers each in turn. */
+  const dialogs = (clicks) => {
+    const shown = [];
+    let clock = 0;
+    const ask = createPersonQuestions({ showMessageBox: async (_win, options) => (shown.push(options), clicks[shown.length - 1] ?? { response: 0 }), windowFor: async () => ({}), config: { hidden: false }, appName: "BUSY Bar Emulator", log: () => {}, now: () => (clock += 2000) });
+    return { confirm: ask.confirm, shown };
+  };
+  const busy = { owner: "busy-app", name: "busy-apps-catalog" };
+  // The checklist ticked, the contest ticked too.
+  const both = dialogs([{ response: 1, checkboxChecked: true }, { response: 1, checkboxChecked: true }]);
+  assert.deepEqual(await askRequest({ confirm: both.confirm, folder: "/p/clock", catalog: busy, target, ai: "none", list }), { answer: "yes", ticked: [...list.required, contest], other: false });
+  assert.equal(both.shown.length, 2);
+  assert.deepEqual(both.shown.map((one) => [one.buttons, one.checkboxChecked, one.defaultId, one.cancelId]), [[["Cancel", "Continue"], false, 0, 0], [["Cancel", "Send"], false, 0, 0]], "each checkbox unticked to start with, Cancel the default");
+  assert.equal(both.shown[1].checkboxLabel, "Tick this item");
+  assert.match(both.shown[1].detail, /^My app takes part in the BUSY JS Apps Contest/);
+  // The contest left unticked: the required items alone.
+  const left = dialogs([{ response: 1, checkboxChecked: true }, { response: 1, checkboxChecked: false }]);
+  assert.deepEqual((await askRequest({ confirm: left.confirm, folder: "/p/clock", catalog: busy, target, ai: "none", list })).ticked, list.required);
+  // Cancel in the contest's dialog sends nothing; so does the checklist unticked, which asks nothing more.
+  assert.deepEqual(await askRequest({ confirm: dialogs([{ response: 1, checkboxChecked: true }, { response: 0, checkboxChecked: true }]).confirm, folder: "/p/clock", catalog: busy, target, ai: "none", list }), { answer: "no", reason: undefined, other: false });
+  const unticked = dialogs([{ response: 1, checkboxChecked: false }, { response: 1, checkboxChecked: true }]);
+  assert.equal((await askRequest({ confirm: unticked.confirm, folder: "/p/clock", catalog: busy, target, ai: "none", list })).answer, "not_ticked");
+  assert.equal(unticked.shown.length, 1);
+  // Another catalog: the contest's dialog goes on to the question that names it, whose Cancel is said as its own.
+  const other = { owner: "attacker", name: "catalog" };
+  const named = dialogs([{ response: 1, checkboxChecked: true }, { response: 1, checkboxChecked: true }, { response: 0 }]);
+  assert.deepEqual(await askRequest({ confirm: named.confirm, folder: "/p/clock", catalog: other, target, ai: "none", list }), { answer: "no", reason: undefined, other: true });
+  assert.deepEqual(named.shown.map((one) => one.buttons.at(-1)), ["Continue", "Continue", "Send to attacker/catalog"]);
+  // A hidden run asks nothing.
+  const hidden = createPersonQuestions({ showMessageBox: async () => ({ response: 1, checkboxChecked: true }), windowFor: async () => ({}), config: { hidden: true }, appName: "x", log: () => {} });
+  assert.equal((await askRequest({ confirm: hidden.confirm, folder: "/p/clock", catalog: busy, target, ai: "none", list })).answer, "unavailable");
+});
+
+test("publish pr with the contest ticked, and without (EMU-313): the request's description ticks what the person chose, and the answer says which optional items are ticked", async () => {
+  const { flow } = await signedIn();
+  const template = BUNDLED_TEMPLATE;
+  stub.makeRepo("contest-owner", "contest-catalog");
+  stub.commitFiles("contest-owner/contest-catalog", "main", { "README.md": "# Catalog\n", "applications/.gitkeep": "", ".github/PULL_REQUEST_TEMPLATE.md": template });
+  const contest = "My app takes part in the BUSY JS Apps Contest, and I accept the [contest rules](https://go.busy.app/terms-of-js-apps-contest)";
+  for (const [name, take] of [["clock-contest", true], ["clock-no-contest", false]]) {
+    const p = project(name);
+    const pushed = await flow.push({ folder: p.dir, status: p.status, files: p.plan, name });
+    const manifest = noted(p, pushed);
+    // Another app for each: two requests, not one updated.
+    p.status.id = `io.github.octo.${name.replace(/-/g, "_")}`;
+    const list = await flow.checklist({ catalog: "contest-owner/contest-catalog" });
+    const ticked = requestTicks(list, take ? [`(optional) ${contest}`] : []);
+    const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "contest-owner/contest-catalog", ticked, ai: "full", manifest });
+    assert.deepEqual(made.optional, [{ item: contest, ticked: take }]);
+    const body = stub.pulls.at(-1).body;
+    assert.equal((body.match(/^- \[x\] /gm) ?? []).length, take ? 7 : 6);
+    assert.match(body, take ? /^- \[x\] \(optional\) My app takes part in the BUSY JS Apps Contest/m : /^- \[ \] \(optional\) My app takes part in the BUSY JS Apps Contest/m);
+  }
 });

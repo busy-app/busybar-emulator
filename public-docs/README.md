@@ -56,7 +56,7 @@ once, the question does not come back by itself; "Getting started", at the foot 
 
 3. Change `src/main.ts`, then `build` and `run` again: `run` installs what `build` made, starts it and says whether
    it runs. Or leave `dev` running: it does both on every save and shows the app's console. In the window, the
-   app's Refresh builds, installs and starts it once.
+   app's Run (Refresh while it runs) builds, installs and starts it once.
 
    | Command | What it does |
    |---|---|
@@ -98,11 +98,12 @@ A chat client that cannot run commands, such as Claude Desktop, gets the emulato
 - **The BUSY Bar in a window.** Both displays and, centered under the BUSY Bar, its controls: the mode switch, Start / Pause
   with its two status LEDs, Back and the wheel. Flat, or as a 3D model you turn and zoom by hand, with quick views
   from the front, the back, the top and the side. Beside it your apps (Create app, and a menu on each row with
-  Delete), the chosen app with its settings, and its console.
+  Delete), the chosen app with its folder, Copy prompt for AI, Run and its Settings, Catalog and Files, and its
+  console.
 - **The BUSY Bar's own code.** The JavaScript runtime, the drawing, the system screens and the BUSY Bar's local web are the
   code of firmware 1.3.1, compiled to WebAssembly. Their frames are compared with a BUSY Bar's, pixel by pixel. The local
-  web, with your app's settings page, opens from App settings in the app's section of the window (or BUSY Bar → App
-  Settings in the menu, Cmd+, or Ctrl+,), or at http://127.0.0.1:8640 in a browser.
+  web, with your app's settings page, opens from Open in Local Web at the end of the app's Settings tab (or BUSY Bar →
+  App Settings in the menu, Cmd+, or Ctrl+,), or at http://127.0.0.1:8640 in a browser.
 - **The BUSY Bar's speed and limits.** Your app's JavaScript takes the time it would take on a BUSY Bar, and the same memory,
   `fetch` and API limits apply. What is slow or too big here is slow or too big on a BUSY Bar.
 - **Screenshots for the catalog.** PNG files of 72×16 and 160×80 pixels with nothing in them but the pixels: from

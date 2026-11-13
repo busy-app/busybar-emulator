@@ -28,7 +28,7 @@
 // The doc public-docs/install.md carries each script whole; the first test checks they are the same text.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
@@ -681,6 +681,21 @@ test("Windows, nothing installed, as a standard user: downloads, checks, runs th
   assert.ok(r.out.trim().endsWith(`cli=${cli}`), r.out);
   assert.deepEqual(winCalls(c.local), [`${path.join(appFolder, "resources", "bin", "busy-emulator.exe")} start`]);
   assert.deepEqual(readdirSync(c.temp).filter((f) => f.startsWith("busy-emulator-install-")), [], "the download is gone");
+  assert.ok(!existsSync(path.join(c.temp, "busybar-emulator-setup.log")), "the setup's log of an install that succeeded is gone (EMU-314)");
+});
+
+test("Windows, the one-line install's copy in %TEMP% removes itself; a copy under another name stays (EMU-314)", { skip: winOnly }, async () => {
+  const c = winCase("self-removal");
+  const named = path.join(c.temp, "busy-emulator-install.ps1");
+  renameSync(noShortcut(c.temp), named);
+  const r = await runWin(named, c, winRelease.good);
+  assert.equal(r.code, 0, r.all);
+  assert.ok(!existsSync(named), "the downloaded copy is gone");
+  assert.deepEqual(readdirSync(c.temp), [], "nothing is left in %TEMP%");
+  const kept = noShortcut(c.temp);
+  const again = await runWin(kept, c, winRelease.good);
+  assert.equal(again.code, 0, again.all);
+  assert.ok(existsSync(kept), "install-windows.ps1, saved by a person, stays");
 });
 
 test("Windows, the setup does not match SHA256SUMS: the setup is not run, nothing installed or started", { skip: winOnly }, async () => {

@@ -22,7 +22,7 @@ import { CAPTURE_PARTITION, createClipEncoder } from "./capture-window.mjs";
 import { createOpener, DOCS_URLS } from "./external.mjs";
 import { createFolderDialogs } from "./folder-dialogs.mjs";
 import { createGestures } from "./gestures.mjs";
-import { createGithubPublish, parseCatalog, requestQuestions } from "./github/publish-flow.mjs";
+import { askRequest, createGithubPublish, parseCatalog } from "./github/publish-flow.mjs";
 import { createPublishRecord } from "./github/publish-record.mjs";
 import { ghEnvironment, ghFolders, ghRunner } from "./github/gh.mjs";
 import { createIconAnswers, isIconRequest } from "./icons.mjs";
@@ -756,7 +756,7 @@ async function githubForCli(question, signal) {
       if (!push && !catalog) return failed("bad_catalog", "The catalog is a GitHub repository: owner/name, or its address.", "Run it with --catalog owner/name.");
       if (!push && !target) return failed("not_pushed", "The app is not on GitHub from this computer yet.", "Run busy-emulator publish push first.");
       // The catalog's checklist, as its template says (read now, or the copy bundled with the app): shown whole in the
-      // dialog, and its one tick is the person's for every item of it.
+      // dialog, and its one tick is the person's for every required item of it; each optional item has its own.
       let list = null;
       if (!push) {
         try {
@@ -765,36 +765,34 @@ async function githubForCli(question, signal) {
           return failed(e?.code ?? "failed", String(e?.message ?? e), e?.hint ?? null);
         }
       }
-      // The questions of a request (publish-flow.mjs requestQuestions): a catalog that is not BUSY's is named in the
-      // first and asked about again by its name (security review L3).
-      const questions = push ? null : requestQuestions({ folder: question.folder, catalog, target, ai: question.ai, list });
       // Asked as the trust question is (person-question.mjs): one question at a time, a dialog on the main window that
       // goes when the caller stops waiting, Cancel first and the default, and a yes within a second of the dialog's
       // appearing not taken. The server keeps the rest: 409 while a question is open, a pause after Cancel.
+      // The questions of a request (publish-flow.mjs askRequest): the checklist with one tick for its required items,
+      // then each optional item with its own checkbox, unticked (EMU-313); a catalog that is not BUSY's is named in the
+      // first and asked about again by its name (security review L3). Only the person's ticks are sent.
+      if (!push) {
+        const named = `${catalog.owner}/${catalog.name}`;
+        const asked = await askRequest({ confirm: askPerson.confirm, folder: question.folder, catalog, target, ai: question.ai, list }, signal);
+        if (asked.answer === "unavailable") return failed("window_hidden", `The person could not be asked: ${asked.reason}.`, "Open the BUSY Bar Emulator window, then run this again.");
+        if (asked.answer === "not_ticked") return failed("not_ticked", "The person did not tick the catalog's checklist: nothing was sent.", null);
+        if (asked.answer !== "yes") return failed("refused", `The person chose Cancel: nothing was sent${asked.other ? ` to ${named}` : ""}.`, "Do not ask again unless the person tells you to.");
+        return asAction(await actions.call("github.request", { folder: question.folder, catalog: named, ticked: asked.ticked, ai: question.ai, ...(asked.other ? { otherCatalog: named } : {}) }));
+      }
       const asked = await askPerson.confirm(
-        push
-          ? {
-              about: `publish push ${question.folder}`,
-              message: where.mode === "replace" ? `Replace the files of github.com/${where.owner}/${where.name}?` : `Publish this app to a new public repository, github.com/${where.owner}/${where.name}?`,
-              detail: `${question.folder}\n\nA program on this computer (busy-emulator publish push, most likely your coding agent) asks to publish the project's files to ${where.mode === "replace" ? `github.com/${where.owner}/${where.name}, which this project was published to before: its files become the project's` : `a new public repository of your GitHub account, github.com/${where.owner}/${where.name}`}. Anyone can see them.`,
-              buttons: ["Cancel", "Publish"],
-              yes: 1,
-              checkboxLabel: null,
-            }
-          : questions[0],
+        {
+          about: `publish push ${question.folder}`,
+          message: where.mode === "replace" ? `Replace the files of github.com/${where.owner}/${where.name}?` : `Publish this app to a new public repository, github.com/${where.owner}/${where.name}?`,
+          detail: `${question.folder}\n\nA program on this computer (busy-emulator publish push, most likely your coding agent) asks to publish the project's files to ${where.mode === "replace" ? `github.com/${where.owner}/${where.name}, which this project was published to before: its files become the project's` : `a new public repository of your GitHub account, github.com/${where.owner}/${where.name}`}. Anyone can see them.`,
+          buttons: ["Cancel", "Publish"],
+          yes: 1,
+          checkboxLabel: null,
+        },
         signal,
       );
       if (asked.answer === "unavailable") return failed("window_hidden", `The person could not be asked: ${asked.reason}.`, "Open the BUSY Bar Emulator window, then run this again.");
       if (asked.answer !== "yes") return failed("refused", "The person chose Cancel: nothing was sent.", "Do not ask again unless the person tells you to.");
-      if (push) return asAction(await actions.call("github.push", { folder: question.folder, name: where.name }));
-      if (!asked.checked) return failed("not_ticked", "The person did not tick the catalog's checklist: nothing was sent.", null);
-      const named = `${catalog.owner}/${catalog.name}`;
-      if (questions[1]) {
-        const again = await askPerson.confirm(questions[1], signal);
-        if (again.answer === "unavailable") return failed("window_hidden", `The person could not be asked: ${again.reason}.`, "Open the BUSY Bar Emulator window, then run this again.");
-        if (again.answer !== "yes") return failed("refused", `The person chose Cancel: nothing was sent to ${named}.`, "Do not ask again unless the person tells you to.");
-      }
-      return asAction(await actions.call("github.request", { folder: question.folder, catalog: named, ticked: list.required ?? list.boxes, ai: question.ai, ...(questions[1] ? { otherCatalog: named } : {}) }));
+      return asAction(await actions.call("github.push", { folder: question.folder, name: where.name }));
     }
     default:
       return failed("usage", "No such step.");

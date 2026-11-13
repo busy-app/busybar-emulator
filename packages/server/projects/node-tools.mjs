@@ -34,6 +34,7 @@
 // file is read in the console's code page, and a path with letters outside it would not survive being written there.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 import { startProgram } from "../../engine/programs.mjs";
 import { nodeEnvironment } from "../cli/node-environment.mjs";
@@ -305,8 +306,8 @@ export function runNodeTool(setup, { tool, args, cwd, onOutput = () => {}, extra
     let stopped = null;
     let heard = Date.now();
     let told = 0;
-    const take = (chunk) => {
-      const text = chunk.toString("utf8");
+    const take = (text) => {
+      if (!text) return;
       output = (output + text).slice(-OUTPUT_LIMIT);
       heard = Date.now();
       told = 0;
@@ -314,8 +315,13 @@ export function runNodeTool(setup, { tool, args, cwd, onOutput = () => {}, extra
       const failure = !stopped && watch?.failsOn ? watch.failsOn(text) : null;
       if (failure) stop("network", failure);
     };
-    child.stdout.on("data", take);
-    child.stderr.on("data", take);
+    // A decoder of its own for each stream: a character of several bytes split between two pieces of output (a
+    // Cyrillic path in tsc's error lines) comes out whole, not as two U+FFFD; what is left at the end is flushed.
+    for (const stream of [child.stdout, child.stderr]) {
+      const decoder = new StringDecoder("utf8");
+      stream.on("data", (chunk) => take(decoder.write(chunk)));
+      stream.on("end", () => take(decoder.end()));
+    }
     let aborted = false;
     let closing = null;
     const killAll = (sig) => killTree(child, { platform, windowsDir, signal: sig });

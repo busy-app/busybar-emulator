@@ -2,7 +2,8 @@
 // agent trips without it (the field test with a real agent, 11.11):
 //
 // - shared/settings.ts. The template's helper reads a global `Settings` the released firmware does not have, so its
-//   loadValues() is always null and every settings page made with it is dead (busy-tools issue 3). The helper is
+//   loadValues() is always null and every settings page made with it is dead (docs/requests/busy-tools-issues.md,
+//   issue 6; not filed on GitHub yet). The helper is
 //   replaced by one with the same exported names that reads the bar's API, GET /api/apps/settings?app_id=<the app>:
 //   the bar answers with every field, the saved value or the default of settings.json. Only the template's own
 //   broken helper is replaced: a file that does not read that global (a later template that fixed it) is left alone.
@@ -33,7 +34,7 @@ export const SETTINGS_HELPER = `// The app's settings, read from the BUSY Bar's 
 import manifest from "../src/appmeta/manifest.json";
 import { device } from "./device";
 
-/** The values: field id → value; a group is a nested map. */
+/** The values: field id -> value; a group is a nested map. */
 export type SettingsValues = Record<string, unknown>;
 
 /**
@@ -88,41 +89,42 @@ export function agentsSection({ typecheck = true } = {}) {
     SECTION_BEGIN,
     "## No BUSY Bar needed: this project runs on BUSY Bar Emulator",
     "",
-    "BUSY Bar Emulator created this project. It runs the BUSY Bar's firmware on this computer and has its own Node, npm and busy-cli, so use its command line for everything: do not run `npm`, `npx`, `node` or `tsc` yourself, and do not look for a BUSY Bar on USB. Where the rest of this file or `README.md` says `npm run …`, use the command below.",
+    "BUSY Bar Emulator created this project. It runs the BUSY Bar's firmware on this computer and has its own Node, npm and busy-cli, so use its command line for everything: do not run `npm`, `npx`, `node` or `tsc` yourself, and do not look for a BUSY Bar on USB. Where the rest of this file or `README.md` says `npm run ...`, use the command below.",
     "",
     "`busy-emulator` below is the command line's full path: `~/.busy-emulator/bin/busy-emulator` on macOS. On Windows it is `%LOCALAPPDATA%\\busy-emulator\\bin\\busy-emulator.exe`, called " +
       `in PowerShell as \`${WINDOWS_CALLS.powershell}\`, in Git Bash as \`${WINDOWS_CALLS.bash}\`, in cmd as \`${WINDOWS_CALLS.cmd}\`. ` +
-      "A person's own busy-cli works against the emulator too (`--addr` with the address `busy-emulator status` prints). Run each command on its own, not joined with others. Every command takes `--json`; a failure has a `code`, a `message` and a `hint` that names the next command. The emulator is installed, so none of this needs a question to the person: build, run, look at the screen, fix.",
+      "A person's own busy-cli works against the emulator too (`--addr` with the address `busy-emulator status` prints). Run each command on its own, not joined with others. Every command takes `--json`; a failure has a `code`, a `message` and a `hint` that names the next command. None of this needs a question to the person: build, run, look at the screen, fix.",
     "",
     "| To | Run in this folder |",
     "| --- | --- |",
     "| Build, install and start the app after an edit | `busy-emulator dev --once` (exit code 0: the app runs) |",
     "| Only build; only install and start | `busy-emulator build`; `busy-emulator run` |",
     ...(typecheck ? ["| Check the types | `busy-emulator typecheck` |"] : []),
-    "| Read the app's console: `console.log`, errors, why it ended | `busy-emulator logs` (this app's lines; `busy-emulator logs --since-run`: its latest launch only; an `emulator:` line is the emulator's note on an unhandled rejection or an API call the BUSY Bar refused) |",
+    "| Read the app's console: `console.log`, errors, why it ended | `busy-emulator logs` (this app's lines; `busy-emulator logs --since-run`: its latest launch only) |",
     "| See the screen | `busy-emulator screenshot --scale 8`, then read `screenshots/front-<n>@8x.png`; the back display: `busy-emulator screenshot --back --scale 4` |",
-    "| Make a short video of the app for a post | `busy-emulator record` (5 s of the emulator's window, `media/clip-<n>.mp4`; `--layout post` the BUSY Bar alone, 1080×1920; `--gif` a GIF of the front display) |",
+    "| Make a short video of the app for a post | `busy-emulator record` (5 s of the emulator's window, `media/clip-<n>.mp4`; `--layout post` the BUSY Bar alone, 1080x1920; `--gif` a GIF of the front display) |",
     "| Press a button or turn the wheel | `busy-emulator press ok` (also `start`, `back`, `up`, `down`; `--times 3`; `--hold 800` for a long press) |",
     "| Let time pass: a timer, a countdown, the hour | `busy-emulator time advance 25m` (the app's timers due in between fire now); `busy-emulator time set 14:59:50`; `busy-emulator time reset` |",
     "| Read or change the app's settings | `busy-emulator settings get`; `busy-emulator settings set hour24=false --restart` |",
     "| Stop the app | `busy-emulator stop` |",
-    "| Restart BUSY Bar when the app froze it (no key helps) | `busy-emulator restart-bar` (as holding Back and Start on a real BUSY Bar; apps and settings are kept) |",
+    "| Restart BUSY Bar when the app froze it (no key helps) | `busy-emulator restart-bar` (like holding Back and Start; apps and settings stay) |",
     "| Make the app's icons | `busy-emulator icon --text AB` (one or two letters) or `busy-emulator icon --from picture.png` |",
-    "| Get it ready for the app catalog (nothing is sent) | `busy-emulator catalog-texts set --category productivity --short-description \"…\" --description \"…\"` (`catalog-texts` lists the categories); `busy-emulator publish screenshots --take front` (and `--take back`); `busy-emulator publish readme set --intro \"…\" --controls '{\"Start\":\"…\",\"Wheel turn\":\"…\",\"Wheel press\":\"…\",\"Back\":\"…\"}'` (How to use: what each control does); `busy-emulator publish prepare --license MIT`, the license the person chose (LICENSE, .gitignore, build, the catalog's checks, submission/); `busy-emulator check` alone runs the checks; `busy-emulator publish status` says what is left |",
+    "| Get it ready for the app catalog (nothing is sent) | `busy-emulator catalog-texts set --category productivity --short-description \"...\" --description \"...\"` (`catalog-texts` lists the categories); `busy-emulator publish screenshots --take front` (and `--take back`); `busy-emulator publish readme set --intro \"...\" --controls '{\"Start\":\"...\",\"Wheel turn\":\"...\",\"Wheel press\":\"...\",\"Back\":\"...\"}'` (How to use, per control); `busy-emulator publish prepare --license MIT`, the person's license (LICENSE, .gitignore, build, the catalog's checks, submission/); `busy-emulator check` alone runs the checks; `busy-emulator publish status` says what is left |",
     "| Send it to the catalog | `busy-emulator publish signin` (`choose_account`: ask the person which account, then `busy-emulator publish signin --use-existing --user their-login`); `busy-emulator publish push`; `busy-emulator publish pr --ai none\\|partly\\|full` (the person's answer). The person confirms each in the emulator's window |",
     "",
     "Only the person may trust a folder, sign in and choose the GitHub account, choose the license and the AI usage, confirm the push and the pull request, and tick the catalog's author checklist: ask them, never choose, confirm or tick for them (`refused`: they chose Cancel; do not ask again). Every step's options: `busy-emulator help publish`.",
     "",
     "### The BUSY Bar's API in short",
     "",
-    "- Draw: `await device.DisplayDraw({ application_name: manifest.id, priority: 50, elements })` (`device` from `@shared/device`). The front display is 72×16 in color; `display: \"back\"` puts an element on the back one, 160×80 in gray, whose right 12 px are the firmware's status bar. Every element has an `id` (drawing an `id` again replaces it; its `type` cannot change), `x`, `y`, `align` (`top_left`, `center`, `bottom_right` and the like) and `z_index` (0 or more; higher is on top). Colors are `#RRGGBBAA`. `device.DisplayClear({ application_name: manifest.id })` takes them all away.",
+    "- Draw: `await device.DisplayDraw({ application_name: manifest.id, priority: 50, elements })` (`device` from `@shared/device`). The front display is 72x16 in color; `display: \"back\"` puts an element on the back one, 160x80 in gray, whose right 12 px are the firmware's status bar. Every element has an `id` (drawing an `id` again replaces it; its `type` cannot change), `x`, `y`, `align` (`top_left`, `center`, `bottom_right` and the like) and `z_index` (0 or more; higher is on top). Colors are `#RRGGBBAA`. `device.DisplayClear({ application_name: manifest.id })` takes them all away.",
     "- Elements: `{ id, type: \"text\", text, font, color, x, y, align }` (ASCII; other letters may come out as a box); `{ id, type: \"rectangle\", x, y, width, height, fill: \"solid\", fill_colors: [\"#FF0000FF\"], border_width: 0 }`; `{ id, type: \"countdown\", timestamp: String(unixSeconds), direction: \"time_left\", show_hours: \"when_non_zero\" }`, which counts by itself.",
     "- Fonts, by these exact names, with their line height in px: `tiny` 6, `small` 9, `normal` 11, `condensed` 11, `bold` 11, `large` 13, `extra_large` 14 (capitals and digits only), `global` 11, `superscript` 11.",
     "- Layout (`render()`, `measure()`, `row`, `column`, `stack` from `@busy-app/busy-lib`) needs each font's metrics, and the build bundles them only for a font written as a string literal, `font: \"bold\"`, in a file under `src/`. A font from a variable, the short form `{ font }`, or a name only in `shared/` builds and then fails as the app runs: `font \"large\" has no metrics loaded`. For such a font add, once at the top of `src/main.ts`, only for the fonts it lays out (each takes about 9 KiB of the app's 128 KiB heap, `global` about 60 KiB; registering every font runs out of memory): `import { registerFontMaps } from \"@busy-app/busy-lib\"; import { large } from \"@busy-app/busy-lib/fonts\"; registerFontMaps(large);`. Elements placed by `x`, `y` and `align` without `render()` need no metrics. `busy-emulator build` warns about the cases it sees.",
-    "- Input: `listen(\"input\", (event) => …)` returns the function that detaches it. `ok`, `start`, `back`: `press`, `short`, `release`; held: `press`, `long`, `repeat` again and again, `release`. The wheel: `{ key: \"encoder\", action: \"clockwise\", delta: 1 }`, or `\"counterclockwise\"` and `-1`. A short Back should end the app, as the template's does.",
+    "- Input: `listen(\"input\", (event) => ...)` returns the function that detaches it. `ok`, `start`, `back`: `press`, `short`, `release`; held: `press`, `long`, `repeat` again and again, `release`. The wheel: `{ key: \"encoder\", action: \"clockwise\", delta: 1 }`, or `\"counterclockwise\"` and `-1`. A short Back should end the app, as the template's does.",
     "- Timers and time: `setTimeout`, `setInterval`, `Date.now()` (the BUSY Bar's clock); `busy-emulator time advance` moves all three, not the network.",
     "- Storage: `localStorage.getItem(key)` and `setItem(key, text)` keep strings across launches; a missing key gives `null`. The first run logs `[JsLocalStorage] Failed to open file`: harmless.",
     "- Catch every promise and `console.error` what it rejects with: a rejection nobody catches shows only as the emulator's `emulator:` note in `busy-emulator logs`.",
+    "- A `device.*` call the BUSY Bar refuses rejects with `TypeError: Expected a function` (busy-lib calls `Response.clone()`, which the BUSY Bar lacks); the real reason is in `busy-emulator logs`.",
     "",
     "### Network and memory",
     "",

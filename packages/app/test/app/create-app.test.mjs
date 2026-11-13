@@ -171,9 +171,10 @@ test("Create app: an empty app with its name, texts and icon in the default plac
   assert.equal(shapeOf(readFileSync(path.join(dir, "src", "appmeta", "icon_back_11x11.png"))), shapeOf(back), "the back uploaded");
   // The new app is listed and chosen.
   await until(() => app.page(`document.querySelector("#app-title")?.textContent === "Focus Timer"`), "the new app chosen");
-  // Create app ends with the app running on the bar: the Refresh that follows built, installed and started it.
+  // Create app ends with the app running on the bar: the Refresh that follows built, installed and started it. The
+  // state under the name says so; the section does not say it twice.
   assert.equal(await running(), id);
-  assert.match(await app.page(`document.querySelector("#app-status .job .job-line")?.textContent ?? ""`), /is running\.$/);
+  await until(() => app.page(`document.querySelector("#app-facts .live")?.textContent === "Running"`), "Running under the name");
   assert.deepEqual(readFileSync(path.join(dir, "src", "appmeta", "icon_front_8x8.png")).subarray(0, 4), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 
   // ---- a copy of an example, in a place the person chose with Change; the pop-up opened by the menu's New App…

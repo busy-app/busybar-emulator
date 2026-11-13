@@ -43,6 +43,19 @@
       "note": "The model is not under the GPL: it shows the product and is shipped for the emulator's own 3D view."
     },
     {
+      "id": "github-mark",
+      "name": "The GitHub mark on the account button",
+      "file": "packages/server/legacy-window/window.js",
+      "what": "the GitHub mark beside the GitHub login (or Sign in) on the window's account button, inline in `GITHUB_MARK`",
+      "from": "the GitHub icon of Icons8 (https://icons8.com/icon/12599/github)",
+      "upstream": "https://icons8.com",
+      "license": "LicenseRef-Icons8",
+      "copyright": [
+        "Icons8; the GitHub mark is a trademark of GitHub, Inc."
+      ],
+      "note": "Used under the Icons8 free license, which asks for a link to Icons8 where the icon is used: https://icons8.com."
+    },
+    {
       "id": "gh",
       "name": "GitHub CLI",
       "file": "packages/app/bundled-gh.json",

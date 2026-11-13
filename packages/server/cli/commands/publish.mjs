@@ -50,7 +50,8 @@
 //                                   the person confirms in the app's dialog first
 //   publish pr [<folder>] --ai none|partly|full [--catalog <owner/name or address>]
 //                                   the pull request to the catalog; the person confirms in the app's dialog and ticks
-//                                   there the catalog's author checklist
+//                                   there the catalog's author checklist, and the optional items they choose (the
+//                                   contest's); the answer's `optional` says which optional items the request ticks
 // And what the app did is noted here, so that the record and the manifest are written by the same code as stage 1's.
 // These only write the project's own files; what the app may replace or send is decided by its own record
 // (packages/app/src/github/publish-record.mjs), so a project that arrives with such a note, or a note written by hand,
@@ -141,9 +142,9 @@ const DETAILS = [
   "  publish signin --use-existing [--user <login>]          one of GitHub CLI's accounts (the person agrees in the app's dialog)",
   "  publish signin --new-account [--no-wait]                a code for github.com/login/device; --no-wait answers with it at once, publish signin again waits",
   "  publish push [<folder>] [--name <repository>]           the project's files to the person's public repository (the person confirms); refused when a file changed since publish check or publish package",
-  "  publish pr [<folder>] --ai none|partly|full [--catalog <owner/name>]   the pull request to busy-app/busy-apps-catalog; the person confirms and ticks the author checklist in the app (--catalog is for development and tests; a catalog that is not BUSY's needs a second confirmation)",
+  "  publish pr [<folder>] --ai none|partly|full [--catalog <owner/name>]   the pull request to busy-app/busy-apps-catalog; the person confirms and ticks the author checklist in the app, and the optional items (the contest's) they choose; the answer's optional says which are ticked (--catalog is for development and tests; a catalog that is not BUSY's needs a second confirmation)",
   "  publish signout                    forgets the sign-in in the emulator; GitHub CLI's accounts stay",
-  "Only the person: choose the license, the AI usage and the GitHub account, sign in, confirm push and pull request, tick the author checklist. Ask them; never pick for them.",
+  "Only the person: choose the license, the AI usage and the GitHub account, sign in, confirm push and pull request, tick the author checklist and its optional items. Ask them; never pick for them.",
 ];
 
 const lib = () => import("../../publish/files.mjs");
@@ -1008,9 +1009,11 @@ export default {
       case "pr": {
         if (!AI.includes(options.ai)) throw usage(`publish pr needs --ai: ${AI.join(", ")}, how AI was used in the app. It is never chosen for you.`);
         await requireChecked(ctx, project);
-        progress("Asking the person in BUSY Bar Emulator to confirm and to tick the catalog's checklist, then opening the pull request…");
+        progress("Asking the person in BUSY Bar Emulator to confirm and to tick the catalog's checklist, its optional items included, then opening the pull request…");
         const data = await withProgress(ctx, sys, dir, progress, askApp(ctx, sys, { op: "request", folder: dir, ai: options.ai, ...(options.catalog ? { catalog: options.catalog } : {}) }));
-        return { data, text: `${data.created ? "Opened" : "Updated"} the pull request ${data.url} (${data.direct ? "a branch in the catalog" : "from your fork"}).` };
+        // The optional items of the checklist (the contest's), as the person ticked them or not in the app (EMU-313).
+        const optional = Array.isArray(data.optional) ? data.optional.map((one) => `${one.ticked ? "ticked" : "not ticked"}: ${String(one.item).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")}`) : [];
+        return { data, text: `${data.created ? "Opened" : "Updated"} the pull request ${data.url} (${data.direct ? "a branch in the catalog" : "from your fork"}).${optional.length ? ` Optional items, as the person chose: ${optional.join("; ")}.` : ""}` };
       }
       case "pushed": {
         const data = await pushed(ctx, sys, project, options);

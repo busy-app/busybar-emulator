@@ -223,6 +223,28 @@ test("a project's scripts that call node, npm and npx get the bundled Node and i
   assert.deepEqual(readdirSync(home), []);
 });
 
+test("a character split between two pieces of a tool's output comes out whole, on stdout and on stderr alike", async () => {
+  const folder = temporary();
+  const setup = { tools: DEV_TOOLS, dataDir: path.join(folder, "data"), platform: process.platform, env: personEnvironment(path.join(folder, "home"), poisonedFolder(temporary())) };
+  // A Cyrillic path as tsc prints it, given as bytes (UTF-8 of "C:\\Users\\<four Cyrillic letters>\\main.ts"), and
+  // each stream's line cut after the first byte of the second letter: four writes, each its own piece of output.
+  const line = Buffer.concat([Buffer.from("C:\\Users\\"), Buffer.from("d098d0b2d0b0d0bd", "hex"), Buffer.from("\\main.ts(1,1): error TS2304\n")]);
+  const cut = "C:\\Users\\".length + 3;
+  const script = `const line = Buffer.from(${JSON.stringify(line.toString("base64"))}, "base64"); const wait = () => new Promise((r) => setTimeout(r, 150));
+    (async () => { process.stdout.write(line.subarray(0, ${cut})); await wait(); process.stderr.write(line.subarray(0, ${cut})); await wait();
+      process.stdout.write(line.subarray(${cut})); await wait(); process.stderr.write(line.subarray(${cut})); })();`;
+  const pieces = [];
+  const run = await runNodeTool(setup, { tool: "node", args: ["-e", script], cwd: folder, onOutput: (text) => pieces.push(text) });
+  assert.equal(run.code, 0, run.output);
+  assert.ok(pieces.length >= 2, `pieces: ${JSON.stringify(pieces)}`);
+  // Each stream's piece ends in the middle of a letter, which comes with that stream's next piece: the letters before
+  // the cut, twice, then the rest from the cut letter on, twice. Decoded piece by piece, each cut was two U+FFFD.
+  const before = line.subarray(0, cut - 1).toString("utf8");
+  const after = line.subarray(cut - 1).toString("utf8");
+  assert.ok(!run.output.includes("\uFFFD"), JSON.stringify(run.output));
+  assert.equal(run.output, before + before + after + after);
+});
+
 test("a tool that fails gives its code and its output; a tool that is missing is named", async () => {
   const folder = temporary();
   const setup = { tools: DEV_TOOLS, dataDir: path.join(folder, "data"), platform: process.platform, env: personEnvironment(path.join(folder, "home"), poisonedFolder(temporary())) };

@@ -469,7 +469,7 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.equal(await app.page(`[...document.querySelectorAll(".publish a")].find((a) => a.textContent === "busy-app/busy-apps-catalog")?.href`), "https://github.com/busy-app/busy-apps-catalog");
   await until(async () => /As the catalog's pull request template has it: busy-app\/busy-apps-catalog, \.github\/PULL_REQUEST_TEMPLATE\.md/.test(await pane()), "the catalog's own checklist");
   const boxes = await app.page(`[...document.querySelectorAll('.publish-checklist input[type="checkbox"]')].map((one) => one.dataset.box)`);
-  assert.equal(boxes.length, 7, boxes.join("\n"));
+  assert.equal(boxes.length, 8, boxes.join("\n")); // the bundled template's seven, with its contest item, and one more
   // The optional item: shown without its prefix, with a quiet tag; not needed to send.
   assert.equal(await app.page(`[...document.querySelectorAll('.publish-checklist label')].at(-1).textContent`), "My app takes part in a contest, and I accept its rulesOptional");
   assert.ok(boxes.includes("I've tested the app on a BUSY Bar with the latest release firmware") && boxes.includes("The screenshots are taken from the bar"), "every box, as the template says");

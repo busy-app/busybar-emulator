@@ -5,7 +5,7 @@
     "minutes": {
       "type": "integer",
       "label": "Focus session, minutes",
-      "description": "How long a session is when the app opens. The wheel changes it in steps of five before a session starts.",
+      "description": "Starting length. The wheel changes it by five.",
       "default": 25,
       "min": 1,
       "max": 180
@@ -13,7 +13,7 @@
     "break_minutes": {
       "type": "integer",
       "label": "Break, minutes",
-      "description": "After a finished session Start begins a break of this length. 0: no breaks.",
+      "description": "After a session, Start begins a break. 0: no breaks.",
       "default": 5,
       "min": 0,
       "max": 60
@@ -32,25 +32,25 @@
     "show_time": {
       "type": "boolean",
       "label": "Show the time left",
-      "description": "Off: the front display shows only the tree and the forest, and the time stays on the back display.",
+      "description": "Off: the front display shows only the tree and forest.",
       "default": true
     },
     "time_color": {
       "type": "color",
       "label": "Color of the time",
-      "description": "The color of the time left on the front display.",
+      "description": "Time left on the front display.",
       "default": "#FFFFFF"
     },
     "sound": {
       "type": "boolean",
       "label": "Sound at the end",
-      "description": "Plays a sound when a session or a break ends.",
+      "description": "A sound when a session or a break ends.",
       "default": true
     },
     "keep_forest": {
       "type": "boolean",
       "label": "Keep the forest overnight",
-      "description": "Off: the forest starts again every day. On: every tree you ever finished stays.",
+      "description": "Off: the forest restarts daily. On: all trees stay.",
       "default": false
     }
   }

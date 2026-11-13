@@ -25,6 +25,7 @@ import path from "node:path";
 
 import { commandLine } from "../lifecycle.mjs";
 import { CliError } from "../output.mjs";
+import { lineWriter } from "../console.mjs";
 import { projectAt, requireTrust, shellWord } from "../project.mjs";
 import { MCP_SCREENSHOT_KEEP_MS, removeOlderThan } from "../../old-files.mjs";
 import { isTrusted, readTrusted } from "../../projects/trust.mjs";
@@ -413,7 +414,7 @@ export const TOOLS = [
     description: [
       "Publishing as the emulator's Publish dialog does it, one `step` a call (the command line's publish <step>; every answer has what the step needs next).",
       "Stage 1, on this computer, nothing sent: status (where every step stands; call it first), screenshots (`take` front|back from the display now, or `upload` PNGs inside the project or saved by the screenshot tool, `order`, `remove`), readme (`readme_action` get|preview|set; `controls` the How to use rows, one per control of the BUSY Bar, Start, Wheel turn, Wheel press, Back, each with a sentence, and `usage` a sentence after them; `title`, `intro`; or `mode` markdown with `markdown`), license (`license` MIT|Apache-2.0|GPL-3.0|other, `author`, `year`: the person's choice, ask them, never pick one; `other` with `from`, their own license file in the project), files (what the public repository will hold; `write` adds the missing .gitignore lines and the README; `keep_out`, `keep_in`), check (the catalog's checks), package (writes submission/; needs a build), prepare (license, files, build and package in one go). The catalog texts and the icons are the catalog_texts and icon tools.",
-      "Stage 2, done by the emulator's app, which must be running with its window; the person confirms each step there: signin (with GitHub CLI's accounts on the computer the answer is `choose_account` with `accounts`: ask the person which one, then signin with `use_existing` and `user`, or `new_account`; a new sign-in answers at once with `userCode` and `verificationUri` for the person, then call signin with `wait` once they say they entered it), push (`name` of the public repository; the person confirms in the app; the upload's progress comes as progress notifications when the client asks for them), pr (`ai` none|partly|full: how AI was used, ask the person; the person reads the catalog's author checklist and ticks it in the app, never you), signout.",
+      "Stage 2, done by the emulator's app, which must be running with its window; the person confirms each step there: signin (with GitHub CLI's accounts on the computer the answer is `choose_account` with `accounts`: ask the person which one, then signin with `use_existing` and `user`, or `new_account`; a new sign-in answers at once with `userCode` and `verificationUri` for the person, then call signin with `wait` once they say they entered it), push (`name` of the public repository; the person confirms in the app; the upload's progress comes as progress notifications when the client asks for them), pr (`ai` none|partly|full: how AI was used, ask the person; the person reads the catalog's author checklist and ticks it in the app, its optional items such as the contest's included, never you; the answer's `optional` says which optional items are ticked), signout.",
       "check builds the app and checks its types first: a build or type error is a failing check with `file` and `line`.",
       "Errors: `check_failed` (fix what `change` says), `not_built`, `readme_incomplete`, `not_checked` and `changed_since_check` / `changed_since_package` (push and pr: a file changed since check or package, named in `changed`; run check and package again), `choose_account`, `refused` (the person chose Cancel: do not ask again unless they say so), `window_hidden`, `not_running`, `github_unavailable`, `usage`.",
     ].join(" "),
@@ -765,7 +766,10 @@ function canceledError(name) {
 export async function runCommand(env, words, progress = null) {
   let answer = null;
   // With a client that takes progress, the command's own lines (--progress) go to it; otherwise to the log.
-  const err = progress ? (line) => (progress(line), process.stderr.write(`${line}\n`)) : (line) => process.stderr.write(`${line}\n`);
+  // The log is the process's standard error, written as everything this command line prints (../console.mjs). The
+  // client's progress goes in JSON (asciiJson), exact.
+  const log = lineWriter(process.stderr, env.ctx.unicodeOutput);
+  const err = progress ? (line) => (progress(line), log(line)) : log;
   await env.main([...words, "--json", ...(progress ? ["--progress"] : [])], { ctx: env.ctx, sys: env.sys, commands: env.commands, out: () => {}, err, answer: (one) => (answer = one) });
   return answer;
 }

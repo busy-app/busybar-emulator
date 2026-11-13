@@ -51,7 +51,8 @@ finds an app that was moved.
 ## 2. Install it
 
 Run the install script for the system, as one command. It checks the download against `SHA256SUMS` before anything
-is unpacked or run, installs for the current user, starts the emulator and prints `cli=<path>` last.
+is unpacked or run, installs for the current user, starts the emulator and prints `cli=<path>` last. On Windows it
+leaves nothing in `%TEMP%`: the downloaded script removes itself, and the setup's log goes once the install succeeded.
 
 macOS (the script picks the build for the Mac's processor):
 
@@ -76,7 +77,9 @@ The emulator is now running: go to step 4.
 `start` opens the emulator's window and returns once its BUSY Bar answers; the emulator keeps running after you
 finish. Start it this way, never with `open` or `Start-Process`. For every `busy-emulator` command:
 
-- run it by its full path, on its own, not joined with other commands;
+- run it by its full path, on its own, not joined with other commands. Its hints name it by that path; on Windows,
+  when the path has no space, with forward slashes (`C:/Users/<name>/AppData/Local/busy-emulator/bin/busy-emulator.exe`),
+  which runs as it is in PowerShell, Git Bash and cmd;
 - add `--json` for one line of JSON: `"ok":true`, or `"ok":false` with `code`, `message` and `hint`: do what the
   hint says;
 - `<cli> help` lists the commands, `<cli> help <command>` explains one.
@@ -115,8 +118,8 @@ user.
 Trusting a folder, signing in to GitHub, the license, how AI was used, the push, the pull request and the catalog's
 checklist are the user's: ask, and never choose, confirm or tick for them. `refused` or `trust_refused` means they
 chose Cancel: do not ask again. Sending the app to the catalog: `<cli> help publish`.
-The catalog's optional contest item cannot be ticked through `publish pr`: after the pull request is open, tell
-the user to tick it in the pull request's description on GitHub if they enter the BUSY JS Apps Contest.
+Before `publish pr`, tell the user that the emulator's dialogs also offer the catalog's optional items, such as
+the BUSY JS Apps Contest: they tick those themselves, or leave them.
 
 ## If a command is refused
 

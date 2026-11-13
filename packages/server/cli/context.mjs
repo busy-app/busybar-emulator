@@ -90,6 +90,9 @@ export function resolveContext({ env, platform, homeDir, systemHomeDir = homeDir
   // How this command line was called, to print it back in a form one can paste: the launcher's path when a launcher
   // ran it, otherwise Node and the script.
   const calledAs = env.BUSY_EMULATOR_CLI_PATH ? [env.BUSY_EMULATOR_CLI_PATH] : [execPath, scriptPath];
+  // Whether what it prints is written as it is (the app's own runs, whose window reads UTF-8) or with its marks in ASCII
+  // (console.mjs, EMU-314). Like the path above it changes only what is printed, so a release reads it too.
+  const unicodeOutput = env.BUSY_EMULATOR_OUTPUT === "unicode";
 
   // A test starts the app its own way instead of through the system (which would put a window on the screen): a
   // JSON array, the program and its arguments. Never in a release.
@@ -120,6 +123,7 @@ export function resolveContext({ env, platform, homeDir, systemHomeDir = homeDir
     // and PowerShell (security S5). Without the launcher (Node started on the script by hand): the usual folder.
     windowsDir: platform === "win32" ? windowsFolder(env.BUSY_EMULATOR_WINDOWS_DIR) : null,
     calledAs,
+    unicodeOutput,
     testLaunch,
     // The Node and npm the project commands run the project's tools on (EMU-206): the app's own, by full path; a
     // development run's are the Node it runs on and the npm beside it.

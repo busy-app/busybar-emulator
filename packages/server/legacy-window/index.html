@@ -69,13 +69,14 @@
           <p class="facts" id="app-facts"></p>
         </div>
       </div>
-      <!-- app-column: the project's folder, under its id, and Copy prompt for AI (window.js, renderFolder). -->
+      <!-- The project's folder as a read-only field with Copy and Open; then Copy prompt for AI, Stop, Run or Refresh
+           (window.js, renderAppTop). -->
       <div class="app-folder" id="app-folder"></div>
       <div class="app-actions" id="app-actions"></div>
       <div class="app-status" id="app-status"></div>
       <div class="tabs" role="tablist" aria-label="The app" id="app-tabs">
-        <button type="button" role="tab" data-tab="overview" id="tab-overview" aria-selected="true" aria-controls="app-body">Overview</button>
-        <button type="button" role="tab" data-tab="settings" id="tab-settings" aria-selected="false" aria-controls="app-body">Settings</button>
+        <button type="button" role="tab" data-tab="settings" id="tab-settings" aria-selected="true" aria-controls="app-body">Settings</button>
+        <button type="button" role="tab" data-tab="catalog" id="tab-catalog" aria-selected="false" aria-controls="app-body">Catalog</button>
         <button type="button" role="tab" data-tab="files" id="tab-files" aria-selected="false" aria-controls="app-body">Files</button>
       </div>
       <div class="app-body" id="app-body" role="tabpanel"></div>
@@ -145,18 +146,20 @@
     <!-- The BUSY Bar: its back display, what it is, and its basic settings. -->
     <section class="card device-card" aria-label="The BUSY Bar">
       <div class="oled-frame" title="Back display"><canvas id="back" width="160" height="80" class="oled"></canvas></div>
+      <!-- What the BUSY Bar is: its name and its address with Copy; the firmware, the API and the uptime; Restart BUSY Bar
+           and Open in Local Web at the foot. The link to the server shows only while it is lost (window.css). -->
       <div class="device-about">
         <div class="device-head">
           <h2 class="device-name">BUSY Bar</h2>
           <span class="link" id="link">Not connected</span>
           <span class="chip warn" id="speed-note" hidden>Computer speed</span>
+          <!-- bar-address: the BUSY Bar's address, its API documentation and the restart (window.js, "bar-address"). -->
+          <p class="builds mono bar-address" id="bar-address-line"><a id="bar-address" href="/" target="_blank" rel="noopener" title="The address of this BUSY Bar: its HTTP API and local web. Give it to busy-cli as --addr, and to your own tools"></a><button type="button" class="icon-btn tiny" id="bar-address-copy" title="Copy the address of BUSY Bar" aria-label="Copy the address of BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-copy"/></svg></button><span id="device-serial" hidden></span></p>
         </div>
-        <!-- bar-address: the BUSY Bar's address, its API documentation and the restart (window.js, "bar-address"). -->
-        <p class="builds"><span class="build" id="firmware" title="">Firmware</span><a class="build api-docs" id="api" href="/docs/" target="_blank" rel="noopener" title="The HTTP API of BUSY Bar: its documentation, with Try it out against this BUSY Bar">API</a></p>
-        <p class="builds mono bar-address" id="bar-address-line"><a id="bar-address" href="/" target="_blank" rel="noopener" title="The address of this BUSY Bar: its HTTP API and local web. Give it to busy-cli as --addr, and to your own tools"></a><button type="button" class="icon-btn tiny" id="bar-address-copy" title="Copy the address of BUSY Bar" aria-label="Copy the address of BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-copy"/></svg></button><span id="device-serial" hidden></span><span id="device-uptime"></span></p>
+        <p class="builds"><span class="build" id="firmware" title="">Firmware</span><a class="build api-docs" id="api" href="/docs/" target="_blank" rel="noopener" title="The HTTP API of BUSY Bar: its documentation, with Try it out against this BUSY Bar">API</a><span id="device-uptime"></span></p>
         <div class="device-links">
-          <a class="btn small" id="local-web" href="/emulator/local-web.html" target="_blank" rel="noopener" title="The BUSY Bar's own web page: its settings and its apps"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-open-in-new"/></svg>Open in Local Web</a>
           <button type="button" class="btn small" id="power-restart" title="Restart BUSY Bar, as holding Back and Start does on a real BUSY Bar. Apps and their settings are kept" aria-label="Restart BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-restart"/></svg><span class="label">Restart BUSY Bar</span></button>
+          <a class="btn small" id="local-web" href="/emulator/local-web.html" target="_blank" rel="noopener" title="The BUSY Bar's own web page: its settings and its apps"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-open-in-new"/></svg>Open in Local Web</a>
         </div>
       </div>
       <div class="sets">
@@ -173,7 +176,7 @@
       <div class="card-head">
         <h2><button type="button" class="console-title" id="console-toggle" aria-expanded="true" aria-controls="console">Console<span class="count error-count" id="error-count" hidden></span></button></h2>
         <div class="filters">
-          <div class="seg small" role="group" aria-label="Show">
+          <div class="seg" role="group" aria-label="Show">
             <button type="button" id="show-all" class="on" aria-pressed="true">All</button>
             <button type="button" id="show-errors" aria-pressed="false" title="Errors and warnings only">Errors</button>
           </div>

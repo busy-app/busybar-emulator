@@ -140,7 +140,8 @@ test("the row's menu: right-click at the pointer; Escape, a click outside and a 
   // A right-click: the menu at the pointer.
   const at = await rightClick(row("app.test.clock"));
   await until(() => menu(), "the menu");
-  assert.deepEqual(await menu(), ["Start", "Show in Finder", "Delete…"].map((label) => (process.platform === "win32" ? label.replace("Finder", "Explorer") : label)));
+  // The row's own Start or Stop button is not repeated in its menu.
+  assert.deepEqual(await menu(), ["Show in Finder", "Delete…"].map((label) => (process.platform === "win32" ? label.replace("Finder", "Explorer") : label)));
   const box = await page(`(() => { const b = document.querySelector(".row-menu").getBoundingClientRect(); return { left: Math.round(b.left), top: Math.round(b.top) }; })()`);
   assert.ok(Math.abs(box.left - at.x) <= 2 && Math.abs(box.top - at.y) <= 2, `the menu at ${JSON.stringify(box)}, the pointer at ${JSON.stringify(at)}`);
   await shot("1-menu-open");
@@ -151,7 +152,7 @@ test("the row's menu: right-click at the pointer; Escape, a click outside and a 
   // A click outside closes it, and so does a scroll.
   await rightClick(row("app.test.package"));
   await until(() => menu(), "the menu");
-  assert.deepEqual(await menu(), ["Start", "Delete…"], "an app from a package has no folder to show");
+  assert.deepEqual(await menu(), ["Delete…"], "an app from a package has no folder to show");
   await click("#app-title");
   await until(async () => (await menu()) === null, "a click outside to close the menu");
   await rightClick(row("app.test.package"));
@@ -163,8 +164,10 @@ test("the row's menu: right-click at the pointer; Escape, a click outside and a 
   await page(`document.querySelector(${q(`${row("app.test.clock")} .row-more`)}).focus(), true`);
   await key("F10", ["shift"]);
   await until(() => menu(), "Shift+F10 to open the menu");
-  assert.equal(await page(`document.activeElement.textContent.trim()`), "Start");
+  assert.match(await page(`document.activeElement.textContent.trim()`), /^Show in /);
   await key("Down");
+  assert.equal(await page(`document.activeElement.textContent.trim()`), "Delete…");
+  await key("Home");
   assert.match(await page(`document.activeElement.textContent.trim()`), /^Show in /);
   await key("End");
   assert.equal(await page(`document.activeElement.textContent.trim()`), "Delete…");

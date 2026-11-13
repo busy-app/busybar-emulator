@@ -49,13 +49,13 @@ Restart.
 | Setting | What it changes |
 | --- | --- |
 | Address to check | An http or https address; `demo` shows every state without asking anything |
-| Name on the BUSY Bar | Up to 8 letters beside the status word |
-| JSON field with the status | A path into the answer, such as `status.indicator` or `checks.0.state`; empty: only the HTTP status counts |
+| Name on BUSY Bar | Up to 8 letters beside the status word |
+| Status field | A path into the answer, such as `status.indicator` or `checks.0.state`; empty: only the HTTP status counts |
 | Values that mean healthy | Comma-separated; any other value of the field is down and becomes the status word |
 | Seconds between checks | Where the wheel starts |
-| Slow above, milliseconds | A healthy answer slower than this turns the pulse amber; 0 turns this off |
+| Slow above, ms | A healthy answer slower than this turns the pulse amber; 0 turns this off |
 | Request header | Optional `Name: value`, for an address that wants a token; masked on the page |
-| Sound when it goes down | A sound, once, when a healthy address stops being healthy |
+| Sound when down | A sound, once, when a healthy address stops being healthy |
 
 ## How it is made
 

@@ -5,7 +5,7 @@
     "people": {
       "type": "integer",
       "label": "People in the meeting",
-      "description": "How many people the meeting starts with. Turn the wheel during the meeting when someone joins or leaves.",
+      "description": "Starting headcount. Turn the wheel if it changes.",
       "default": 6,
       "min": 1,
       "max": 99
@@ -13,7 +13,7 @@
     "rate": {
       "type": "integer",
       "label": "Hourly rate per person",
-      "description": "What an hour of one person costs, in your currency.",
+      "description": "What one person's hour costs, in your currency.",
       "default": 75,
       "min": 1,
       "max": 100000
@@ -34,7 +34,7 @@
     "budget": {
       "type": "integer",
       "label": "Budget",
-      "description": "What the meeting may cost. The number turns amber on the way and red past it, the fire grows and the BUSY Bar's light blinks. 0 turns the budget off.",
+      "description": "Amber near it, red past it. 0 turns it off.",
       "default": 500,
       "min": 0,
       "max": 10000000
@@ -42,7 +42,7 @@
     "flare": {
       "type": "enum",
       "label": "Flare on every",
-      "description": "The fire flares up each time the amount passes a round sum.",
+      "description": "The fire flares at each round sum.",
       "default": "100",
       "options": [
         { "value": "0", "label": "Never" },
@@ -56,13 +56,13 @@
     "sound": {
       "type": "boolean",
       "label": "Sound past the budget",
-      "description": "Plays a sound once when the meeting passes its budget.",
+      "description": "A sound, once, when the budget is passed.",
       "default": false
     },
     "autostart": {
       "type": "boolean",
       "label": "Start counting at once",
-      "description": "The meeting starts when the app opens, without a press of Start.",
+      "description": "Starts when the app opens, without Start.",
       "default": false
     }
   }

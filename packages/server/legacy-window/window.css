@@ -99,7 +99,7 @@ h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
   height: 32px;
   padding: 0 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   box-shadow: var(--outline);
   color: var(--text);
@@ -129,7 +129,7 @@ h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
   transition: background-color 0.15s, color 0.15s;
@@ -232,7 +232,7 @@ h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
    column's list or page and the console. */
 
 body {
-  --side: clamp(316px, 26vw, 368px);
+  --side: clamp(340px, 30vw, 400px);
   display: grid;
   grid-template-columns: var(--side) minmax(0, 1fr);
   grid-template-rows: var(--topbar-h) minmax(0, 1fr);
@@ -253,7 +253,7 @@ body {
 .brand { display: flex; align-items: center; gap: 10px; flex: none; user-select: none; }
 .logo { flex: none; width: 24px; height: 24px; border-radius: 6px; }
 .brand-name { color: var(--text-strong); font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
-.top-tools { display: flex; align-items: center; gap: var(--s-2); flex: none; margin-left: var(--s-2); }
+.top-tools { display: flex; align-items: center; gap: var(--s-4); flex: none; margin-left: var(--s-2); }
 .top-end { display: flex; align-items: center; gap: var(--s-2); flex: none; margin-left: auto; }
 
 /* A quiet button of the top bar: its words in the muted gray, lit under the pointer. */
@@ -262,14 +262,14 @@ body {
   align-items: center;
   gap: var(--s-2);
   flex: none;
-  height: 32px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -280,24 +280,22 @@ body {
 .publish-entry { height: 32px; padding: 0 14px 0 12px; }
 
 /* A segmented group: the screenshot's ticks and its button, the view. One pill of the surface, its parts inside. */
-.seg { display: flex; align-items: center; gap: 2px; height: 32px; padding: 2px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.seg { display: flex; align-items: center; gap: 2px; height: 40px; padding: 2px; border-radius: 8px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
 .seg > button {
-  height: 28px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 14px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   transition: background-color 0.15s, color 0.15s;
 }
 .seg > button:hover { color: var(--text-strong); }
 .seg > button.on { background: var(--surface-3); color: var(--text-strong); }
 .seg > button[aria-disabled="true"] { color: var(--dimmed); cursor: default; }
-.seg.small { height: 28px; }
-.seg.small > button { height: 24px; padding: 0 10px; font-size: 12px; line-height: 16px; }
 .record-menu { min-width: 190px; }
 
 /* Screenshot: Front and Back ticked, then the camera. */
@@ -307,12 +305,12 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 28px;
+  height: 36px;
   padding: 0 10px 0 9px;
   border-radius: 999px;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   cursor: pointer;
   transition: color 0.15s;
@@ -326,7 +324,7 @@ body {
 .shot-tick:has(input:checked) .shot-box .bi { opacity: 1; }
 /* The only display ticked stays ticked: at least one is taken. */
 .shot-tick.last, .shot-tick.last input { cursor: default; }
-.seg > .shot-take { display: grid; place-items: center; width: 28px; height: 28px; margin-left: 2px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); transition: background-color 0.15s, color 0.15s, opacity 0.15s; }
+.seg > .shot-take { display: inline-flex; place-items: center; width: 36px; height: 36px; margin-left: 2px; padding: 0; border: 0; border-radius: 8px; background: var(--surface-3); color: var(--text); transition: background-color 0.15s, color 0.15s, opacity 0.15s; align-items: center; justify-content: center; line-height: 0; }
 .seg > .shot-take .bi { width: 16px; height: 16px; }
 .seg > .shot-take:hover { background: var(--accented); color: var(--text-strong); }
 .seg > .shot-take[aria-disabled="true"] { opacity: 0.4; cursor: default; }
@@ -335,7 +333,7 @@ body {
 
 /* Record: beside the camera, drawn as it is; recording, a red pill that counts the time, pressed again it stops. */
 .capture-tools { display: flex; margin-left: 2px; }
-.capture-tools .tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: var(--surface-3); color: var(--text); font-size: 12px; line-height: 16px; font-weight: 500; font-variant-numeric: tabular-nums; transition: background-color 0.15s, color 0.15s, opacity 0.15s; }
+.capture-tools .tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: var(--surface-3); color: var(--text); font-size: 12px; line-height: 16px; font-weight: 500; font-variant-numeric: tabular-nums; transition: background-color 0.15s, color 0.15s, opacity 0.15s; }
 .capture-tools .tool .bi { width: 16px; height: 16px; }
 .capture-tools .tool:hover { background: var(--accented); color: var(--text-strong); }
 .capture-tools .tool[aria-disabled="true"] { opacity: 0.4; cursor: default; }
@@ -362,6 +360,8 @@ body {
 .account { gap: var(--s-2); padding: 0 8px 0 4px; color: var(--text); }
 .avatar { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-strong); font-size: 11px; line-height: 1; font-weight: 600; text-transform: uppercase; }
 .account .caret { width: 14px; height: 14px; color: var(--dimmed); }
+/* Signed out, the button opens Publish, not a menu: no caret. */
+.account.signed-out .caret { display: none; }
 .account.signed-out .avatar { background: transparent; }
 .account-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 
@@ -381,7 +381,7 @@ body {
   --lw-focus: #5599ff;
   --pane-pad: var(--s-6);
 }
-.pane { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: var(--pane-pad) var(--pane-pad) 0; border-radius: 24px; background: var(--card); box-shadow: var(--glass); overflow: hidden; }
+.pane { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: var(--pane-pad) var(--pane-pad) 0; border-radius: 24px; background: var(--surface); box-shadow: var(--glass); overflow: hidden; }
 
 /* All apps: the head, then the list, which scrolls. */
 .pane-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); flex: none; height: 32px; margin: 0 0 var(--s-3); }
@@ -407,7 +407,6 @@ body {
 }
 .apps li.app:hover, .apps li.app:focus-within { background: var(--tile); }
 .apps li.app.chosen { background: var(--tile); }
-.apps li.app.chosen::before { content: ""; position: absolute; left: -8px; top: 18px; bottom: 18px; width: 3px; border-radius: 0 2px 2px 0; background: var(--text-strong); }
 /* An app's icon: its picture, pixel for pixel, on black, in a rounded square as the catalog shows it. */
 .app-icon { width: 40px; height: 40px; border-radius: var(--r-md); background: #000; box-shadow: inset 0 0 0 1px var(--line-strong); }
 img.app-icon { padding: 8px; object-fit: contain; image-rendering: pixelated; }
@@ -415,12 +414,16 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
 .app-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
 .app-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dimmed); font-size: 12px; line-height: 16px; }
-.row-actions { position: relative; display: flex; align-items: center; gap: 2px; }
-.row-actions .icon-btn { width: 28px; height: 28px; }
-.row-actions .icon-btn .bi { width: 16px; height: 16px; }
+.row-actions { position: relative; display: flex; align-items: center; gap: 4px; }
+.row-actions .icon-btn { width: 28px; height: 28px; border-radius: 6px; box-shadow: none; }
+.row-actions .icon-btn .bi { width: 18px; height: 18px; }
 .row-actions .icon-btn.outline { box-shadow: none; color: var(--muted); }
 .row-actions .icon-btn.solid { background: transparent; color: var(--text-strong); }
 .row-actions .icon-btn:hover { background: var(--surface-3); color: var(--text-strong); }
+/* The row's buttons light as the icons in the folder field do. */
+.row-actions .icon-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: var(--text-strong); }
+.row-actions .icon-btn:active:not(:disabled) { background: rgb(255 255 255 / 0.16); color: var(--text-strong); }
+.row-actions .icon-btn:focus-visible { outline: 2px solid var(--primary-text); outline-offset: -2px; }
 /* The row's buttons show under the pointer or with the focus; a running app says so in their place. */
 .apps li.app .row-actions > :not(.row-retry) { opacity: 0; transition: opacity 0.15s, background-color 0.15s, color 0.15s; }
 .apps li.app:is(:hover, :focus-within, .menu-open) .row-actions > * { opacity: 1; }
@@ -430,6 +433,7 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
 .live-state::before, .facts .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .apps li.app:is(:hover, :focus-within, .menu-open) .live-state { opacity: 0; }
 .apps li.app.menu-open .row-more { background: var(--surface-3); color: var(--text-strong); }
+
 /* The account's menu: who is signed in, over its items. */
 .row-menu .menu-head { padding: 6px 10px 8px; color: var(--dimmed); font-size: 12px; line-height: 16px; }
 .row-menu a.menu-item { text-decoration: none; }
@@ -449,26 +453,25 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
 .side[data-mode="app"] #apps-pane, .side[data-mode="all"] #app-pane { display: none; }
 .app-card { padding-top: var(--s-4); }
 .pane-nav { display: flex; align-items: center; justify-content: space-between; flex: none; height: 32px; margin: 0 calc(-1 * var(--s-1)) var(--s-3) calc(-1 * var(--s-2)); }
-.nav-back { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 8px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 13px; line-height: 18px; font-weight: 500; transition: background-color 0.15s, color 0.15s; }
+.nav-back { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; line-height: 18px; font-weight: 500; transition: background-color 0.15s, color 0.15s; }
 .nav-back .bi { width: 16px; height: 16px; }
 .nav-back:hover { background: var(--tile); color: var(--text-strong); }
-.app-head { display: flex; align-items: center; gap: var(--s-4); flex: none; min-width: 0; }
-.app-head-icon { display: grid; place-items: center; flex: none; width: 64px; height: 64px; border-radius: var(--r-lg); background: #000; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
-.app-head-icon img { width: 40px; height: 40px; image-rendering: pixelated; }
+.app-head { display: flex; align-items: flex-start; gap: var(--s-3); flex: none; min-width: 0; }
+.app-head-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 12px; background: #000; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+.app-head-icon img { width: 32px; height: 32px; image-rendering: pixelated; }
 .app-head-icon.none { background: #000 repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.04) 6px 12px); }
-.app-head-text { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
-.app-head h2 { font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
-.facts { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s-2); margin: 0; color: var(--dimmed); font-size: 12px; line-height: 16px; }
+.app-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; padding-top: 1px; }
+.app-head h2 { font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+.facts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px; margin: 0; color: var(--dimmed); font-size: 12px; line-height: 16px; flex-direction: column; }
 .facts .state { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; }
 .facts .live { display: inline-flex; align-items: center; gap: 6px; color: var(--primary-text); font-weight: 500; }
-.facts code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px/16px var(--mono); color: var(--dimmed); user-select: all; }
 
 .app-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); flex: none; margin-top: var(--s-5); }
-.app-actions .btn { width: 100%; min-width: 0; height: 36px; padding: 0 8px; gap: 6px; font-size: 13px; }
+.app-actions .btn { width: auto; min-width: 0; height: 36px; padding: 0 8px; gap: 6px; font-size: 13px; }
 .app-actions .btn .bi { width: 14px; height: 14px; margin: 0; }
 .app-actions .btn > span { overflow: hidden; text-overflow: ellipsis; }
 .app-actions:empty { display: none; }
-.app-status { display: flex; flex-direction: column; gap: var(--s-3); flex: none; margin-top: var(--s-3); }
+.app-status { display: flex; flex-direction: column; gap: var(--s-2); flex: none; margin-top: var(--s-3); }
 .app-status:empty { display: none; }
 
 .tabs { display: flex; gap: var(--s-5); flex: none; margin: var(--s-5) 0 0; border-bottom: 1px solid var(--line); }
@@ -594,37 +597,23 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .checks li.warns b::before { background: var(--warning); }
 
 /* The running app's heap and pace: a thin meter and one line. */
-.running { display: flex; flex-direction: column; gap: 6px; }
+
 .heap { position: relative; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
 .heap .now { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--primary); }
 .heap .peak { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; }
-.stats { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--s-3); color: var(--dimmed); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
-.speed-text.busy { color: var(--warning); }
 
 /* ---- app-column: the opened app's folder, under its id: the path (from ~), Copy, Open in Finder; under them the
    white Copy prompt for AI across the column. Then the files-changed notice in the app's status. */
 .app-folder { container: app-folder / inline-size; display: flex; flex-direction: column; gap: var(--s-2); flex: none; margin-top: var(--s-5); }
 .app-folder:empty { display: none; }
-.app-folder:not([hidden]):not(:empty) + .app-actions { margin-top: var(--s-3); }
+.app-folder:not([hidden]):not(:empty) + .app-actions { margin-top: var(--s-2); }
 .folder-line { display: flex; align-items: center; gap: var(--s-1); min-width: 0; height: 44px; padding: 0 6px 0 var(--s-3); border-radius: 12px; background: var(--tile); }
-.folder-mark { display: flex; flex: none; }
-.folder-mark .bi { width: 16px; height: 16px; color: var(--muted); }
+
 .folder-line .path { margin-right: 0; }
 .folder-line .btn { height: 30px; padding: 0 12px; font-size: 12px; }
-.folder-open .narrow { display: none; }
+
 .folder-line.none { justify-content: space-between; gap: var(--s-2); padding-right: 6px; color: var(--muted); font-size: 13px; line-height: 18px; }
-@container app-folder (width < 300px) {
-  .folder-open .wide { display: none; }
-  .folder-open .narrow { display: inline; }
-}
-.prompt-ai { width: 100%; height: 40px; }
-.prompt-ai .bi { width: 16px; height: 16px; }
-.files-changed { display: flex; align-items: center; gap: var(--s-2); min-width: 0; padding: 6px 6px 6px var(--s-3); border-radius: 12px; background: var(--tile); color: var(--text); font-size: 13px; line-height: 18px; }
-.files-changed .said { flex: 1; min-width: 0; }
-.files-changed-mark { display: flex; flex: none; color: var(--primary-text); }
-.files-changed-mark .bi { width: 16px; height: 16px; }
-.files-changed .btn { height: 30px; padding: 0 12px; font-size: 12px; }
-.files-changed .btn .bi { width: 14px; height: 14px; }
+
 @media (max-height: 720px) { .side { --pane-pad: var(--s-5); } .app-folder { margin-top: var(--s-4); } }
 /* The column at its narrowest (316 px): a little less air in the card, and Run, Stop and Refresh by their words. */
 .side { container: side / inline-size; }
@@ -652,9 +641,10 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 }
 /* The controls' scale, CSS pixels for one unit of their drawing (900 across): with the canvas, from 0.44 to 0.69. */
 .canvas > * {
-  --u: clamp(0.44px, min(100cqw / 1650, 100cqh / 660), 0.69px);
+  --u: clamp(0.53px, min(100cqw / 1375, 100cqh / 550), 0.83px);
   --dock-h: calc(196 * var(--u));
-  /* The bar: as wide as the canvas lets it be with the dock under it, at most 900; the bar and the dock stand together
+  /* The bar: as wide as the canvas lets it be with the dock under it, at most 900;
+  the bar and the dock stand together
      in the middle of the canvas, 24 apart. */
   --w: max(220px, min(100cqw - 96px, (100cqh - var(--dock-h) - 40px) * 768 / 248, 900px));
   --bar-h: calc(var(--w) * 248 / 768);
@@ -776,11 +766,11 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
    show the target. */
 .dial button {
   position: absolute;
-  right: calc((130 - var(--x)) * var(--u) - 6px);
+  right: calc(38 * var(--u) - 10px);
   top: calc(var(--y) * var(--u));
   translate: 0 -50%;
   height: calc(34 * var(--u));
-  padding: 0 6px 0 12px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -880,12 +870,12 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 /* ---------------------------------------------------------------- layout-v2: the bar's card
 
    Its back display at its own size on the left, what it is in the middle, its settings on the right, two by two. */
-.device-card { container: device / inline-size; display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 380px); align-items: center; gap: var(--s-5); padding: var(--s-3); border-radius: var(--r-xl); background: var(--surface); }
-.oled-frame { flex: none; padding: var(--s-2); border-radius: var(--r-lg); background: #000; box-shadow: inset 0 0 0 1px var(--line); }
+.device-card { container: device / inline-size; display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 380px); align-items: stretch; gap: var(--s-5); padding: var(--s-3); border-radius: var(--r-xl); background: var(--surface); }
+.oled-frame { flex: none; padding: var(--s-2); border-radius: 14px; background: #000; box-shadow: inset 0 0 0 1px var(--line); }
 .oled { display: block; width: 160px; height: 80px; image-rendering: pixelated; background: #000; }
-.device-about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.device-head { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
-.device-name { font-size: 16px; line-height: 24px; font-weight: 600; }
+.device-about { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
+.device-head { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.device-name { font-size: 18px; line-height: 24px; font-weight: 500; }
 .link { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--dimmed); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; }
 .link::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--dimmed); }
 .link.live { color: var(--muted); }
@@ -999,7 +989,7 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 /* ---------------------------------------------------------------- layout-v2: smaller windows
 
    Down to the shell's smallest window (880×600): the top bar's quiet words go first, then the account's name. */
-@media (max-width: 1180px) { #report-bug span, .top-doc span, .account-name, .account .caret { display: none; } #report-bug, .top-doc { padding: 0 7px; } .account { padding: 0 4px; } }
+@media (max-width: 1180px) { #report-bug span, .top-doc span, .account-name, .account .caret { display: none; } #report-bug { padding: 0 7px; } }
 @media (max-width: 1000px) { .topbar { gap: var(--s-3); } .stage { padding: var(--s-2) var(--s-4) var(--s-3); } }
 @media (max-height: 720px) { .app-actions { margin-top: var(--s-4); } .tabs { margin-top: var(--s-4); } }
 @media (max-height: 640px) { .stage { gap: var(--s-2); padding-bottom: var(--s-2); } .device-card { padding: var(--s-2); } }
@@ -1636,7 +1626,7 @@ body.publishing { overflow: hidden; }
   gap: 6px;
   height: 36px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--lw-ring);
   color: var(--lw-text);
@@ -1929,7 +1919,7 @@ body.creating-app { overflow: hidden; }
   gap: 2px;
   min-width: 200px;
   padding: 6px;
-  border-radius: 14px;
+  border-radius: 8px;
   background: #1f1f1f;
   box-shadow: var(--glass), 0 12px 32px rgb(0 0 0 / 0.5);
   outline: none;
@@ -2269,3 +2259,328 @@ ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; t
 .update-popup-failed { margin: 0; color: var(--error); font-size: 13px; line-height: 18px; }
 .update-popup-foot { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-1); }
 .update-popup-foot a.btn { text-decoration: none; }
+
+/* ---------------------------------------------------------------- the opened app's column and the dashboard
+
+   One type system in the column and the dashboard: title 25/30 500 (the app's name; the BUSY Bar's 18/24), body 14/20
+   500 (names, tabs, every button with words), value 14/20 400 (what is set), caption 12/16 400 (descriptions, the heap).
+   Quiet buttons: icons and words without a plate, their area lit on hover (8 %) and press (16 %). Groups of tiles 3 px
+   apart, inner corners 9, the group's outer ones 12. */
+
+/* The hover descriptor (window.js, tip): a title and a line of detail, on the window's popover surface. */
+.ac-tip { position: fixed; z-index: 100; display: flex; flex-direction: column; gap: 2px; max-width: 264px; padding: 8px 10px; border-radius: 10px; background: #1f1f1f; box-shadow: var(--glass), 0 8px 24px rgb(0 0 0 / 0.5); color: var(--text); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; pointer-events: none; }
+.ac-tip b { color: var(--text-strong); font-weight: 500; }
+.ac-tip span { color: var(--muted); }
+
+/* The state under the name; the errors the app wrote while it runs. */
+.ac-facts-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); min-width: 0; max-width: 100%; }
+.ac-facts-line .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dimmed); }
+.ac-facts-line .state.ac-crashed { color: var(--error); }
+.ac-facts-line .state.ac-crashed::before { background: var(--error); }
+
+.ac-errors { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 0; border-radius: 999px; background: color-mix(in oklab, var(--error) 16%, transparent); color: var(--error); font-size: 12px; line-height: 16px; font-weight: 500; }
+.ac-errors:hover { background: color-mix(in oklab, var(--error) 24%, transparent); }
+
+/* The actions' row. */
+.app-actions { display: block; margin-top: var(--s-4); }
+
+.app-actions .btn .bi { display: block; }
+.ac-row { display: flex; gap: 6px; min-width: 0; }
+.ac-run { flex: 1; height: 40px; }
+.ac-stop { width: 40px; height: 40px; color: var(--text); }
+.ac-prompt { flex: 1; min-width: 0; height: 40px; }
+.ac-prompt > span { overflow: hidden; text-overflow: ellipsis; }
+
+/* What happened: a crash, the files that changed, the heap. */
+.ac-crash { display: flex; flex-direction: column; align-items: stretch; gap: var(--s-2); min-width: 0; padding: 10px 10px 10px var(--s-3); border-radius: 12px; background: color-mix(in oklab, var(--error) 10%, var(--surface-2)); }
+.ac-crash-words { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.ac-crash-words code { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; color: var(--text); font: 12px/16px var(--mono); }
+.ac-crash .btn { flex: none; align-self: flex-start; height: 28px; padding: 0 12px; font-size: 12px; }
+.ac-stale { display: flex; align-items: center; gap: var(--s-2); color: var(--text); font-size: 13px; line-height: 18px; }
+.ac-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-text); }
+.ac-heap { display: flex; flex-direction: column; gap: 6px; border-radius: 4px; color: var(--dimmed); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; cursor: default; }
+.ac-heap .heap { display: block; }
+.ac-heap.warn { color: var(--warning); }
+.ac-heap.warn .heap .now { background: var(--warning); }
+
+/* Open in Local Web, at the end of Settings. */
+.ac-local-web { height: 28px; padding: 0 10px; font-size: 12px; }
+.ac-local-web .bi { width: 14px; height: 14px; }
+
+/* Catalog: how much is ready and Publish; a row a field, as the local web's grouped settings, opened in place. */
+.ac-fold-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.ac-fold-count { border-radius: 4px; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 500; cursor: default; }
+.ac-fold-head .btn { height: 30px; padding: 0 12px; font-size: 12px; }
+.ac-fold-head .btn .bi { width: 14px; height: 14px; }
+.ac-folds { display: flex; flex-direction: column; gap: 3px; }
+.ac-fold { border-radius: 9px; background: var(--tile); }
+.ac-fold:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.ac-fold:last-child { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+.ac-fold-row { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; height: 44px; padding: 0 var(--s-3); border: 0; border-radius: inherit; background: transparent; font-size: 13px; line-height: 18px; text-align: left; }
+.ac-fold-label { color: var(--text); font-weight: 500; white-space: nowrap; }
+.ac-fold-value { overflow: hidden; color: var(--muted); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.ac-fold-value.none { color: var(--dimmed); }
+.ac-fold-pic { width: 16px; height: 16px; margin-right: 6px; border-radius: 3px; background: #000; vertical-align: -4px; image-rendering: pixelated; }
+.ac-fold-mark { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--accented); color: var(--primary-text); }
+.ac-fold-mark.done { box-shadow: none; }
+.ac-fold-mark .bi { width: 16px; height: 16px; }
+.ac-fold-caret { display: grid; place-items: center; color: var(--dimmed); }
+.ac-fold-caret .bi { width: 16px; height: 16px; transition: rotate 0.15s; }
+.ac-fold-row[aria-expanded="true"] .ac-fold-caret .bi { rotate: 180deg; }
+.ac-fold-body { padding: 0 var(--s-3) var(--s-3); }
+.ac-fold-body .ov-field > label, .ac-fold-body .group-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ac-fold-body .ov-field .hint, .ac-fold-body .page-note { margin-top: 6px; }
+
+/* Below 1240 the dashboard takes its two-row form, so that its name, address and buttons keep their room beside a
+   column of 360. */
+@media (max-width: 1240px) {
+  .device-card { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--s-3); }
+  .sets { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .set { gap: var(--s-2); padding: 0 10px; }
+}
+#app-pane :is(.btn, .icon-btn, .nav-back) { border-radius: 8px; }
+#app-pane .btn { height: 32px; padding: 0 10px; gap: 6px; font-size: 13px; line-height: 18px; }
+#app-pane .btn .bi { width: 14px; height: 14px; margin: 0; }
+#app-pane .icon-btn.outline { width: 32px; height: 32px; }
+#app-pane .icon-btn.outline .bi { width: 16px; height: 16px; }
+.app-folder { margin-top: var(--s-4); }
+
+/* The row, left to right: Copy prompt for AI (no plate), a gap, Stop on a gray plate as tall as Run, Run or Refresh in
+   white. */
+#app-pane .ac-prompt.ac-prompt-c { flex: 0 1 auto; min-width: 0; height: 36px; padding: 0 14px 0 11px; justify-content: center; border: 0; background: transparent; box-shadow: none; color: var(--muted); transition: background-color 0.12s, color 0.12s; }
+#app-pane .ac-prompt.ac-prompt-c:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: var(--text); }
+#app-pane .ac-prompt.ac-prompt-c:active:not(:disabled) { background: rgb(255 255 255 / 0.16); color: var(--text); }
+
+#app-pane .icon-btn.ac-stop-c:hover:not(:disabled) { background: rgb(255 255 255 / 0.14); }
+#app-pane .icon-btn.ac-stop-c:active:not(:disabled) { background: rgb(255 255 255 / 0.22); }
+#app-pane .icon-btn.ac-stop-c:disabled { opacity: 0.4; }
+
+/* The name: two lines at most; its id on hover or focus, a click copies it. */
+.app-head h2 { display: block; overflow: visible; }
+.ac-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; overflow-wrap: anywhere; cursor: copy; text-decoration: underline dotted transparent; text-underline-offset: 5px; transition: text-decoration-color 0.15s; }
+.ac-name:hover, .ac-name:focus-visible { text-decoration-color: var(--dimmed); }
+
+/* The folder: its path in one read-only field with Copy and Open in Finder (Show in Explorer) inside it. */
+.ac-path-row { display: flex; align-items: center; gap: 2px; min-width: 0; height: 32px; padding-right: 2px; border-radius: 8px; background: var(--tile); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.ac-path-row:focus-within { box-shadow: inset 0 0 0 1px var(--dimmed); }
+.ac-path { flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 10px; border: 0; border-radius: 8px 0 0 8px; background: transparent; color: var(--muted); font: 12px/16px var(--mono); }
+.ac-path:focus-visible { outline: none; color: var(--text); }
+
+#app-pane .ac-path-btn .bi { width: 16px; height: 16px; }
+#app-pane .ac-path-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: var(--text); }
+#app-pane .ac-path-btn:active:not(:disabled) { background: rgb(255 255 255 / 0.16); color: var(--text); }
+#app-pane .ac-path-btn:focus-visible { outline: 2px solid var(--primary-text); outline-offset: -2px; }
+
+/* Settings: a description in two lines at most, a press opens it all; Open in Local Web at the end. */
+.ac-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ac-desc.open { display: block; overflow: visible; }
+.ac-desc[data-clamped="yes"] { border-radius: 4px; cursor: pointer; transition: color 0.15s; }
+.ac-desc[data-clamped="yes"]:hover { color: var(--text); }
+.ac-settings-foot { display: flex; align-items: center; gap: var(--s-3); padding-top: var(--s-1); color: var(--dimmed); font-size: 12px; line-height: 16px; }
+.ac-settings-foot > span { flex: 1; min-width: 0; }
+
+.ac-prompt .narrow { display: none; }
+
+/* The column's type, by the system above. */
+#app-pane :is(.btn, .nav-back, .tabs button, .field-name b, .menu-item) { font-size: 14px; line-height: 20px; font-weight: 500; }
+#app-pane .field-name > :not(b) { font-size: 12px; line-height: 16px; font-weight: 400; }
+#app-pane :is(.btn.small) { font-size: 14px; line-height: 20px; }
+#app-pane :is(input, select, textarea, .select, .select-label) { font-size: 14px; line-height: 20px; font-weight: 400; }
+#app-pane :is(.ac-facts-line, .ac-facts-line *, .live, .ac-heap-text, .field-help, .ac-desc, .ac-settings-foot) { font-size: 12px; line-height: 16px; font-weight: 400; }
+
+/* The head and the actions: the name at title size, the state apart from it, the folder field and the buttons 40
+   and 44 tall; the heap away from the buttons. */
+#app-pane .app-head-icon { width: 56px; height: 56px; border-radius: 14px; }
+
+#app-pane :is(h2, .ac-name) { font-weight: 500; font-size: 25px; line-height: 30px; letter-spacing: -0.01em; }
+#app-pane .app-folder { margin-top: var(--s-6); }
+#app-pane .ac-path-row { height: 40px; padding-right: 4px; border-radius: 10px; }
+#app-pane .ac-path { font-weight: 400; padding-left: 12px; border-radius: 10px 0 0 10px; }
+#app-pane .ac-path-btn { transition: background-color 0.12s, color 0.12s; color: var(--muted); box-shadow: none; background: transparent; border: 0; padding: 0; flex: none; width: 32px; height: 32px; border-radius: 7px; }
+.app-folder:not([hidden]):not(:empty) + .app-actions { margin-top: var(--s-3); }
+#app-pane .icon-btn.ac-stop-c { transition: background-color 0.12s; color: var(--text); box-shadow: none; background: rgb(255 255 255 / 0.08); border: 0; flex: none; width: 44px; height: 44px; border-radius: 10px; }
+
+#app-pane .app-status { margin-top: var(--s-6); }
+/* The state at body size: a word or two, never a sentence. */
+#app-pane :is(.ac-facts-line, .ac-facts-line *, .live) { font-size: 14px; line-height: 20px; font-weight: 400; }
+#app-pane .app-head-text { padding-top: 0; gap: var(--s-1); }
+/* The prompt keeps its label: the gap gives way first, then Refresh's own padding. */
+#app-pane .ac-row-c .ac-gap { flex: 1 1 0; min-width: 0; }
+#app-pane .ac-prompt.ac-prompt-c { border-radius: 10px; height: 44px; flex: 0 1 auto; }
+#app-pane .ac-row-c { align-items: center; gap: 6px; }
+/* The whole label needs about 335 px beside Stop and Refresh: below a 400 px column it says "Prompt for AI". */
+@container side (width < 400px) {
+  .ac-prompt .wide { display: none; }
+  .ac-prompt .narrow { display: inline; }
+}
+/* The narrowest column (340 px at a 900 px window): a little less padding, so "Prompt for AI" still fits whole. */
+@container side (width < 360px) {
+  #app-pane .ac-prompt.ac-prompt-c { padding: 0 12px 0 9px; }
+  #app-pane .icon-btn.ac-stop-c { width: 40px; }
+}
+/* Run or Refresh as wide as its word. */
+#app-pane .ac-run { flex: none; height: 44px; min-width: 0; padding: 0 14px; border-radius: 10px; }
+
+/* Copied in the descriptor: a tick before the word. */
+.ac-tip b.done { display: inline-flex; align-items: center; gap: 6px; }
+.ac-tip b.done .bi { width: 14px; height: 14px; color: var(--primary-text); }
+
+/* The top bar's buttons as tall as its tools (40), toward Run's 44. */
+.topbar .btn.solid { height: 40px; }
+
+/* The controls stand 28 above the dashboard, in 2D as in 3D; in 2D the BUSY Bar is centered in the room above them. */
+.canvas > .dock, .canvas:has(.stage3d) > .dock { bottom: 28px; }
+
+/* The dashboard and the console: a fine edge that fades toward their foot. */
+:is(.device-card, .console-card) { position: relative; }
+:is(.device-card, .console-card)::before { content: ""; position: absolute; inset: 0; z-index: 0; padding: 1px; border-radius: inherit; background: linear-gradient(to bottom, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.04) 55%, rgb(255 255 255 / 0)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+
+/* The camera's and Record's icons in the middle of their buttons. */
+.seg > .shot-take .bi, .capture-tools .tool .bi { display: block; }
+
+/* The opened app's head a little lower, away from All apps; what is under it moves with it. */
+#app-pane .app-head { gap: var(--s-4); margin-top: var(--s-3); }
+
+/* Files: the group names at body size; Show in Finder without a plate, its area lit on hover and press; Not published
+   next to its own list, apart from the one above. */
+#app-pane .group-label { color: var(--text); font-size: 14px; line-height: 20px; font-weight: 500; }
+#app-pane .files-head { min-height: 40px; }
+#app-pane .btn.files-reveal { height: 36px; padding: 0 10px; border: 0; background: transparent; box-shadow: none; color: var(--muted); border-radius: 8px; transition: background-color 0.12s, color 0.12s; }
+#app-pane .btn.files-reveal:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
+#app-pane .btn.files-reveal:active { background: rgb(255 255 255 / 0.16); color: var(--text); }
+#app-pane .files-left-label { margin: var(--s-6) 0 var(--s-1); }
+
+.row-actions .icon-btn { width: 36px; height: 36px; border-radius: 8px; }
+
+/* The cards of Settings, in the groups' rhythm. */
+#app-body .settings { gap: 3px; }
+#app-body .settings > .field { border-radius: 9px; }
+#app-body .settings > .field:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+#app-body .settings > .field:last-of-type { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+
+/* Running in the list: in the state's style, 20 from the row's edge. */
+.apps li.app .live-state { right: var(--s-5); font-size: 14px; line-height: 20px; font-weight: 400; }
+
+/* ---- the dashboard: the back display, what the BUSY Bar is, its two buttons; the four tiles. */
+.device-card { gap: var(--s-6); padding: var(--s-5); }
+
+.device-card .link { font-size: 14px; line-height: 20px; font-weight: 400; }
+.device-card .builds:not(.mono) { font-size: 12px; line-height: 16px; font-weight: 400; }
+.device-card .builds.bar-address { height: 40px; margin-top: var(--s-2); padding: 0 4px 0 12px; border-radius: 10px; background: var(--tile); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.device-card .bar-address a { flex: 1; color: var(--muted); }
+.device-card #bar-address-copy { width: 32px; height: 32px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--muted); }
+.device-card #bar-address-copy .bi { width: 16px; height: 16px; }
+.device-card #bar-address-copy:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
+.device-card #bar-address-copy:active { background: rgb(255 255 255 / 0.16); }
+.device-card .device-links { gap: var(--s-1); margin: var(--s-2) 0 0 calc(-1 * 10px); }
+
+.device-card .device-links .btn:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
+.device-card .device-links .btn:active { background: rgb(255 255 255 / 0.16); color: var(--text); }
+.device-card .device-links .btn .bi { width: 16px; height: 16px; }
+
+.device-card .set:nth-child(1) { border-top-left-radius: 12px; }
+.device-card .set:nth-child(2) { border-top-right-radius: 12px; }
+.device-card .set:nth-child(3) { border-bottom-left-radius: 12px; }
+.device-card .set:nth-child(4) { border-bottom-right-radius: 12px; }
+.device-card .set .value { font-size: 14px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
+/* The link to the emulator's server says nothing while it holds; it shows only while it is lost. */
+.device-card #link.live { display: none; }
+.device-card #link:not(.live) { color: var(--warning); }
+.device-card #link:not(.live)::before { background: var(--warning); }
+
+/* The name and its address on one line (the address plain, Copy beside it); the builds a little apart under them; the
+   two buttons last. */
+.device-card .device-head { flex-wrap: nowrap; align-items: baseline; gap: var(--s-3); }
+.device-card .device-head .builds.bar-address { flex: 0 1 auto; height: auto; margin: 0; padding: 0; background: none; box-shadow: none; align-items: center; align-self: center; gap: 2px; }
+
+.device-card .device-head #bar-address-copy { width: 28px; height: 28px; }
+.device-card .device-about > .builds:not(.mono) { margin-top: var(--s-2); }
+
+/* The buttons 36 tall, so the text is as tall as the back display beside it. */
+.device-card .device-links { margin-top: var(--s-2); }
+.device-card .device-links .btn { transition: background-color 0.12s, color 0.12s; font-weight: 500; line-height: 20px; font-size: 14px; color: var(--muted); box-shadow: none; background: transparent; border-radius: 8px; border: 0; padding: 0 10px; height: 36px; }
+/* The builds and the uptime at body size, value style. */
+.device-card .device-about > .builds:not(.mono), .device-card .device-about > .builds:not(.mono) * { font-size: 14px; line-height: 20px; font-weight: 400; }
+.device-card .device-about > .builds:not(.mono) #device-uptime { font-family: inherit; }
+/* The address beside the name in the body face too, value style. */
+.device-card .device-head .bar-address a { color: var(--muted); flex: 0 1 auto; font: 400 14px/20px Inter, system-ui, sans-serif; }
+
+/* The back display at 200 by 100; the name and the builds at the top, the buttons at the foot; the four tiles share
+   the height in two rows. */
+.device-card .oled { width: 200px; height: 100px; }
+.device-card .oled-frame { align-self: center; }
+.device-card .device-about { justify-content: flex-start; gap: 0; }
+.device-card .device-about > .device-links { margin-top: auto; padding-top: var(--s-2); }
+.device-card .sets { gap: 3px; grid-template-rows: 1fr 1fr; align-self: stretch; }
+.device-card .set { font-weight: 500; line-height: 20px; font-size: 14px; background: var(--tile); border-radius: 9px; padding: 0 var(--s-4); height: auto; min-height: 48px; }
+
+/* Below 1240 the four tiles are one row under the back display and the text, of their own height, with the row's
+   outer corners. */
+@media (max-width: 1240px) {
+  .device-card .sets { grid-template-rows: auto; }
+  .device-card .set { min-height: 48px; border-radius: 9px; }
+  .device-card .set:nth-child(1) { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+  .device-card .set:nth-child(4) { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+}
+/* The BUSY Bar's width from the room above the controls: 24 between them and 24 over its top. */
+.device-view:not(:has(> .stage3d)) { top: calc(24px + (100cqh - var(--dock-h) - 28px - 24px - 24px) / 2); }
+/* A short window: the controls may shrink further, and the margins round the BUSY Bar tighten, so the BUSY Bar keeps
+   its size first. */
+.canvas > * { --w: max(220px, min(100cqw - 96px, (100cqh - var(--dock-h) - 28px - 24px - 24px) * 768 / 248, 900px)); --u: clamp(0.40px, min(100cqw / 1375, 100cqh / 550), 0.83px); }
+@media (max-height: 760px) {
+  .canvas > .dock, .canvas:has(.stage3d) > .dock { bottom: 12px; }
+  .canvas > * { --w: max(220px, min(100cqw - 96px, (100cqh - var(--dock-h) - 12px - 16px - 20px) * 768 / 248, 900px)); }
+  .device-view:not(:has(> .stage3d)) { top: calc(20px + (100cqh - var(--dock-h) - 12px - 16px - 20px) / 2); }
+}
+/* Restart BUSY Bar keeps its words at every width, as Open in Local Web does. */
+#power-restart .label { display: inline !important; }
+
+/* A narrow window (under 1060, a card under ~620 wide): the back display at 160 by 80 beside the name, the address
+   (on its own line when it does not fit) and the builds; the two buttons under them; the four tiles two by two. */
+@media (max-width: 1060px) {
+  .device-card { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "oled head" "oled builds" "links links" "sets sets"; row-gap: 0; column-gap: var(--s-5); }
+  .device-card .oled { width: 160px; height: 80px; }
+  .device-card .oled-frame { grid-area: oled; align-self: start; }
+  .device-card .device-about { display: contents; }
+  .device-card .device-head { grid-area: head; flex-wrap: wrap; row-gap: 0; align-self: end; min-width: 0; }
+  .device-card .device-head .builds.bar-address { min-width: 0; max-width: 100%; }
+  .device-card .device-about > .builds:not(.mono) { grid-area: builds; align-self: start; margin-top: var(--s-1); }
+  .device-card .device-about > .device-links { grid-area: links; margin: var(--s-3) 0 0 -10px; padding: 0; }
+  .device-card .sets { grid-area: sets; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; margin-top: var(--s-3); }
+  .device-card .set { border-radius: 9px; }
+  .device-card .set:nth-child(1) { border-radius: 12px 9px 9px 9px; }
+  .device-card .set:nth-child(2) { border-radius: 9px 12px 9px 9px; }
+  .device-card .set:nth-child(3) { border-radius: 9px 9px 9px 12px; }
+  .device-card .set:nth-child(4) { border-radius: 9px 9px 12px 9px; }
+}
+/* Narrow and short (900 by 650 and the like): the four tiles in one row again, Wi-Fi and USB by their icons alone
+   (their names are in the descriptor), so the card stays low and the BUSY Bar keeps its size. */
+@media (max-width: 1060px) and (max-height: 760px) {
+  .device-card .sets { grid-template-columns: 0.8fr 0.8fr 1.2fr 1.2fr; }
+  .device-card .set { min-height: 44px; padding: 0 var(--s-3); }
+  .device-card .set:not(.battery):not(.volume) > span:not(.icon):not(.value) { display: none; }
+  .device-card .set:not(.battery):not(.volume) { justify-content: space-between; }
+  .device-card .set:nth-child(1) { border-radius: 12px 9px 9px 12px; }
+  .device-card .set:nth-child(2), .device-card .set:nth-child(3) { border-radius: 9px; }
+  .device-card .set:nth-child(4) { border-radius: 9px 12px 12px 9px; }
+  .device-card .device-about > .device-links { margin-top: var(--s-2); }
+}
+/* The smallest windows (under 600 tall): the dashboard tighter, so the BUSY Bar and its controls keep their room. */
+@media (max-width: 1060px) and (max-height: 600px) {
+  .device-card { padding: var(--s-3) var(--s-4); }
+  .device-card .set { min-height: 40px; }
+  .device-card .device-about > .device-links { margin-top: 0; }
+  .device-card .sets { margin-top: var(--s-2); }
+}
+/* With the window's own title bar (Windows) the page is 36 shorter: the back display at 120 by 60, less padding. */
+@media (max-width: 1060px) and (max-height: 600px) {
+  .has-title-bar .device-card { padding-top: var(--s-1); padding-bottom: var(--s-1); }
+  .has-title-bar .device-card .oled { width: 120px; height: 60px; }
+  .has-title-bar .device-card .device-links .btn { height: 28px; }
+  .has-title-bar .device-card .set { min-height: 36px; }
+}
+/* With the account button the top bar needs about 1260: below 1300 the two documentation links show their icons alone
+   (their names are in the descriptor), as they do below 1180 without it. */
+@media (max-width: 1300px) {
+  .topbar:has(#account:not([hidden])) .top-doc span { display: none; }
+}

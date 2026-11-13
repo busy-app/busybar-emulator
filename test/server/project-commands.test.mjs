@@ -132,7 +132,9 @@ test("create, build, install, run and stop from the shells, on the bundled Node:
   assert.equal(created.json.generator.name, "@busy-app/create-app");
   assert.match(created.json.generator.version, /^0\.5\./);
   assert.equal(created.json.fix, windows ? "patched" : "not-needed");
-  assert.equal(created.json.next.length, 3);
+  // The first step of the loop agents.md and the project's AGENTS.md give: dev --once, with the folder (EMU-314).
+  assert.equal(created.json.next.length, 1);
+  assert.match(created.json.next[0], new RegExp(` dev ${windows ? `"${name}"` : `'${name}'`} --once$`));
   assert.ok(existsSync(join(project, "node_modules", "@busy-app", "cli")));
   assert.equal(created.stderr, "", "--json says nothing on stderr");
   // The emulator made it, so it is trusted.

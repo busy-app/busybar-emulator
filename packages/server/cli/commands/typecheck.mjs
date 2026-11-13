@@ -27,14 +27,15 @@ export default {
     }
     const trust = requireTrust(ctx, sys, project, options, "typecheck");
     const dependencies = await ensureDependencies(ctx, sys, project, progress);
-    progress("npm run typecheck");
+    // Not "npm run typecheck": the project's AGENTS.md tells an agent to run no npm of its own (EMU-314).
+    progress("Checking the types: the project's typecheck script, run by the emulator's own npm");
     const run = await runTool(ctx, sys, { tool: "npm", args: ["run", "--silent", "--no-workspaces", "typecheck"], cwd: project.dir });
     const output = shown(run.output);
     const errors = output.split("\n").map((line) => ERROR_LINE.exec(line.trim())).filter(Boolean).map(([, file, line, column, code, message]) => ({ file, line: Number(line), column: Number(column), code, message }));
     const data = { folder: project.dir, id: project.id, dependencies, trusted: trust.trusted };
     if (run.code !== 0) {
       // The compiler found errors (its exit code 2, its lines on standard output); anything else is the tool's failure.
-      if (!errors.length || run.signal) throw toolFailed(ctx, "npm run typecheck", run, `Fix what it says, then run ${commandFor(ctx, project, "typecheck")} again.`);
+      if (!errors.length || run.signal) throw toolFailed(ctx, "The typecheck script (run by the emulator's own npm)", run, `Fix what it says, then run ${commandFor(ctx, project, "typecheck")} again.`);
       throw new CliError(
         "typecheck_failed",
         `${errors.length} type ${errors.length === 1 ? "error" : "errors"} in ${project.id ?? project.dir}:\n${output}`,

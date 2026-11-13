@@ -31,6 +31,9 @@ export function cliEnvironment(env, config) {
   const testHome = env.BUSY_EMULATOR_TEST_CLI_HOME;
   if (config.development && typeof testHome === "string" && path.isAbsolute(testHome)) Object.assign(out, { HOME: testHome, USERPROFILE: testHome });
   out.BUSY_EMULATOR_CLI_PATH = CLI_NAME_FOR_HINTS;
+  // The window reads the command line's lines as UTF-8 and shows them: its text as it is, not in the console's ASCII
+  // (server/cli/console.mjs, EMU-314).
+  out.BUSY_EMULATOR_OUTPUT = "unicode";
   return out;
 }
 

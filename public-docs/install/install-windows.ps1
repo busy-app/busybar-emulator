@@ -6,8 +6,19 @@
 #
 # BUSY_EMULATOR_RELEASE_URL replaces the address of the latest release (the folder the release files lie in): only
 # for tests and for a mirror the user names. It must be https (http only to 127.0.0.1 or localhost).
+#
+# It leaves nothing in %TEMP%: the copy the one-line install downloads, %TEMP%\busy-emulator-install.ps1, is removed as
+# soon as it runs (PowerShell has read it whole by then), and the setup's log once the install succeeded. A failed
+# setup keeps its log and names it.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+$temp = [IO.Path]::GetTempPath()
+if ($PSCommandPath -and [IO.Path]::GetFileName($PSCommandPath) -eq 'busy-emulator-install.ps1') {
+  $from = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($PSCommandPath)).TrimEnd('\')
+  $temps = @($temp, $env:TEMP) | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
+  if ($temps -contains $from) { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue }
+}
 
 $official = 'https://github.com/busy-app/busybar-emulator/releases/latest/download'
 $base = $official
@@ -71,7 +82,9 @@ if ($cli) {
       Say "$file matches SHA256SUMS"
       # 4. The setup, silent, for this user only. The folder goes last on its command line.
       $run = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$appFolder") -Wait -PassThru
-      if ($run.ExitCode -ne 0) { Fail "the setup ended with exit code $($run.ExitCode) (its log: $env:TEMP\busybar-emulator-setup.log)" }
+      $setupLog = Join-Path $temp 'busybar-emulator-setup.log'
+      if ($run.ExitCode -ne 0) { Fail "the setup ended with exit code $($run.ExitCode); its log is $setupLog" }
+      Remove-Item -LiteralPath $setupLog -Force -ErrorAction SilentlyContinue
       Say "installed $appFolder"
     } finally {
       Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue

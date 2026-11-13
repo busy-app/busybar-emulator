@@ -465,7 +465,8 @@ test("a list asked for while one is being read gets the next read: the one under
 test("the command line's environment: the shell's, cleaned; a development run is told the shell's data folder and port, a release nothing", () => {
   const env = { PATH: "/bin", HOME: "/home/you", NODE_OPTIONS: "--require /evil.js", ELECTRON_RUN_AS_NODE: "1", BUSY_EMULATOR_TEST_HOOK: "/sock", BUSY_EMULATOR_DATA: "/elsewhere" };
   // It calls itself by name in its hints, never by the path of the Node and the script or of a launcher.
-  const named = { BUSY_EMULATOR_CLI_PATH: "busy-emulator" };
+  // And it prints its text as it is, for the window, not in the console's ASCII (EMU-314).
+  const named = { BUSY_EMULATOR_CLI_PATH: "busy-emulator", BUSY_EMULATOR_OUTPUT: "unicode" };
   assert.deepEqual(cliEnvironment(env, { development: false, dataDir: "/data", port: 8640 }), { PATH: "/bin", HOME: "/home/you", ...named });
   assert.deepEqual(cliEnvironment(env, { development: true, dataDir: "/data", port: 9100 }), { PATH: "/bin", HOME: "/home/you", BUSY_EMULATOR_DATA: "/data", BUSY_EMULATOR_PORT: "9100", ...named });
   // A test's home for the command line alone: in development only, and only an absolute one.

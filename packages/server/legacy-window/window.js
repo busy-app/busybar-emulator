@@ -17,6 +17,15 @@ const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 /** An icon of BUSY's own set (icons/busy), by its name there, from the set's one file; nothing for what is no name. */
 const icon = (name) => (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) ? `<svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-${name}"/></svg>` : "");
+/**
+ * Puts an icon in an element only when it is another one: a state that arrives every second must not rebuild the same
+ * <svg><use>, which blinks while the sprite is looked up again (the battery, the speaker and Record).
+ */
+function setIcon(el, name) {
+  if (!el || el.dataset.icon === name) return;
+  el.dataset.icon = name;
+  el.innerHTML = icon(name);
+}
 
 // ---------------------------------------------------------------- front display: LEDs
 
@@ -554,7 +563,7 @@ function renderAudioNote(playing) {
   audioNote.classList.toggle("on", ready);
   audioNote.classList.toggle("missed", !ready && sound !== null);
   const speaker = $("#audio-icon");
-  speaker.innerHTML = icon(ready ? "sound" : "sound-off");
+  setIcon(speaker, ready ? "sound" : "sound-off");
   speaker.title = audioNote.title;
   // layout-v2: the speaker is the volume's: its row says what the sound does.
   $(".set.sound").title = `The BUSY Bar's volume. ${audioNote.title}`;
@@ -647,7 +656,7 @@ function renderStatus(status) {
   statusBattery.style.backgroundSize = `${status.battery}% 100%`;
   $("#status-battery-text").textContent = `${status.battery}%`;
   // The battery's icon is one of the set's five, by the charge, and the charging one while the cable is in.
-  $("#battery-icon").innerHTML = icon(`battery-${status.usb ? "charging-" : ""}${Math.max(1, Math.min(5, Math.ceil(status.battery / 20)))}`);
+  setIcon($("#battery-icon"), `battery-${status.usb ? "charging-" : ""}${Math.max(1, Math.min(5, Math.ceil(status.battery / 20)))}`);
   $("#power-note").hidden = status.powered !== false;
   if (powered !== (status.powered !== false)) {
     powered = status.powered !== false;
@@ -809,6 +818,402 @@ function button(className, label, why, onClick, tooltip = "", picture = null) {
     if (!why) onClick(e);
   });
   return el;
+}
+
+// ---- the opened app's column: its head, its actions and what happened, the hover descriptor, the view tools
+
+// The hover descriptor: one small component for the whole window. An element with data-tip shows it after a short
+// hover, and at once when it gets the focus from the keyboard; Escape, a press, a scroll or leaving it hides it. Its
+// words are the element's description for a screen reader (aria-describedby); its name stays its own (aria-label).
+const tipBox = make("div", "ac-tip");
+tipBox.id = "ac-tip";
+tipBox.setAttribute("role", "tooltip");
+tipBox.hidden = true;
+document.body?.append?.(tipBox);
+let tipFor = null;
+let tipTimer = null;
+let tipHiddenAt = 0;
+
+/**
+ * Gives an element the hover descriptor: a short title, and a line of detail under it. Only for what is shown as an
+ * icon alone: an element with words of its own says what it is already and gets none, unless onText (the app's name,
+ * whose descriptor is its id).
+ */
+function tip(el, title, detail = "", { onText = false } = {}) {
+  const words = el.tagName === "INPUT" ? "" : (el.textContent ?? "").trim();
+  if (words && !onText) {
+    delete el.dataset.tip;
+    delete el.dataset.tipDetail;
+    el.removeAttribute("aria-describedby");
+    if (tipFor === el) hideTip();
+    return el;
+  }
+  el.dataset.tip = title;
+  if (detail) el.dataset.tipDetail = detail;
+  else delete el.dataset.tipDetail;
+  el.removeAttribute("title");
+  el.setAttribute("aria-describedby", "ac-tip");
+  if (tipFor === el) showTip(el);
+  return el;
+}
+
+function showTip(el) {
+  if (!el?.isConnected || !el.dataset.tip) return hideTip();
+  clearTimeout(tipTimer);
+  const detail = el.dataset.tipDetail;
+  const title = make("b", "", el.dataset.tip);
+  // Copied: a tick before the word, as the copy buttons with words show it.
+  if (el.dataset.tip === "Copied") {
+    title.classList.add("done");
+    title.innerHTML = `${icon("checkmark")}<span>Copied</span>`;
+  }
+  tipBox.replaceChildren(title, ...(detail ? [make("span", "", detail)] : []));
+  tipBox.hidden = false;
+  tipFor = el;
+  const at = el.getBoundingClientRect();
+  const box = tipBox.getBoundingClientRect();
+  const below = at.bottom + 8 + box.height <= innerHeight - 8;
+  tipBox.style.top = `${Math.round(below ? at.bottom + 8 : Math.max(8, at.top - 8 - box.height))}px`;
+  tipBox.style.left = `${Math.round(Math.max(8, Math.min(at.left + at.width / 2 - box.width / 2, innerWidth - box.width - 8)))}px`;
+}
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  if (tipBox.hidden) return;
+  tipBox.hidden = true;
+  tipFor = null;
+  tipHiddenAt = Date.now();
+}
+
+document.addEventListener?.("pointerover", (e) => {
+  const el = e.target?.closest?.("[data-tip]") ?? null;
+  if (el === tipFor) return;
+  clearTimeout(tipTimer);
+  if (!el) return hideTip();
+  // From one descriptor to the next, at once.
+  const quick = !tipBox.hidden || Date.now() - tipHiddenAt < 400;
+  tipTimer = setTimeout(() => showTip(el), quick ? 0 : 450);
+});
+document.addEventListener?.("pointerleave", hideTip);
+document.addEventListener?.("focusin", (e) => {
+  const el = e.target?.closest?.("[data-tip]");
+  if (el && e.target.matches?.(":focus-visible")) showTip(el);
+});
+document.addEventListener?.("focusout", (e) => e.target?.closest?.("[data-tip]") === tipFor && hideTip());
+document.addEventListener?.("keydown", (e) => e.key === "Escape" && !tipBox.hidden && hideTip(), true);
+// A press hides it, except on what answers the press in its descriptor (a click on the name copies the id: "Copied").
+addEventListener("pointerdown", (e) => e.target?.closest?.("[data-tip-answers]") === tipFor && tipFor ? undefined : hideTip(), true);
+// A scroll that moves the element away hides it; another one (a path field scrolled to its end) does not.
+addEventListener("scroll", (e) => tipFor && e.target?.contains?.(tipFor) && hideTip(), true);
+addEventListener("resize", hideTip);
+
+// The window's native tooltips (title="…") become this descriptor too, by the same rule: an
+// element shown as an icon alone gets it; one with words of its own says what it is and gets none. Taken when the
+// pointer or the keyboard reaches the element, so titles set later (state changes) are taken as well.
+function takeTitle(target) {
+  const el = target?.closest?.("[title]");
+  if (!el || el === document.body || el.closest("svg")) return;
+  const said = el.getAttribute("title");
+  el.removeAttribute("title");
+  // A title emptied later (a control enabled in place) takes back the descriptor an earlier title gave.
+  if (!said && el.dataset.tipFromTitle) {
+    delete el.dataset.tipFromTitle;
+    delete el.dataset.tip;
+    delete el.dataset.tipDetail;
+    el.removeAttribute("aria-describedby");
+    if (tipFor === el) hideTip();
+  }
+  // The BUSY Bar itself, in 2D or 3D, says nothing under the pointer.
+  if (!said || el.closest(".views")) return;
+  if (!el.getAttribute("aria-label") && !(el.textContent ?? "").trim()) el.setAttribute("aria-label", said);
+  // A control that cannot be used now keeps its reason, words or not ("Wait a moment", what Publish waits for).
+  const off = el.matches?.(":disabled, [aria-disabled='true']");
+  tip(el, said, "", { onText: Boolean(off) });
+  if (el.dataset.tip) el.dataset.tipFromTitle = "1";
+}
+document.addEventListener?.("pointerover", (e) => takeTitle(e.target), true);
+document.addEventListener?.("focusin", (e) => takeTitle(e.target), true);
+
+// ---- The view tools over the BUSY Bar: the top bar's Screenshot and 2D/3D group stands over the BUSY Bar's middle
+// button (Start / Pause), not wherever the top bar's flow leaves it. It keeps clear of the links on its
+// left and of the account and Publish on its right; where there is no room, it stays in the flow.
+(() => {
+  const bar = $("#topbar");
+  const tools = bar?.querySelector(".top-tools");
+  const stage = $("#stage");
+  if (!bar || !tools || !stage) return;
+  const place = () => {
+    const key = [...document.querySelectorAll(".key-start")].find((el) => el.getClientRects().length);
+    const at = key?.getBoundingClientRect() ?? stage.getBoundingClientRect();
+    const middle = at.left + at.width / 2;
+    // Where it stands without our margin: measured, not tried (resetting it every time made it flicker).
+    const placed = tools.getBoundingClientRect();
+    const ours = parseFloat(tools.style.marginLeft || "0") || 0; // the style sheet's own margin is 8
+    const now = { left: placed.left - (ours ? ours - 8 : 0), width: placed.width };
+    const before = tools.previousElementSibling?.getBoundingClientRect();
+    const after = bar.querySelector(".top-end")?.getBoundingClientRect();
+    const want = middle - now.width / 2;
+    const least = (before ? before.right : bar.getBoundingClientRect().left) + 16;
+    // The right end from the bar's own edge, not from where the account and Publish stand now: our margin pushes them,
+    // and measured after it they would let it push further (at 1240 Publish went off the window).
+    const box = bar.getBoundingClientRect();
+    const end = box.right - parseFloat(getComputedStyle(bar).paddingRight || "0") - (after?.width ?? 0);
+    const most = end - 16 - now.width;
+    if (most < least) {
+      if (tools.style.marginLeft) tools.style.marginLeft = "";
+      return;
+    }
+    const left = Math.min(Math.max(want, least), most);
+    const margin = `${Math.round(left - now.left + 8)}px`;
+    if (tools.style.marginLeft !== margin) tools.style.marginLeft = margin;
+  };
+  let timer = 0;
+  const soon = () => {
+    clearTimeout(timer);
+    timer = setTimeout(place, 16);
+  };
+  const watch = new ResizeObserver(soon);
+  // The account and Publish too: the account button comes later (once GitHub's state is read) and makes them wider.
+  for (const el of [bar, stage, $(".side"), bar.querySelector(".top-end")].filter(Boolean)) watch.observe(el);
+  addEventListener("resize", soon);
+  // The BUSY Bar's drawing settles after the first frames (fonts, the 2D or 3D view): place again when it has.
+  addEventListener("load", soon);
+  for (const ms of [300, 1000, 2500]) setTimeout(soon, ms);
+  const key = document.querySelector(".key-start");
+  if (key) watch.observe(key);
+  soon();
+})();
+
+// What the console said of each app's last run: its errors and how it ended ("Launch <id>", "<id> error: …",
+// "App <id> exited: <reason>; …"). An app that ended for an error, or with errors, has crashed.
+const appRuns = new Map(); // id → { errors, first, ended }
+function trackAppLine(kind, text) {
+  let m;
+  if (kind === "app" && (m = /^Launch (\S+)/.exec(text))) appRuns.set(m[1], { errors: 0, first: null, ended: null });
+  else if (kind === "app" && (m = /^App (\S+) exited: (.*?); heap peak/.exec(text))) {
+    const run = appRuns.get(m[1]) ?? { errors: 0, first: null, ended: null };
+    run.ended = m[2];
+    appRuns.set(m[1], run);
+  } else if (kind === "error" && (m = /^(\S+) error: ([\s\S]*)$/.exec(text) ?? /^App (\S+): ([\s\S]*)$/.exec(text))) {
+    const run = appRuns.get(m[1]) ?? { errors: 0, first: null, ended: null };
+    run.errors += 1;
+    run.first ??= m[2].replace(/\s+/g, " ").trim();
+    appRuns.set(m[1], run);
+  } else return;
+  if (m[1] === chosenId) renderApp();
+}
+/** How the row's app ended when that was a crash: { said }; null when it runs or ended well. */
+function crashOf(row) {
+  const run = appRuns.get(row.id);
+  if (row.id === runningId || !run?.ended) return null;
+  // "power": the BUSY Bar was turned off or restarted (Restart BUSY Bar), not the app failing.
+  const bad = !/^(finished|quit|aborted|power)$/.test(run.ended);
+  return bad || run.errors ? { said: (run.first ?? run.ended.replace(/^error \w+ main\.js: /, "").replace(/^fatal: /, "")).replace(/^Error running script:\s*/i, "") } : null;
+}
+const errorsNow = (row) => (row.id === runningId ? (appRuns.get(row.id)?.errors ?? 0) : 0);
+
+/** The console, open on its errors, the last one in view. */
+function showErrorsInConsole() {
+  if (consoleCard.classList.contains("collapsed")) toggleConsole();
+  onlyErrors(true);
+  const lines = consoleBox.querySelectorAll(".line.error");
+  lines[lines.length - 1]?.scrollIntoView?.({ block: "nearest" });
+}
+
+// The running app's heap: a meter across the column, its numbers under it; the warning color near its end or when the
+// JS is busy nearly all the time.
+const heapLine = make("div", "ac-heap");
+heapLine.innerHTML = `<span class="heap"><span class="now"></span><span class="peak"></span></span><span class="ac-heap-text"></span>`;
+function renderHeap(stats, p) {
+  if (!stats) return;
+  const share = stats.heapNow / stats.heapSize;
+  heapLine.querySelector(".now").style.width = `${100 * share}%`;
+  heapLine.querySelector(".peak").style.left = `${(100 * stats.heapPeak) / stats.heapSize}%`;
+  heapLine.querySelector(".ac-heap-text").textContent = `Heap ${(stats.heapNow / 1024).toFixed(1)} of ${Math.round(stats.heapSize / 1024)} KiB`;
+  heapLine.classList.toggle("warn", share > 0.85 || Boolean(p && p.busy > 0.9));
+}
+
+/**
+ * The opened app's head, actions and status. The head: the icon, the name (its id in the descriptor, a click copies
+ * it), the state. The actions: the folder's path in a read-only field with Copy and Open in Finder (Show in Explorer)
+ * inside it; then Copy prompt for AI apart on the left, Stop, and Run, which is Refresh while the app runs (both build:
+ * one round of dev --once). The status: the first steps, a crash, a job's answer, the files that changed, the heap.
+ */
+function renderAppTop(row) {
+  loadPromptFacts();
+  const on = row.id === runningId;
+  const project = row.project;
+  const shell = inShell();
+  const why = projectWhy(row);
+  const crash = crashOf(row);
+  const stale = staleShown(row);
+
+  appTitle.removeAttribute("title");
+  const idTip = "The app's id, for agents and the command line. Click to copy.";
+  const name = button("ac-name", row.name, null, async () => {
+    const done = await copyText(row.id);
+    const live = appTitle.querySelector(".ac-name") ?? name; // the column may have been drawn again meanwhile
+    tip(live, done === true ? "Copied" : done === "again" ? "Click again" : "Not copied", row.id, { onText: true });
+    showTip(live);
+    setTimeout(() => {
+      const now = appTitle.querySelector(".ac-name");
+      if (!now) return;
+      tip(now, row.id, idTip, { onText: true });
+      if (tipFor === now) showTip(now);
+    }, 1600);
+  });
+  name.dataset.tipAnswers = "";
+  tip(name, row.id, idTip, { onText: true });
+  // Drawn again under the pointer (the column redraws as the app runs): the descriptor stays on the new name.
+  const had = tipFor && !tipFor.isConnected && tipFor.classList?.contains("ac-name") ? tipFor : null;
+  appTitle.replaceChildren(name);
+  if (had) {
+    tip(name, had.dataset.tip, had.dataset.tipDetail ?? "", { onText: true });
+    showTip(name);
+  }
+
+  // The state, and the errors the app wrote while it runs.
+  const state = make("span", on ? "live" : crash ? "state ac-crashed" : "state", on ? "Running" : crash ? "Ended with an error" : row.onBar ? "Stopped" : "Not on the BUSY Bar");
+  const line = make("span", "ac-facts-line");
+  line.append(state);
+  const errors = errorsNow(row);
+  if (errors) line.append(button("ac-errors", errors === 1 ? "1 error" : `${errors} errors`, null, showErrorsInConsole));
+  appFacts.replaceChildren(line);
+
+  // The actions: the prompt first and apart (it is not a control of the app), then Stop, then Run or Refresh.
+  const stopNow = () => (project && shell ? act(row, "stop", (folder) => actions().projects.stop(folder)) : post("/api/apps/quit"));
+  const stop = button("icon-btn ac-stop ac-stop-c", "", on ? null : "Not running", stopNow, "", "control-stop");
+  stop.ariaLabel = "Stop";
+  tip(stop, on ? "Stop" : "Not running");
+  // The button that says Copied is kept while it says so: the column is drawn again as things change.
+  const saying = appActions.querySelector?.("#copy-prompt");
+  const prompt = saying?.dataset?.copying && saying.dataset.app === row.id ? saying : project && shell ? button("btn ac-prompt ac-prompt-c", "", null, () => {
+    const text = promptFor(chosen());
+    if (!text) return;
+    // Copied takes the button's place at its own width, centered, not a narrower button with the word on its left.
+    if (!prompt.style.width) {
+      prompt.style.width = `${prompt.getBoundingClientRect().width}px`;
+      prompt.dataset.copying = "yes";
+      setTimeout(() => {
+        prompt.style.width = "";
+        delete prompt.dataset.copying;
+      }, 2100);
+    }
+    copyWithFeedback(prompt, text);
+  }, "", "sparkles") : null;
+  if (prompt && prompt !== saying) {
+    // The whole name, or "Prompt for AI" where the column is narrow (window.css); its accessible name stays whole.
+    prompt.dataset.app = row.id;
+    prompt.append(make("span", "wide", "Copy prompt for AI"), make("span", "narrow", "Prompt for AI"));
+    prompt.id = "copy-prompt";
+    prompt.ariaLabel = "Copy prompt for AI";
+  }
+  const label = on ? "Refresh" : "Run";
+  const primary = project && shell
+    ? button("btn solid ac-run", label, why, () => refreshProject(row), "", on ? "refresh" : "control-play")
+    : button("btn solid ac-run", "Run", on ? "Running" : row.onBar ? null : "Not on the BUSY Bar", () => post(`/api/apps/launch?app_id=${encodeURIComponent(row.id)}`), "", "control-play");
+  primary.id = "app-run";
+  const runRow = make("div", "ac-row ac-row-c");
+  runRow.append(...(prompt ? [prompt] : []), make("span", "ac-gap"), stop, primary);
+  appActions.replaceChildren(runRow);
+
+  // The folder.
+  if (project && shell) {
+    const folderWhy = project.unavailable ? AWAY : null;
+    const pathRow = make("div", "ac-path-row");
+    const path = make("input", "ac-path");
+    path.readOnly = true;
+    path.value = project.shownFolder ?? project.folder;
+    path.ariaLabel = "The project's folder";
+    path.spellcheck = false;
+    tip(path, "The project's folder", project.folder);
+    const copy = button("icon-btn ac-path-btn", "", null, async () => {
+      const done = await copyText(project.folder);
+      tip(copy, done === true ? "Copied" : done === "again" ? "Click again" : "Not copied");
+      setTimeout(() => copy.isConnected && tip(copy, "Copy the path"), 1600);
+    }, "", "copy");
+    copy.ariaLabel = "Copy the path";
+    tip(copy, "Copy the path");
+    const openLabel = FILE_MANAGER === "Explorer" ? "Show in Explorer" : "Open in Finder";
+    const open = button("icon-btn ac-path-btn", "", folderWhy, () => actions().reveal(project.folder), "", "folder");
+    open.ariaLabel = openLabel;
+    tip(open, openLabel, folderWhy ?? "");
+    pathRow.append(path, copy, open);
+    appFolder.hidden = false;
+    appFolder.replaceChildren(pathRow);
+    // The end of the path, the project's own folder, is what shows when it does not fit.
+    (globalThis.requestAnimationFrame ?? setTimeout)(() => (path.scrollLeft = path.scrollWidth));
+  } else renderPackageFolder(row);
+
+  // What happened.
+  const status = [];
+  const steps = globalThis.emulatorWelcome?.hintFor?.(project) ?? null;
+  if (steps) status.push(steps);
+  if (crash) {
+    const card = make("div", "ac-crash");
+    const words = make("div", "ac-crash-words");
+    words.append(make("code", "", crash.said));
+    card.append(words, button("btn small", "Show in Console", null, showErrorsInConsole));
+    status.push(card);
+  }
+  const deps = project ? renderDeps(row) : null;
+  if (deps) status.push(deps);
+  else if (project && (jobs.has(project.folder) || working(row) !== null) && !quietJob(project.folder)) status.push(jobBox);
+  if (stale) {
+    const said = make("div", "ac-stale");
+    said.append(make("span", "ac-dot"), make("span", "", on ? "Files changed. Refresh runs the new version." : "Files changed. Run builds the new version."));
+    status.push(said);
+  }
+  if (on) status.push(heapLine);
+  appStatus.replaceChildren(...status);
+}
+
+/** A job that ended well and says only what the state says already ("… is running.", "Stopped."). */
+function quietJob(folder) {
+  const job = jobs.get(folder);
+  return job?.state === "done" && ["run", "refresh", "stop"].includes(job.kind) && /( is running\.|^Stopped\.)$/.test(job.message ?? "");
+}
+
+/** The end of the Settings page: what to know, and the way to the local web. */
+function settingsFoot() {
+  const foot = make("div", "ac-settings-foot");
+  foot.append(make("span", "", "The app reads its settings when it starts."));
+  const link = make("a", "btn small ac-local-web");
+  link.id = "app-settings-local-web";
+  link.href = appSettingsLink.href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.innerHTML = icon("open-in-new");
+  link.append(make("span", "", "Open in Local Web"));
+  foot.append(link);
+  return foot;
+}
+
+/** A setting's description in two lines at most; a press or Enter opens all of it. */
+function clampDescriptions() {
+  const later = globalThis.requestAnimationFrame ?? ((f) => setTimeout(f, 0));
+  later(() => {
+    for (const text of settingsBox.querySelectorAll?.(".field-name > span:not(.field-wrong), .group-about") ?? []) {
+      if (text.dataset.clamped) continue;
+      text.dataset.clamped = "checked";
+      text.classList.add("ac-desc");
+      if (text.scrollHeight <= text.clientHeight + 1) continue;
+      text.dataset.clamped = "yes";
+      text.tabIndex = 0;
+      text.setAttribute("role", "button");
+      text.setAttribute("aria-expanded", "false");
+      const toggle = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = !text.classList.contains("open");
+        text.classList.toggle("open", open);
+        text.setAttribute("aria-expanded", String(open));
+        hideTip();
+      };
+      text.addEventListener("click", toggle);
+      text.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && toggle(e));
+    }
+  });
 }
 
 const appsList = $("#apps");
@@ -1140,10 +1545,9 @@ function openRowMenu(id, { x, y, alignRight = false, byKey = false, back = null,
   const row = rows().find((one) => one.id === id);
   if (!row) return;
   const shell = inShell();
-  const on = row.id === runningId;
   const items = [];
   if (full) {
-    // The opened app's More (layout-v2): what its page has no button for. Run, Stop and Refresh are on the page.
+    // The opened app's More: what its page has no button for. Run (Refresh) and Stop are on the page.
     const why = projectWhy(row);
     const watching = working(row) === "dev";
     items.push(menuItem("Build", "box", () => act(row, "build", (folder) => actions().projects.build(folder)), { why }));
@@ -1151,8 +1555,10 @@ function openRowMenu(id, { x, y, alignRight = false, byKey = false, back = null,
     items.push(menuItem("Publish…", "rocket", () => openPublish(row), { why: why ?? publishable(row) }));
     items.push(make("div", "menu-line"));
     if (!row.project && shell) items.push(menuItem("Open project…", "folder", openProject));
-  } else if (row.onBar) items.push(menuItem(on ? "Stop" : "Start", on ? "control-stop" : "control-play", () => post(on ? "/api/apps/quit" : `/api/apps/launch?app_id=${encodeURIComponent(row.id)}`)));
+  }
+  // The list's row has its own Start or Stop button: the menu does not repeat it.
   if (row.project) items.push(menuItem(`Show in ${FILE_MANAGER}`, "folder", () => actions().reveal(row.project.folder), { why: !shell ? NEEDS_APP : row.project.unavailable || row.project.exists === false ? AWAY : null }));
+  if (full && row.project) items.push(menuItem("Copy the path", "copy", () => copyText(row.project.folder)));
   if (items.length && !items.at(-1).classList.contains("menu-line")) items.push(make("div", "menu-line"));
   items.push(menuItem("Delete…", "trash", () => openDeleteDialog(row.id), { why: !shell ? NEEDS_APP : working(row) && working(row) !== "dev" ? "Wait for the work under way" : null, danger: true }));
   const el = make("div", "row-menu");
@@ -1387,7 +1793,7 @@ async function createWith(request) {
 async function listAndChoose(made) {
   await loadApps();
   if (made.id) openApp(made.id);
-  // The Refresh that ends Create app: its outcome in the app's section, as the Refresh button's would be.
+  // The Refresh that ends Create app: its outcome in the app's column, as the Refresh button's would be.
   if (made.refreshed && made.folder) setJob(made.folder, { kind: "refresh", state: made.refreshed.ok ? "done" : "failed", quiet: false, message: made.refreshed.message ?? null, hint: made.refreshed.ok ? null : windowHint(made.refreshed.hint, made.refreshed.code === "tool_failed" ? NEXT.refresh : null) });
 }
 
@@ -1466,7 +1872,7 @@ function onJob(event) {
   renderApp();
   if (event.state !== "running") {
     // What the job wrote shows when the pages are next drawn.
-    overview.forget();
+    catalog.forget();
     files.forget();
     loadApps();
   }
@@ -1601,7 +2007,7 @@ function renderPublishEntry() {
 publishEntry.addEventListener("click", () => openPublish());
 // The flow changed the project's files: the list and the section read them again.
 addEventListener("publish-closed", () => {
-  overview.forget();
+  catalog.forget();
   files.forget();
   loadApps();
 });
@@ -1650,15 +2056,9 @@ const appIcon = $("#app-icon");
 const appFacts = $("#app-facts");
 const appStatus = $("#app-status");
 const appFolder = $("#app-folder");
-// app-column: what the folder section was made for, so that it is not made again (a "Copied" stays); the system and
-// the command line's path for Copy prompt for AI, once read; the files-changed notice.
-let folderShown = null;
+// The system and the command line's path for Copy prompt for AI, once read.
 let promptFacts = null;
-const changedBox = make("div", "files-changed");
-const facts = appFacts;
-const folderBox = make("div", "folder");
 const jobBox = make("div", "job");
-const runningBox = make("div", "running");
 const settingsBox = make("div", "settings");
 const appSettingsLink = $("#app-settings");
 
@@ -1710,22 +2110,17 @@ function projectWhy(row) {
 function renderApp() {
   renderPublishEntry();
   const row = chosen();
-  appTitle.textContent = row ? row.name : "App";
-  appTitle.title = row ? row.name : "";
   if (!row) {
+    appTitle.replaceChildren();
+    appTitle.textContent = "App";
     if (sideMode === "app") showSide("all");
     appActions.replaceChildren();
     appFolder.replaceChildren();
-    folderShown = null;
     appStatus.replaceChildren();
     appFacts.replaceChildren();
     appBody.replaceChildren(make("p", "app-empty", powered ? "No app chosen" : "The BUSY Bar is off"));
     return;
   }
-  const on = row.id === runningId;
-  const project = row.project;
-  const shell = inShell();
-
   // Its icon, as the list shows it, larger.
   appIcon.className = icons.get(row.id) ? "app-head-icon" : "app-head-icon none";
   if (icons.get(row.id)) {
@@ -1734,38 +2129,8 @@ function renderApp() {
     picture.src = icons.get(row.id);
     appIcon.replaceChildren(picture);
   } else appIcon.replaceChildren();
-
-  // What it is: its state, its version, its id.
-  const state = make("span", on ? "live" : "state", on ? "Running" : row.onBar ? "Stopped" : "Not on the BUSY Bar");
-  const id = make("code", "", row.id);
-  id.title = "The app's id";
-  facts.replaceChildren(state, ...(row.version ? [make("span", "", row.version)] : []), id);
-
-  // Run, Stop, Refresh. A project's app runs from its folder (build, install, start) and is stopped as its project
-  // is, by the desktop app; an app from a package starts and stops on the bar.
-  const why = projectWhy(row);
-  const run = project
-    ? button(on ? "btn" : "btn solid", "Run", why, () => act(row, "run", (folder) => actions().projects.run(folder)), "Build, install and start", "control-play")
-    : button(on ? "btn" : "btn solid", "Run", row.onBar ? null : "Not on the BUSY Bar", () => post(`/api/apps/launch?app_id=${encodeURIComponent(row.id)}`), "Start it on the BUSY Bar", "control-play");
-  const stop = project && shell
-    ? button("btn", "Stop", on ? null : "Not running", () => act(row, "stop", (folder) => actions().projects.stop(folder)), "Stop the app", "control-stop")
-    : button("btn", "Stop", on ? null : "Not running", () => post("/api/apps/quit"), "Stop the app", "control-stop");
-  const refresh = button("btn", "Refresh", why, () => refreshProject(row), "Build, install and start it again, after you changed its files", "refresh");
-  appActions.replaceChildren(run, stop, refresh);
-  renderFolder(row);
-
-  // What its work said, its first steps when it is new, its numbers while it runs.
   renderJob();
-  const steps = globalThis.emulatorWelcome?.hintFor?.(project) ?? null;
-  const status = steps ? [steps] : [];
-  const changedNote = filesChanged(row);
-  if (changedNote) status.push(changedNote);
-  const deps = project ? renderDeps(row) : null;
-  if (deps) status.push(deps);
-  // The deps box says the failure of a Retry: the job's own box would say it twice.
-  else if (project && (jobs.has(project.folder) || working(row) !== null)) status.push(jobBox);
-  if (on) status.push(runningBox);
-  appStatus.replaceChildren(...status);
+  renderAppTop(row);
 
   // The page of the tab is made while the opened app is shown, and made again when it is shown next.
   if (sideMode !== "app") return void (tabShown = null);
@@ -1814,19 +2179,16 @@ function renderJob() {
   jobBox.replaceChildren(...parts);
 }
 
-// ---- app-column: the opened app's folder, Copy prompt for AI, and the files-changed notice
+// ---- the folder, Copy prompt for AI and the files-changed notice
 //
-// Under the app's id: its project's folder (from ~ on macOS), Copy the path and Open in Finder (Show in Explorer on
-// Windows); under them Copy prompt for AI, the text to go on with this app in an AI agent that runs commands, made at
-// the click with the real values (emulatorWelcome.appPrompt: the app's name and id, its folder, the command line's
-// path as the desktop app names it, in the platform's form). An app from a package says so and offers Open project.
-// In a browser there is no project and no section.
+// Copy prompt for AI: the text to go on with this app in an AI agent that runs commands, made at the click with the
+// real values (emulatorWelcome.appPrompt: the app's name and id, its folder, the command line's path as the desktop app
+// names it, in the platform's form). An app from a package says so in place of the folder and offers Open project.
 //
 // The files-changed notice: the project's files changed after it last put its app on the bar (the command line's
-// `projects` says so: stale), so the bar runs an older version. It says so with Refresh, and is not there while the
-// folder is watched (dev builds by itself) or any work runs on the project. The list is read again when the window
-// gets the focus and every few seconds while an app with a project is open, so that an agent's edits show up.
-
+// `projects` says so: stale), so the bar runs an older version. It is not there while the folder is watched (dev
+// builds by itself) or any work runs on the project. The list is read again when the window gets the focus and every
+// few seconds while an app with a project is open, so that an agent's edits show up.
 
 async function loadPromptFacts() {
   if (promptFacts || !inShell()) return;
@@ -1856,55 +2218,24 @@ async function copyWithFeedback(el, text) {
   return done === true;
 }
 
-function renderFolder(row) {
+/** The folder's place for an app without a project: from a package, or not found yet. Nothing in a browser. */
+function renderPackageFolder(row) {
   const shell = inShell();
-  const project = row.project;
-  const key = [row.id, row.name, project?.folder ?? "", project?.shownFolder ?? "", Boolean(project?.unavailable), projectsKnown, shell].join("\n");
-  if (folderShown === key) return;
-  folderShown = key;
   appFolder.hidden = !shell;
   if (!shell) return appFolder.replaceChildren();
-  if (!project) {
-    const line = make("div", "folder-line none");
-    line.append(make("span", "", projectsKnown ? "Installed from a package" : "Looking for its project"));
-    if (projectsKnown) line.append(button("btn small", "Open project", null, openProject, "Choose the folder of this app's project"));
-    return appFolder.replaceChildren(line);
-  }
-  loadPromptFacts();
-  const line = make("div", "folder-line");
-  const mark = make("span", "folder-mark");
-  mark.innerHTML = icon("folder");
-  const shown = pathLine(project.shownFolder ?? project.folder);
-  shown.title = project.folder;
-  const copy = button("icon-btn small", "", null, () => copyWithFeedback(copy, project.folder), "Copy the path", "copy");
-  copy.ariaLabel = "Copy the path";
-  const label = FILE_MANAGER === "Explorer" ? "Show in Explorer" : "Open in Finder";
-  const show = button("btn small folder-open", "", project.unavailable ? AWAY : null, () => actions().reveal(project.folder), label);
-  show.append(make("span", "wide", label), make("span", "narrow", FILE_MANAGER === "Explorer" ? "Show" : "Open"));
-  show.ariaLabel = label;
-  line.append(mark, shown, copy, show);
-  const prompt = button("btn solid prompt-ai", "Copy prompt for AI", null, () => {
-    const text = promptFor(chosen());
-    if (text) copyWithFeedback(prompt, text);
-  }, "Copy a prompt to go on with this app in your AI agent: its folder and the emulator's commands", "sparkles");
-  prompt.id = "copy-prompt";
-  appFolder.replaceChildren(line, prompt);
+  const line = make("div", "folder-line none");
+  line.append(make("span", "", projectsKnown ? "Installed from a package" : "Looking for its project"));
+  if (projectsKnown) line.append(button("btn small", "Open project", null, openProject, "Choose the folder of this app's project"));
+  appFolder.replaceChildren(line);
 }
 
-/** The files-changed notice, when it is to be shown for the row; null otherwise. */
-function filesChanged(row) {
+/** Whether the files-changed notice is to be shown for the row. */
+function staleShown(row) {
   const project = row?.project;
-  if (!project?.stale || !row.onBar || !inShell() || project.unavailable || working(row) !== null) return null;
+  if (!project?.stale || !row.onBar || !inShell() || project.unavailable || working(row) !== null) return false;
   // A Refresh or a Run that ended after the list was read: the list read after it says how things stand.
   const job = jobs.get(project.folder);
-  if (job?.state === "done" && ["refresh", "run", "build"].includes(job.kind) && (job.ended ?? 0) >= projectsReadAt) return null;
-  const words = make("span", "said", "Files changed. Refresh to run the new version");
-  const mark = make("span", "files-changed-mark");
-  mark.innerHTML = icon("info");
-  const refresh = button("btn small", "Refresh", projectWhy(row), () => refreshProject(row), "Build, install and start it again", "refresh");
-  refresh.id = "files-changed-refresh";
-  changedBox.replaceChildren(mark, words, refresh);
-  return changedBox;
+  return !(job?.state === "done" && ["refresh", "run", "build"].includes(job.kind) && (job.ended ?? 0) >= projectsReadAt);
 }
 
 // The list is read again for the open app: when the window comes back, and now and then while it is shown.
@@ -1921,10 +2252,10 @@ globalThis.setInterval?.(() => {
   if (working(chosen() ?? {}) === null) lookAgain();
 }, 10_000);
 
-// ---- layout-v2: the opened app's tabs: Overview, Settings, Files
+// ---- the opened app's tabs: Settings, Catalog, Files
 
-const TABS = ["overview", "settings", "files"];
-let appTab = "overview";
+const TABS = ["settings", "catalog", "files"];
+let appTab = "settings";
 const tabButtons = [...document.querySelectorAll("#app-tabs [data-tab]")];
 
 function pickTab(tab) {
@@ -1958,11 +2289,11 @@ function renderTab(row) {
   if (appTab === "settings") return renderSettingsPage();
   if (tabShown === key && appBody.childElementCount) return;
   tabShown = key;
-  if (appTab === "overview") return overview.render(row);
+  if (appTab === "catalog") return catalog.render(row);
   return files.render(row);
 }
 
-/** The Settings tab: the app's settings form, as the bar's local web has it, and the way to the local web. */
+/** The Settings tab: the app's settings form, as the bar's local web has it, and the way to the local web at its end. */
 function renderSettingsPage() {
   const row = chosen();
   const what = !row?.onBar ? "away" : !powered ? "off" : !settings || settings.id !== row.id ? "reading" : settings.none ? "none" : "form";
@@ -1970,16 +2301,15 @@ function renderSettingsPage() {
   const key = `settings:${row?.id}:${what}`;
   if (tabShown === key && appBody.childElementCount) return;
   tabShown = key;
-  const note = make("p", "page-note");
-  note.append("The app reads its settings when it starts. ", appSettingsLink);
   const parts = [];
   if (what === "away") parts.push(make("p", "app-empty", "Not on the BUSY Bar yet: run it first."));
   else if (what === "off") parts.push(make("p", "app-empty", "The BUSY Bar is off"));
   else if (what === "reading") parts.push(make("p", "page-note", "Reading the settings"));
   else if (what === "none") parts.push(make("p", "app-empty", "This app has no settings."));
   else parts.push(settingsBox);
-  parts.push(note);
+  parts.push(settingsFoot());
   appBody.replaceChildren(...parts);
+  clampDescriptions();
 }
 
 /** A labelled field of a page: { row, input, hint }. */
@@ -1995,15 +2325,16 @@ function pageField(label, input, hintText = "") {
   return { row, input, hint };
 }
 
-// ---- layout-v2: Overview. The app's name, its catalog texts (short description, description, category), its two
-// icons and what its controls do (its folder is at the top of the opened app: app-column). The texts are the project's catalog.json and manifest (publish.status
-// reads them, publish.texts writes them, as the publishing flow's first step does); what the controls do is the
-// "## How to use" section of its README.md, read and written by the publishing flow's module (publish/how-to-use.mjs)
-// and written by publish.readme. Save writes what changed. The icons are the project's (publish.status); Upload takes a
-// PNG with Create app's checks (emulatorCreateApp.pickIcon) and Use this icon writes it (publish.icon), as the
-// publishing flow's Application Info does.
+// ---- Catalog: what Publish's Application Info and README ask for, one row a field. A row says what the field holds
+// now or "Not set", and whether it is ready; a press opens the field under it. The head says how many are ready and
+// leads to Publish. The texts are the project's catalog.json and manifest (publish.status reads them, publish.texts
+// writes them, as the publishing flow's first step does); what the controls do is the "## How to use" section of its
+// README.md, read and written by the publishing flow's module (publish/how-to-use.mjs) and written by publish.readme.
+// Save writes what changed. The icons are the project's (publish.status); Upload takes a PNG with Create app's checks
+// (emulatorCreateApp.pickIcon) and Use this icon writes it (publish.icon), as Application Info does. The version is
+// the manifest's, read only.
 
-const overview = (() => {
+const catalog = (() => {
   let page = null; // { folder, status, failed, drafts, dirty: Set, said, saving }
   let howTo = null; // how-to-use.mjs, once loaded
   let asked = 0;
@@ -2049,7 +2380,7 @@ const overview = (() => {
       const usage = read ? { rows: Object.fromEntries(howTo.CONTROLS.map((control) => [control, read.find((row) => row.control === control)?.text ?? ""])), others: read.filter((row) => !howTo.CONTROLS.includes(row.control)) } : null;
       page.drafts = { name: answer.texts.name ?? row.name, texts: { category: "", short_description: "", description: "", changelog: "", ...(answer.texts.texts ?? {}) }, usage };
     }
-    if (chosen()?.project?.folder === folder && appTab === "overview" && sideMode === "app") {
+    if (chosen()?.project?.folder === folder && appTab === "catalog" && sideMode === "app") {
       tabShown = null;
       renderApp();
     }
@@ -2173,6 +2504,8 @@ const overview = (() => {
     const save = button("btn solid small", page.saving ? "Saving" : "Save", !dirty || page.saving ? (page.saving ? "Saving" : "Nothing changed") : null, save_);
     const said = make("span", `said${page.iconSaid?.failed ? " failed" : ""}`, page.iconSaid?.text ?? (dirty ? "Not saved yet" : ""));
     saveRow.replaceChildren(save, said);
+    // Save shows once something is to be saved.
+    saveRow.hidden = !dirty && !page.saving && !page.iconSaid && !page.said;
   }
 
   async function save_() {
@@ -2268,10 +2601,12 @@ const overview = (() => {
     category.replaceWith(chooser);
     chooser.prepend(category);
     fields.append(categoryField.row);
-    parts.push(fields, iconsGroup(row));
+    const iconsEl = iconsGroup(row);
+    let controlsBox = null;
 
     if (d.usage && howTo) {
       const box = make("div");
+      controlsBox = box;
       box.append(make("p", "group-label", "What the controls do"));
       const list = make("div", "controls-list");
       for (const control of howTo.CONTROLS) {
@@ -2295,11 +2630,72 @@ const overview = (() => {
         list.append(line);
       }
       box.append(list, make("p", "page-note", "The How to use section of README.md: the catalog shows it on the app's page."));
-      parts.push(box);
     }
     renderSave();
-    parts.push(saveRow);
-    appBody.replaceChildren(...parts);
+    appBody.replaceChildren(...folded(row, d, [...fields.children], iconsEl, controlsBox));
+  }
+
+  const opened = new Set(); // the rows that are open
+  function folded(row, d, [nameRow, shortRow, descriptionRow, categoryRow], iconsEl, controlsBox) {
+    const category = (page.status.texts.rules?.categories ?? []).find((one) => one.id === d.texts.category);
+    const front = page.iconDraft?.front ?? page.status?.icon?.front ?? icons.get(row.id) ?? null;
+    const described = d.usage ? Object.values(d.usage.rows).filter((text) => text?.trim()).length : 0;
+    const clip = (text) => (text.length > 60 ? `${text.slice(0, 60)}…` : text);
+    const items = [
+      { key: "name", label: "Name", value: d.name, done: Boolean(d.name?.trim()), body: nameRow },
+      { key: "icons", label: "Icons", value: front ? "Front and back" : "", done: Boolean(front), body: iconsEl, picture: front },
+      { key: "short_description", label: "Short description", value: d.texts.short_description, done: Boolean(d.texts.short_description?.trim()), body: shortRow },
+      { key: "description", label: "Description", value: clip(d.texts.description ?? ""), done: Boolean(d.texts.description?.trim()), body: descriptionRow },
+      { key: "category", label: "Category", value: category?.name ?? "", done: Boolean(category), body: categoryRow },
+      ...(controlsBox ? [{ key: "usage", label: "Controls", value: described ? `${described} of ${howTo.CONTROLS.length} described` : "", done: described > 0, body: controlsBox }] : []),
+    ];
+    if (row.version) {
+      const version = make("input", "ov-input");
+      version.value = row.version;
+      version.readOnly = true;
+      items.push({ key: "version", label: "Version", value: row.version, done: true, body: pageField("Version", version, "From src/appmeta/manifest.json. An update in the catalog needs a higher one.").row });
+    }
+    const counted = items.filter((item) => item.key !== "version");
+    const ready = counted.filter((item) => item.done).length;
+    const head = make("div", "ac-fold-head");
+    const count = make("span", "ac-fold-count", `${ready} of ${counted.length} ready`);
+    const go = button("btn small", "Publish", publishable(row), () => openPublish(row), "", "rocket");
+    head.append(count, go);
+    const list = make("div", "ac-folds");
+    for (const item of items) {
+      const fold = make("div", "ac-fold");
+      fold.dataset.key = item.key;
+      const open = opened.has(item.key);
+      const toggle = make("button", "ac-fold-row");
+      toggle.type = "button";
+      toggle.setAttribute("aria-expanded", String(open));
+      const mark = make("span", `ac-fold-mark${item.done ? " done" : ""}`);
+      if (item.done) mark.innerHTML = icon("checkmark-circle-fill");
+      const value = make("span", `ac-fold-value${item.value ? "" : " none"}`, item.value || "Not set");
+      if (item.picture) {
+        const pic = make("img", "ac-fold-pic");
+        pic.alt = "";
+        pic.src = item.picture;
+        value.prepend(pic);
+      }
+      const caret = make("span", "ac-fold-caret");
+      caret.innerHTML = icon("chevron-down");
+      toggle.append(mark, make("span", "ac-fold-label", item.label), value, caret);
+      const body = make("div", "ac-fold-body");
+      body.hidden = !open;
+      body.append(item.body);
+      toggle.addEventListener("click", () => {
+        const now = body.hidden;
+        body.hidden = !now;
+        toggle.setAttribute("aria-expanded", String(now));
+        if (now) opened.add(item.key);
+        else opened.delete(item.key);
+        if (now) body.querySelector("input, textarea, select")?.focus({ preventScroll: true });
+      });
+      fold.append(toggle, body);
+      list.append(fold);
+    }
+    return [head, list, saveRow];
   }
 
   /** The project's files changed (a job ended, the publishing flow closed): read them again when next shown. */
@@ -2373,7 +2769,7 @@ const files = (() => {
     }
     const folder = row.project.folder;
     const head = make("div", "files-head");
-    head.append(make("p", "group-label", "Project files"), button("btn small", `Show in ${FILE_MANAGER}`, null, () => actions().reveal(folder), "", "folder"));
+    head.append(make("p", "group-label", "Project files"), button("btn small files-reveal", `Show in ${FILE_MANAGER}`, null, () => actions().reveal(folder), "", "folder"));
     if (!list || list.folder !== folder) {
       load(folder);
       return appBody.replaceChildren(head, make("p", "page-note", "Reading the files"));
@@ -2388,7 +2784,7 @@ const files = (() => {
     if (left.length) {
       const out = make("ul", "files left");
       out.append(...left.slice(0, 40).map((rel) => fileRow(folder, rel, null, true)));
-      parts.push(make("p", "group-label", "Not published"), out);
+      parts.push(make("p", "group-label files-left-label", "Not published"), out);
     }
     appBody.replaceChildren(...parts);
   }
@@ -2440,22 +2836,9 @@ function renderRunning(running) {
     renderAll();
   }
   if (!running) return;
-  const { heapNow, heapPeak, heapSize } = running.stats;
-  const kib = (n) => (n / 1024).toFixed(1);
   const p = pace(running) ?? lastPace;
   lastPace = p;
-  runningBox.innerHTML = `<div class="heap"><div class="now"></div><div class="peak"></div></div><div class="stats"><span class="heap-text"></span><span class="speed-text"></span></div>`;
-  runningBox.querySelector(".now").style.width = `${(100 * heapNow) / heapSize}%`;
-  runningBox.querySelector(".peak").style.left = `${(100 * heapPeak) / heapSize}%`;
-  runningBox.querySelector(".heap").title = "The app's JS heap: the white mark is its peak";
-  runningBox.querySelector(".heap-text").textContent = `Heap ${kib(heapNow)} of ${Math.round(heapSize / 1024)} KiB, peak ${kib(heapPeak)}`;
-  if (p) {
-    const speedText = runningBox.querySelector(".speed-text");
-    speedText.textContent = `${p.fps.toFixed(1)} draws/s, JS ${Math.round(p.busy * 100)}%`;
-    speedText.title = "Draw requests a second, and the share of the time the app's JS is busy";
-    // Busy all the time: the app does not keep up, keys and timers wait.
-    speedText.classList.toggle("busy", p.busy > 0.9);
-  }
+  renderHeap(running.stats, p);
 }
 
 // ---- the app's settings: a form of our own, from the app's settings file
@@ -2985,6 +3368,7 @@ function renderSettings() {
     saveSaid.className = "said";
     saveRow.replaceChildren(button("btn solid", "Save", null, saveSettings), button("btn", "Restart", null, restartApp, "Start the app again: it reads its settings when it starts"), saveSaid);
     settingsBox.replaceChildren(...fieldRows(settings.schema.fields, settings.values), saveRow);
+    clampDescriptions();
   }
   // The Settings tab shows the form as soon as it is read.
   if (appTab === "settings" && sideMode === "app") renderSettingsPage();
@@ -3061,6 +3445,7 @@ function addLine({ kind, text, time }) {
   if (stick) consoleBox.scrollTop = consoleBox.scrollHeight;
   if (shownKind(kind)) consoleBox.classList.remove("blank");
   if (kind === "error") renderErrors(errorCount + 1);
+  trackAppLine(kind, text);
 }
 
 /** Whether lines of a kind show with the filters as they are: not a kind turned off, and an error or a warning when
@@ -3286,8 +3671,10 @@ function connect() {
     renderSelector(selector);
     renderCapture(); // the canvas's tools name the running app
   });
+  // The window's link to the emulator's server, not the BUSY Bar's network: shown only while it is lost (window.css).
+  // EventSource tries again by itself, so the word says that.
   events.onerror = () => {
-    link.textContent = "Not connected";
+    link.textContent = "Reconnecting…";
     link.classList.remove("live");
   };
 }
@@ -3337,6 +3724,9 @@ async function loadAccount() {
   }
   renderAccount();
 }
+// GitHub's mark on the account button, signed in or not, beside the login or Sign in: the one exception to "icons only
+// from the BUSY library" (CLAUDE.md).
+const GITHUB_MARK = `<svg class="bi" viewBox="0 0 30 30" aria-hidden="true"><path fill="currentColor" d="M15,3C8.373,3,3,8.373,3,15c0,5.623,3.872,10.328,9.092,11.63C12.036,26.468,12,26.28,12,26.047v-2.051 c-0.487,0-1.303,0-1.508,0c-0.821,0-1.551-0.353-1.905-1.009c-0.393-0.729-0.461-1.844-1.435-2.526 c-0.289-0.227-0.069-0.486,0.264-0.451c0.615,0.174,1.125,0.596,1.605,1.222c0.478,0.627,0.703,0.769,1.596,0.769 c0.433,0,1.081-0.025,1.691-0.121c0.328-0.833,0.895-1.6,1.588-1.962c-3.996-0.411-5.903-2.399-5.903-5.098 c0-1.162,0.495-2.286,1.336-3.233C9.053,10.647,8.706,8.73,9.435,8c1.798,0,2.885,1.166,3.146,1.481C13.477,9.174,14.461,9,15.495,9 c1.036,0,2.024,0.174,2.922,0.483C18.675,9.17,19.763,8,21.565,8c0.732,0.731,0.381,2.656,0.102,3.594 c0.836,0.945,1.328,2.066,1.328,3.226c0,2.697-1.904,4.684-5.894,5.097C18.199,20.49,19,22.1,19,23.313v2.734 c0,0.104-0.023,0.179-0.035,0.268C23.641,24.676,27,20.236,27,15C27,8.373,21.627,3,15,3z"/></svg>`;
 function renderAccount() {
   const said = accountSaid;
   account.hidden = !inShell() || !said?.configured;
@@ -3344,8 +3734,10 @@ function renderAccount() {
   const login = said.signedIn && typeof said.login === "string" ? said.login : null;
   account.classList.toggle("signed-out", !login);
   const avatar = $("#account-avatar");
-  if (login) avatar.textContent = login.charAt(0);
-  else avatar.innerHTML = icon("user");
+  if (avatar.dataset.mark !== "github") {
+    avatar.dataset.mark = "github";
+    avatar.innerHTML = GITHUB_MARK;
+  }
   $("#account-name").textContent = login ?? "Sign in";
   account.title = login ? `GitHub: ${login}` : "Not signed in to GitHub: you sign in when you publish";
   account.ariaLabel = account.title;
@@ -3372,7 +3764,18 @@ account.addEventListener("click", () => {
   page.innerHTML = icon("open-in-new");
   page.append(make("span", "", "Open on GitHub"));
   page.addEventListener("click", () => el.remove());
-  el.append(make("div", "menu-head", `Signed in as ${accountSaid.login}`), page, make("div", "menu-line"), item("Sign out", "logout", async () => {
+  // Switch and add: Publish's Choose a GitHub account, opened for the app that is open.
+  const row = chosen();
+  const why = publishable(row);
+  const toAccounts = (account) => {
+    const one = item(account === "add" ? "Add account…" : "Switch account…", account === "add" ? "plus" : "user", () => !why && globalThis.emulatorPublish.open({ folder: row.project.folder, name: row.name, account }));
+    if (why) {
+      one.setAttribute("aria-disabled", "true");
+      tip(one, "Open an app with a project folder first", why, { onText: true });
+    }
+    return one;
+  };
+  el.append(make("div", "menu-head", `Signed in as ${accountSaid.login}`), page, make("div", "menu-line"), toAccounts("switch"), toAccounts("add"), make("div", "menu-line"), item("Sign out", "logout", async () => {
     try {
       await actions().github.signOut();
     } catch {
@@ -3607,7 +4010,7 @@ function renderCapture() {
   aria(recordButton, "pressed", String(capture.recording));
   recordButton.classList.toggle("recording", capture.recording || capture.saving);
   recordButton.classList.toggle("saving", capture.saving);
-  recordButton.innerHTML = icon(capture.recording || capture.saving ? "control-stop" : "video");
+  setIcon(recordButton, capture.recording || capture.saving ? "control-stop" : "video");
   recordButton.append(recordTime);
   recordTime.hidden = !(capture.recording || capture.saving);
   recordButton.ariaLabel = capture.recording ? "Stop recording" : "Record";

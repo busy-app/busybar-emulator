@@ -4,6 +4,7 @@
 // what it was asked.
 import { CLI_NAME } from "../context.mjs";
 import { asciiJson } from "../output.mjs";
+import { consoleText } from "../console.mjs";
 import { createSession } from "./protocol.mjs";
 import { readResource, resourceList } from "./resources.mjs";
 import { toolList, toolRunner } from "./tools.mjs";
@@ -12,7 +13,7 @@ export const INSTRUCTIONS = [
   "BUSY Bar Emulator: a BUSY Bar on this computer, to make, run and look at BUSY Bar apps without the device.",
   "Start with status (and start when it is not running), then create_app, edit the code in the project's folder, refresh, screenshot. For the app catalog: icon, catalog_texts, then publish step by step (screenshots, readme, prepare; then signin, push, pr, which the person confirms in the emulator's window).",
   "Read the resource busy-emulator://guide/start for the steps and busy-emulator://guide/project for how an app is written.",
-  "Only the person chooses the license, the AI usage and the GitHub account, and confirms the push and the pull request and ticks the catalog's author checklist in the emulator's window: ask them, never choose or tick for them.",
+  "Only the person chooses the license, the AI usage and the GitHub account, and confirms the push and the pull request and ticks the catalog's author checklist, optional items included, in the emulator's window: ask them, never choose or tick for them.",
   "Each answer has ok; a failure has code, message and hint. A hint names a command of the busy-emulator command line: the tool of the same name does it here (create is create_app, dev --once is refresh, settings get/set are settings_get/settings_set).",
   "No tool lets an app reach a port of this computer: when an app's log says a request to this computer was refused, ask the person to run busy-emulator allow-local <port> in a terminal.",
   "Settings marked sensitive (a token) are shown as (hidden); settings_set still sets them.",
@@ -29,7 +30,10 @@ export const INSTRUCTIONS = [
  */
 export async function serveStdio(ctx, sys, commands, main, { input = process.stdin, output = process.stdout, errors = process.stderr } = {}) {
   const write = output.write.bind(output);
-  const log = (line) => errors.write(`${CLI_NAME} mcp: ${line}\n`);
+  // The protocol goes out as asciiJson (ASCII, every other character as \uXXXX, which the client reads back exactly); the
+  // log, on stderr, as everything else the command line prints (../console.mjs).
+  const text = consoleText(ctx.unicodeOutput);
+  const log = (line) => errors.write(`${text(`${CLI_NAME} mcp: ${line}`)}\n`);
   const stdout = output === process.stdout ? process.stdout.write : null;
   if (stdout) process.stdout.write = (...args) => process.stderr.write(...args);
   // The commands take a missing folder as "the caller's folder": here that is a folder that is no project (the data

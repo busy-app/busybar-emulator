@@ -1,7 +1,7 @@
 {
   "$comment": "Written by the export of the BUSY Bar Emulator (tools/export in its internal repository): the files it wrote here, which the next export replaces.",
   "format": 1,
-  "from": "4740f96d581edf83ed23810b8412f0496feec7da",
+  "from": "3502d86b0e85243a60e2248da9b328e7ba3c91f6",
   "files": [
     ".gitattributes",
     ".github/ISSUE_TEMPLATE/bug.md",
@@ -168,6 +168,7 @@
     "packages/app/src/windows.mjs",
     "packages/app/src/zip.mjs",
     "packages/app/test-variant/hook.mjs",
+    "packages/app/test/app/account-menu.test.mjs",
     "packages/app/test/app/actions-project.test.mjs",
     "packages/app/test/app/actions.test.mjs",
     "packages/app/test/app/app-column.test.mjs",
@@ -961,6 +962,7 @@
     "packages/server/cli/commands/uninstall.mjs",
     "packages/server/cli/commands/update.mjs",
     "packages/server/cli/commands/version.mjs",
+    "packages/server/cli/console.mjs",
     "packages/server/cli/context.mjs",
     "packages/server/cli/examples.mjs",
     "packages/server/cli/lifecycle.mjs",
@@ -976,6 +978,7 @@
     "packages/server/cli/test/agent-commands.test.mjs",
     "packages/server/cli/test/agent-path.test.mjs",
     "packages/server/cli/test/allow-local.test.mjs",
+    "packages/server/cli/test/ascii-texts.test.mjs",
     "packages/server/cli/test/bar-console.test.mjs",
     "packages/server/cli/test/commands.test.mjs",
     "packages/server/cli/test/context.test.mjs",

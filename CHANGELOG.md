@@ -2,6 +2,33 @@
 
 What changes in each release of BUSY Bar Emulator. The newest release is first.
 
+## 0.1.0-beta.2
+
+The window:
+
+- A new app column: the project's folder with Copy and Open in Finder, Copy prompt for AI, and one Run button that
+  builds every time and is called Refresh while the app runs. The app's id is in the descriptor of its name; a click
+  on the name copies it. Tabs Settings, Catalog and Files: Catalog shows what Publish asks for and how much is ready,
+  one row a field that opens in place. A crash says so under the app's name, with the error and Show in Console.
+- A new dashboard for the BUSY Bar: its name and address with Copy, a larger back display, Restart BUSY Bar and Open in
+  Local Web, the four switches and sliders as one group. "Reconnecting…" shows only while the window has lost the
+  emulator.
+- Square buttons and one kind of hover descriptor across the window; icons that change with the state no longer blink.
+- The account menu has Switch account… and Add account…, which open Publish on Choose a GitHub account.
+- The examples' settings say what they do in a line each.
+
+Publish and agents:
+
+- Through an agent, `publish pr` lets you tick the catalog checklist's optional items, so an app sent by an agent can
+  enter the BUSY JS Apps Contest.
+- A new project's `AGENTS.md` says where the real reason is when a call to the BUSY Bar fails with "Expected a
+  function" (busylib's error path).
+
+The command line:
+
+- On Windows the command line prints plain ASCII, so its output reads right in any console.
+- `create` points to `dev --once` next; the Windows install script removes its temporary files.
+
 ## 0.1.0-beta.1
 
 The first trial release of BUSY Bar Emulator: a BUSY Bar on your computer. Write an app, run it, take screenshots and a

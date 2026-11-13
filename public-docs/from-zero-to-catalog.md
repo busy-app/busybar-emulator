@@ -14,7 +14,7 @@ them: an agent writes the app, and you publish it in the window.
 | Install | You download and open the app | The agent can install it; it asks you first |
 | Create the app | **Create app** | The agent runs `create`, or you press **Create the project folder first** |
 | Write the code | You edit `src/main.ts` in your editor | The agent writes it |
-| Run it | **Refresh** in the app's section | The agent runs `dev --once` |
+| Run it | **Run** in the app's column (**Refresh** while it runs) | The agent runs `dev --once` |
 | Screenshots | **Screenshot** over the BUSY Bar | The agent takes them and looks at them |
 | A clip for your post | `record` on the command line | The agent runs `record` |
 | Prepare for the catalog | **Publish**, seven steps | The agent does them; you choose the license |
@@ -82,19 +82,22 @@ downloads the template and its packages from the npm registry, which can take a 
 
 ### Write the code and run it
 
-The app's code is `src/main.ts` in the project's folder. **Show in Finder** (Show in Explorer on Windows) in the
-app's section opens the folder; open it in your editor. What the BUSY Bar can do is in the project's `AGENTS.md` and
-`types/`.
+The app's code is `src/main.ts` in the project's folder. The folder's path is at the top of the app's column, with
+Copy and **Open in Finder** (Show in Explorer on Windows) beside it; open the folder in your editor. What the BUSY Bar
+can do is in the project's `AGENTS.md` and `types/`. To work with an AI agent, press **Copy prompt for AI** and paste
+the text into the agent: it holds the app's folder and the emulator's commands.
 
-After a change, press **Refresh** in the app's section. It builds the app, installs it on the BUSY Bar and starts it. The
+After a change, press **Run** in the app's column (**Refresh** while the app runs). It builds the app, installs it on
+the BUSY Bar and starts it, the same as `dev --once`. The
 **Console** shows what the app prints with `console.log`, and its errors. A build that fails leaves
 the previous version on the BUSY Bar.
 
 Use the BUSY Bar's controls in the window as on a BUSY Bar: Start, Back and the wheel (turn it, or click it for OK). The app's
-settings page is **App settings** in the app's section: the BUSY Bar has no keyboard, so its settings live on the BUSY Bar's
-web page.
+settings page is the app's **Settings** tab, and **Open in Local Web** at its end: the BUSY Bar has no keyboard, so its
+settings live on the BUSY Bar's web page. The **Catalog** tab shows what Publish asks for and how much of it is ready;
+**Files** lists what goes to the app's public repository.
 
-![The window with an app running: the BUSY Bar, its controls, the app's section and the Console](images/guide-window-app-running.png)
+![The window with an app running: the BUSY Bar, its controls, the app's column and the Console](images/guide-window-app-running.png)
 
 ### Take screenshots
 
@@ -131,7 +134,7 @@ clip shows it. More: [a clip for your post](first-app.md#a-clip-for-your-post).
 
 ### Prepare it for the catalog
 
-Press **Publish** over the BUSY Bar (or **Prepare PR** in the app's section). The dialog shows the steps on the left. In
+Press **Publish** over the BUSY Bar (or **Publish…** in the app's **…** menu). The dialog shows the steps on the left. In
 the first stage, Prepare, nothing leaves your computer. **Next** saves the step and is off, with the reason beside
 it, until the step is complete. Done steps are ticked, and you can open them again. Close the dialog at any time:
 it opens at the first step not done.
@@ -283,7 +286,8 @@ command line gives these answers for you.
 | Sign in to GitHub and choose the account | The emulator's dialog: **Use** with the account's name, or a code you enter on github.com/login/device |
 | Confirm the upload to a new public repository | The emulator's dialog: **Publish** or **Cancel** |
 | Choose how AI was used | In chat: none, partly or full |
-| Tick the catalog's checklist and confirm the request | The emulator's dialog: tick, then **Send** or **Cancel** |
+| Tick the catalog's checklist and confirm the request | The emulator's dialog: tick, then **Continue** (or **Send**) or **Cancel** |
+| Tick an optional item, such as the contest | Its own dialog after the checklist: tick it or leave it |
 
 The dialogs come to the front of the emulator's window, and a yes in the first second is not taken, so a stray key
 press does not answer them. If you choose Cancel, nothing is sent, and the agent should not ask again unless you say
@@ -296,8 +300,7 @@ emulator's dialogs cover only its own commands. To take the access back, see
 ### How it ends
 
 The agent's last answer has the pull request's link. Open it: the catalog's checks run there, then a moderator reviews
-the app. In this version the request an agent sends ticks only the required items of the checklist: if you enter the
-BUSY JS Apps Contest, open the pull request's description on GitHub (**Edit**) and tick the contest item yourself.
+the app. The optional items you ticked in the dialogs, such as the BUSY JS Apps Contest's, are ticked in it too.
 **Publish** in the window shows where every step stands, each done step ticked. The agent reads the same from the
 command line:
 
@@ -331,7 +334,7 @@ the test cannot take them. Each picture is a PNG in `public-docs/images/` under 
 | `guide-welcome.png` | The first-run question: I'll write the code, My AI agent will |
 | `guide-create-app-templates.png` | Create app, Templates tab, the official template and the three examples |
 | `guide-create-app-empty.png` | Create app, Empty app tab, with a name, a category and a letter icon filled in |
-| `guide-window-app-running.png` | The whole window in 3D with Status Board running: the BUSY Bar, its controls, the app's section with Copy prompt for AI and Refresh, the BUSY Bar card |
+| `guide-window-app-running.png` | The whole window in 3D with Status Board running: the BUSY Bar, its controls, the app's column on its Catalog tab, the BUSY Bar card |
 | `guide-screenshot.png` | The Screenshot control over the BUSY Bar, Front and Back ticked |
 | `guide-publish-app-info.png` | Publish, Application Info, filled in |
 | `guide-publish-screenshots.png` | Publish, Screenshots, with a front and a back screenshot |

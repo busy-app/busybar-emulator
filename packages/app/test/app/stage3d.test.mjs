@@ -319,9 +319,10 @@ test("the front display is sharp: its LEDs stand apart, as the picture the page 
   if (!webgl) return t.skip("no WebGL2 in this run's hidden window");
   if (stalled()) return t.skip(stalled());
   // The front straight on, nearer than the views (the display whole in the frame), so that each LED takes several
-  // pixels whatever the screen; in a window of the size the thresholds below were measured in (a smaller default
-  // window, as on Windows, gives the LEDs fewer pixels and blurs the gaps between them).
-  await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [1200, 800]);
+  // pixels whatever the screen; in a window that gives the BUSY Bar the room the thresholds below were measured in,
+  // about 17 pixels an LED (a smaller window, as on Windows, gives the LEDs fewer pixels and blurs the gaps between
+  // them; the app column and the dashboard leave the view less room than a 1200x800 window gave it before).
+  await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [1680, 1050]);
   await app.page("window.emulatorStage3D.look(0, 0, 0.75)");
   await sleep(1500);
   const result = await app.page(`(async () => {
@@ -418,7 +419,9 @@ test("in the window's 3D view the bar turns by hand round its middle, within lim
   // Down as far as it goes: straight from above. Up as far as it goes: a little below the bar's middle, never under it.
   await drag(bg.x, bg.y, 0, 400);
   assert.ok(near((await probe()).camera.tilt, -Math.PI / 2, 1e-6), "no farther than straight from above");
-  await drag(bg.x, bg.y + 300, 0, -600);
+  // From low in the view, inside it whatever room the dashboard leaves.
+  const view = await frameBox();
+  await drag(bg.x, Math.min(bg.y + 300, view.y + view.height - 24), 0, -600);
   assert.ok(near((await probe()).camera.tilt, 0.05, 1e-6), "no lower than just under the bar's middle");
 
   // Scrolling off the bar brings it nearer or takes it farther, within limits.

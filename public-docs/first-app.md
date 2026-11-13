@@ -29,10 +29,11 @@ The hint names the next command to run.
   package; `busy-emulator install <file.tgz>` installs one from a folder you trusted.
 
 Create makes the project as `create` does, builds it, puts it on the BUSY Bar and starts it. Then edit `src/main.ts` and
-press the app's **Refresh**. A name you already have is said, with Open it to go to that app.
+press the app's **Refresh** (**Run** when it is stopped: both build first). A name you already have is said, with Open
+it to go to that app.
 
-Each row of the Apps list has a menu (right-click, or the More button on the row): Start or Stop, Show in Finder (Show
-in Explorer on Windows) and **Delete…**, which takes the app off the emulator and forgets its project, and, if you
+Each row of the Apps list has a Start or Stop button and a menu (right-click, or the More button on the row): Show in
+Finder (Show in Explorer on Windows) and **Delete…**, which takes the app off the emulator and forgets its project, and, if you
 choose Remove and delete its files, moves its folder to the Trash (the Recycle Bin on Windows). The command line's
 `uninstall` does the same.
 
@@ -345,7 +346,7 @@ say beforehand what those checks will find, and write the file:
 Both take the project's folder, like `build` (`<cli> check my-app`). Neither needs the emulator running, and neither
 sends anything anywhere.
 
-In the emulator's window, **Publish** (over the BUSY Bar, or Prepare PR in the app's section) does the same step by step:
+In the emulator's window, **Publish** (over the BUSY Bar, or Publish… in the app's … menu) does the same step by step:
 the catalog's texts, the screenshots, the README, a license you choose, the public repository's files with a warning
 for anything that looks like a secret, the catalog's checks, the build and `submission/`; then it publishes the
 project to a public GitHub repository of yours and opens the pull request to the catalog. From the command line the
@@ -420,7 +421,7 @@ Publishing goes in two stages. Stage 1 makes ready, in your project, everything 
 catalog's pull request need; nothing is sent anywhere. Stage 2 signs you in to GitHub, makes your public repository,
 publishes the project to it and opens the pull request to the catalog.
 
-In the emulator's window, **Publish** (over the BUSY Bar, or **Prepare PR** in the app's section) opens the steps for the
+In the emulator's window, **Publish** (over the BUSY Bar, or **Publish…** in the app's **…** menu) opens the steps for the
 chosen app. Prepare, where nothing leaves the computer:
 
 1. **Application Info**: the app's icon and name, the category, the short description, the description and what's new.

@@ -30,7 +30,7 @@ without a BUSY Bar.
   window. Create app picks a template, the app starts on the BUSY Bar, the wheel turns, Screenshot saves both
   displays. Recorded with `busy-emulator record` from the emulator's window. Until it exists, the still below stays.
 -->
-<img src="public-docs/images/guide-window-app-running.png" width="800" alt="The emulator's window: the Focus Timer app running on the BUSY Bar, with the app's settings on the left and its console below">
+<img src="public-docs/images/guide-window-app-running.png" width="800" alt="The emulator's window: the Status Board app running on the BUSY Bar in 3D, its catalog details in the column on the left and the BUSY Bar card below">
 
 # Download
 
