@@ -85,6 +85,10 @@
     const state = { frame, container, view, inset: null, lights: null, events: null, sent: { front: "", back: "" }, last: null, mode: null, ready: false, visible: true, focused: true, watchers: [], problems: [] };
     current = state;
     const tell = (message, transfer) => frame.contentWindow?.postMessage(message, "*", transfer ?? []);
+    const tellLights = () => {
+      const { preset, color, brightness, set, since } = state.lights;
+      tell({ type: "lights", preset, color, brightness, elapsed: performance.now() - since, ...(set === undefined ? {} : { set }) });
+    };
 
     // What the bar shows and where its controls stand: the same stream the flat view reads.
     function sendFrame(force) {
@@ -111,12 +115,15 @@
         state.mode = selector;
         if (state.ready) tell({ type: "state", mode: selector, powered: status?.powered !== false });
       });
-      // The bar's RGB LEDs, the state the flat view's strips show: each event is a preset started again (a second
-      // notification blinks again); the frame gives the scene new values only when they change.
+      // The bar's RGB LEDs, the state the flat view's strips show: the preset the firmware started and how long it
+      // had run when the event was sent (a second notification starts from 0 and blinks again). The frame runs the
+      // preset's timeline from there; it hears the preset again with its age when it comes up (a mount, a remount),
+      // so a preset is never started over and a notification that is over stays dark.
       events.addEventListener("lights", (e) => {
-        const { preset, color, brightness } = JSON.parse(e.data);
-        state.lights = { type: "lights", preset, color, brightness };
-        if (state.ready) tell(state.lights);
+        // set: when the brightness was set during a notification, ms into it (the blink it came in is dimmer).
+        const { preset, color, brightness, elapsed, set } = JSON.parse(e.data);
+        state.lights = { preset, color, brightness, set, since: performance.now() - (Number.isFinite(elapsed) ? elapsed : 0) };
+        if (state.ready) tellLights();
       });
       events.addEventListener("key", (e) => {
         const { key, type } = JSON.parse(e.data);
@@ -201,7 +208,7 @@
           tell({ type: "view", visible: state.visible, focused: state.focused });
           if (state.mode) tell({ type: "state", mode: state.mode });
           if (state.inset) tell({ type: "inset", ...state.inset });
-          if (state.lights) tell(state.lights);
+          if (state.lights) tellLights();
           sendFrame(true);
           resolve();
         } else if (m.type === "error") {

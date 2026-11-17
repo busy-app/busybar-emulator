@@ -1,14 +1,15 @@
 {
-  "default": "1.3.1",
+  "default": "1.4.1",
   "emscripten": "7.0.0",
   "versions": {
+    "1.4.1": {
+      "commit": "28c175b3b5c8cda231582d07b276690eaf94a136",
+      "news": "Storage for apps, console.warn, fetch encodes URLs",
+      "summary": "Release 1.4.1, API 27.15.0. Unlike 1.3.1: fetch percent-encodes the URL and rejects a network error with a TypeError, an empty response header no longer stops the app, apps may keep files in /ext/data through /api/storage, console.warn exists, and a short Back press leaves a running app's screen as it is."
+    },
     "1.3.1": {
       "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
-      "summary": "Release 1.3.1, the first public firmware that runs JS apps. A short Back press clears a running app's screen, and there is no console.warn."
-    },
-    "dev": {
-      "commit": "4d1c24ac38e4f745231713c9cdfaaef5669362ae",
-      "summary": "A development build newer than release 1.3.1. Unlike 1.3.1: console.warn exists, a short Back press leaves a running app's screen as it is, and there are fixes for reading fetch response bodies and for ReadableStream."
+      "summary": "Release 1.3.1, API 27.14.0, the first public firmware that runs JS apps. A short Back press clears a running app's screen, there is no console.warn, and fetch refuses a URL with a space or a non-ASCII character as \"Invalid URL\"."
     }
   }
 }

@@ -2,10 +2,13 @@
 // of an app animating from JS. The bar's numbers are what the emulator's bar speed is set from (packages/server/bar-speed.mjs).
 //
 //   node emulator/test/speed.mjs --record [--bar 10.0.4.20]   run it on the bar, save its times and the model fitted
-//                                                             to them to packages/server/bar-speed.json
-//   node emulator/test/speed.mjs --fit                        fit the model again to the saved times (no bar needed)
-//   node emulator/test/speed.mjs [--firmware dev]             run it in an emulator of its own, compare with the bar:
-//                                                             each number within SPEED_TOLERANCE of the bar's
+//                                                             to them to packages/server/bar-speed.json, under the
+//                                                             bar's firmware
+//   node emulator/test/speed.mjs --fit [--firmware 1.4.1]     fit the models again to the saved times (no bar
+//                                                             needed): each firmware's, or the one named
+//   node emulator/test/speed.mjs [--firmware 1.3.1]             run it in an emulator of its own, compare with the bar
+//                                                             on the same firmware: each number within
+//                                                             SPEED_TOLERANCE of the bar's
 //   node emulator/test/speed.mjs --emu 127.0.0.1:8640         the same in an emulator that is already running
 //
 // The probe is installed, run once (about 15 s on a bar) and removed. The model is the bar's price of a byte-code
@@ -35,27 +38,30 @@ const option = (name, fallback) => {
 };
 const record = args.includes("--record");
 const fitOnly = args.includes("--fit");
-const firmware = loadFirmware(option("--firmware", process.env.EMU_FIRMWARE));
+// The runtime the work is counted in: --firmware, else EMU_FIRMWARE, else the default; a recording takes the bar's.
+let firmware = loadFirmware(option("--firmware", process.env.EMU_FIRMWARE));
+const recordings = () => JSON.parse(readFileSync(barFile, "utf8"));
 // How far each of the emulator's numbers may be from the bar's, as a share of the bar's. The emulator is compared with
 // one recording of a bar (bar-speed.json), the one the model was fitted to, and its own numbers hardly move from run
 // to run: over 100 saved runs on macOS and Windows, both firmwares, and machines 30-70 % busy, step 0.99, XPM 0.98, both
 // draws 0.99, FPS 1.038-1.041, each within 1 % (review of EMU-006, 11.11). So the four fitted numbers get ±3 %: a
-// change of the model by more than that is caught. FPS is not fitted (it checks the model), and the model puts it 4 %
-// above the bar's; ±6 % leaves it only about 2 points before it fails: a model that gets a little faster fails here.
+// change of the model by more than that is caught. FPS was a prediction then, 4 % above the bar's; since EMU-317 the
+// loop is fitted too (redrawMs, the redraw after a draw that the JS after it waits out: bar-speed.mjs), and comes out
+// at 1.00 on both firmwares. Its ±6 % stays as it was.
 const SPEED_TOLERANCE = { stepMs: 0.03, xpmMs: 0.03, drawTextMs: 0.03, drawFullMs: 0.03, loopFps: 0.06 };
 // The bar (--record), nobody (--fit), or the emulator: one at --emu, else one of this test's own, at bar speed.
 const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : fitOnly ? { addr: null, stop: async () => {} } : await emulatorFor(args, { name: "speed" });
 const addr = target.addr;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// The first four are what the model was fitted to: they show the model is applied, not that it predicts. Only the
-// last is a prediction of the bar.
+// All five are what the model was fitted to (the loop gives the redraw after a draw): they show the model is applied,
+// not that it predicts. The prediction is an app's: that its JS, draws and requests take a bar's time.
 const ROWS = [
   ["stepMs", "fitted: fire step, ms"],
   ["xpmMs", "fitted: XPM of a frame, ms"],
   ["drawTextMs", "fitted: draw short text, ms"],
   ["drawFullMs", "fitted: draw full frame, ms"],
-  ["loopFps", "predicted: loop, FPS"],
+  ["loopFps", "fitted: loop, FPS"],
 ];
 
 // One retry: while the probe's long synchronous loops hold the emulator's event loop, the server's keep-alive timer can
@@ -144,7 +150,17 @@ async function probeWork() {
         console.log("drawText");
         return draws(frames);
       })
-      .then(() => console.log("drawFull"));
+      .then(() => {
+        console.log("drawFull");
+        // As the probe's loop does: a step, then a draw of the frame made after it, one after another.
+        let chain = Promise.resolve();
+        for (let i = 0; i < ${DRAWS}; i++) chain = chain.then(() => {
+          step(i);
+          return draw(frameBody());
+        });
+        return chain;
+      })
+      .then(() => console.log("loop"));
   `;
   const marks = [];
   let runtime;
@@ -157,7 +173,10 @@ async function probeWork() {
       readFile: (p) => (p === "/probe.js" ? new TextEncoder().encode(script) : null),
       writeFile: () => false,
       localApi: async () => ({ status: 200, headers: [["Content-Type", "application/json"]], body: new TextEncoder().encode('{"result":"OK"}') }),
-      onConsole: (severity, text) => marks.push({ name: text, ...runtime.work() }),
+      // No time passes, and a draw's redraw never ends: the work of every slice after a draw's answer is counted apart
+      // (runtime.mjs, redrawWork), the part of each piece that runs while the bar redraws.
+      speed: { jsMs: () => 0, localApiMs: () => 0, networkMs: () => 0, redrawMs: () => Infinity },
+      onConsole: (severity, text) => marks.push({ name: text, ...runtime.work(), afterOps: runtime.redrawWork.ops, afterBytes: runtime.redrawWork.bytes }),
       onLog: () => {},
       onExit: (reason) => (reason === "finished" ? resolve() : reject(new Error(`counting the probe's work: ${reason}`))),
     });
@@ -166,42 +185,66 @@ async function probeWork() {
   const piece = (name, count) => {
     const i = marks.findIndex((m) => m.name === name);
     if (i < 1) throw new Error(`counting the probe's work: no "${name}" mark`);
-    return { ops: (marks[i].ops - marks[i - 1].ops) / count, allocBytes: (marks[i].bytes - marks[i - 1].bytes) / count };
+    return {
+      ops: (marks[i].ops - marks[i - 1].ops) / count,
+      allocBytes: (marks[i].bytes - marks[i - 1].bytes) / count,
+      // Of that, what ran after a draw's answer, while the bar redraws.
+      afterDraw: { ops: (marks[i].afterOps - marks[i - 1].afterOps) / count, allocBytes: (marks[i].afterBytes - marks[i - 1].afterBytes) / count },
+    };
   };
-  return { step: piece("step", STEPS), xpm: piece("xpm", FRAMES), drawText: piece("drawText", DRAWS), drawFull: piece("drawFull", DRAWS) };
+  return { step: piece("step", STEPS), xpm: piece("xpm", FRAMES), drawText: piece("drawText", DRAWS), drawFull: piece("drawFull", DRAWS), loop: piece("loop", DRAWS) };
 }
 
 const MODEL_NOTE =
   "The bar's time for an app's work, fitted by emulator/test/speed.mjs to the times above: JS takes opMs per byte-code " +
   "instruction plus allocByteMs per heap byte allocated; the bar's API answers a request in apiMs plus apiByteMs per " +
-  "byte of its body. work: instructions and heap bytes of the probe's pieces, counted in the runtime of `firmware`.";
+  "byte of its body. After a draw's answer the app's JS before its next request counts twice, until it has taken " +
+  "redrawMs more: the cost of a frame of the probe's loop that its JS and its draw do not explain. Its likely cause is the " +
+  "GUI redrawing the display on the same processor at a higher priority than the app's JS (gui.c sets the GUI thread to " +
+  "FuriThreadPriorityHigh); it is not measured apart from the loop. work: instructions and heap bytes of the probe's " +
+  "pieces, counted in the runtime of `firmware` (afterDraw: the part that runs after a draw's answer, before the next " +
+  "request).";
 
-// The bar's times with the model that reproduces them.
+// The bar's times on `firmware` with the model that reproduces them, saved under that firmware.
 async function saveWithModel(times) {
   const work = await probeWork();
   const model = fitModel(times, work);
   const { model: _old, api: _older, ...rest } = times;
   // A recording made before EMU-250 named the bar by its serial number; --fit must not write it back.
   if (rest.source?.serial !== undefined) throw new Error(`${relative(process.cwd(), barFile)}: source names the bar by its serial number; record again or name it as probeSource does`);
-  // `network` is measured apart from the probe (see its note) and stays through a new recording.
-  const network = rest.network ?? JSON.parse(readFileSync(barFile, "utf8")).network;
-  writeFileSync(barFile, JSON.stringify({ ...rest, network, model: { note: MODEL_NOTE, ...model, firmware: firmware.name, work } }, null, 2) + "\n");
+  // `network` is measured apart from the probe (see its note) and stays through a new recording; a firmware recorded
+  // for the first time takes the newest one's.
+  const file = recordings();
+  const network = rest.network ?? file.firmwares[firmware.name]?.network ?? Object.values(file.firmwares).at(-1).network;
+  file.firmwares[firmware.name] = { ...rest, network, model: { note: MODEL_NOTE, ...model, firmware: firmware.name, work } };
+  writeFileSync(barFile, JSON.stringify(file, null, 2) + "\n");
   const us = (ms) => (ms * 1000).toFixed(2);
-  console.log(`model: ${us(model.opMs)} us per instruction, ${us(model.allocByteMs)} us per heap byte; API ${model.apiMs.toFixed(1)} ms + ${us(model.apiByteMs)} us per body byte`);
+  console.log(`model: ${us(model.opMs)} us per instruction, ${us(model.allocByteMs)} us per heap byte; API ${model.apiMs.toFixed(1)} ms + ${us(model.apiByteMs)} us per body byte; redraw after a draw ${model.redrawMs.toFixed(1)} ms`);
   console.log(`saved ${relative(process.cwd(), barFile)}`);
 }
 
 if (fitOnly) {
-  await saveWithModel(JSON.parse(readFileSync(barFile, "utf8")));
+  const named = option("--firmware", null);
+  for (const name of named ? [named] : Object.keys(recordings().firmwares)) {
+    firmware = loadFirmware(name);
+    console.log(`firmware ${name}:`);
+    await saveWithModel(recordings().firmwares[name]);
+  }
 } else if (record) {
   // The bar is named by model and firmware (probeSource), not by its serial number: bar-speed.json ships.
-  const source = probeSource(JSON.parse((await call("GET", "status/firmware")).text));
+  const answer = JSON.parse((await call("GET", "status/firmware")).text);
+  const source = probeSource(answer);
+  // The work is counted in the runtime of the bar's firmware.
+  firmware = loadFirmware(answer.version);
   console.log(`speed probe on ${source.bar} (${source.firmware})`);
   const r = await run();
   for (const [key, label] of ROWS) console.log(`  ${label.padEnd(26)} ${fmt(r[key])}`);
   await saveWithModel({ source, ...r });
 } else {
-  const bar = JSON.parse(readFileSync(barFile, "utf8"));
+  // The bar on the firmware the emulator runs.
+  const running = target.firmware ?? JSON.parse(await (await fetch(`http://${addr}/api/status/firmware`)).text()).version;
+  const bar = recordings().firmwares[running];
+  if (!bar) throw new Error(`bar-speed.json has no speed of a BUSY Bar on firmware ${running}`);
   const r = await run();
   console.log(`speed probe: ${bar.source.bar} (${bar.source.firmware}) vs emulator ${addr}`);
   console.log(`  ${"".padEnd(31)} ${"bar".padStart(8)} ${"emulator".padStart(9)}  ratio  allowed`);

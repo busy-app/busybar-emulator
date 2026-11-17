@@ -19,7 +19,7 @@ import { startServer } from "../server.mjs";
 import { allDifferent, backFrame, decodePng, EDGE_FRAMES, framePixel, pngPixel, tempDir } from "./test-support.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const GOLDEN = path.resolve(HERE, "../../../test/golden");
+const GOLDEN = path.resolve(HERE, "../../../test/golden/1.3.1");
 
 function assertSamePixels(name, frame, png) {
   const image = decodePng(png);

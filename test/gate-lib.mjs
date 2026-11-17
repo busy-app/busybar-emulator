@@ -133,6 +133,11 @@ export const ALLOWED_SKIPS = Object.freeze([
     match: [/^GUIDE_SHOTS=<folder> takes the guide's pictures$/],
   },
   {
+    layer: "the recording of a BUSY Bar's API answers",
+    where: "the api suite compares with test/api/bar-<firmware>.json when there is one; it is made on a BUSY Bar by hand (node emulator/test/api.mjs --bar --record; EMU-317 for 1.4.1)",
+    match: [/^no recording of a BUSY Bar's API answers in test\/api\/ /],
+  },
+  {
     layer: "the engine's build",
     where: "by hand when the WebAssembly is built again (npm run build:engine, with EMU_FIRMWARE_REPO and EMSDK)",
     match: [/EMU_FIRMWARE_REPO/],
@@ -202,10 +207,22 @@ export function machineSkipsOf(skips, remote, platform = process.platform) {
   return { machine, requested };
 }
 
-/** A comparison suite's last line, "# totals pass=… fail=… skip=…". */
+/** The reason the gate gives a comparison suite's skips that came without one: it is on no list, so never allowed. */
+export const NO_REASON = "skipped with no reason given (own-emulator.mjs totals takes { reasons })";
+
+/**
+ * A comparison suite's last line, "# totals pass=… fail=… skip=…", and the reasons of its skips: the lines
+ * "# skip <count> <reason>" before it (own-emulator.mjs totals). Skips the lines do not account for are counted under
+ * NO_REASON, which no entry of ALLOWED_SKIPS takes: a skip without a reason makes the verdict "green, but …".
+ */
 export function tallyTotals(text) {
   const m = last(text, /^# totals pass=(\d+) fail=(\d+) skip=(\d+)$/gm);
-  return m ? { pass: Number(m[1]), fail: Number(m[2]), skip: Number(m[3]) } : { pass: NaN, fail: NaN, skip: NaN };
+  const reasons = new Map();
+  for (const r of text.matchAll(/^# skip (\d+) (.+)$/gm)) reasons.set(r[2], (reasons.get(r[2]) ?? 0) + Number(r[1]));
+  if (!m) return { pass: NaN, fail: NaN, skip: NaN, reasons };
+  const given = [...reasons.values()].reduce((sum, n) => sum + n, 0);
+  if (Number(m[3]) > given) reasons.set(NO_REASON, Number(m[3]) - given);
+  return { pass: Number(m[1]), fail: Number(m[2]), skip: Number(m[3]), reasons };
 }
 
 /** The export check's summary line. */

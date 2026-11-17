@@ -67,8 +67,8 @@ async function state(emulator) {
   const { system, ...firmware } = JSON.parse(await read("/api/status"));
   return {
     files: files(emulator.dataDir),
-    // The clock and the counters of the running app move by themselves.
-    emu: { ...emu, clock: null, running: emu.running?.id ?? null },
+    // The clock, the counters of the running app and how long the status lights' preset has run move by themselves.
+    emu: { ...emu, clock: null, running: emu.running?.id ?? null, lights: { ...emu.lights, elapsed: null } },
     status: { ...firmware, system: { ...system, uptime: null } },
     reads: await Promise.all(
       ["/api/name", "/api/display/brightness", "/api/audio/volume", "/api/apps/list", "/api/time/timezone", "/api/busy/snapshot", "/api/wifi/status", "/api/ble/status", "/api/update/autoupdate", "/api/account/info", "/api/smart_home/switch", "/api/access", "/_emu/status"].map(read),

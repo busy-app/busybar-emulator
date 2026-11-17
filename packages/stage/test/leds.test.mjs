@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { BACK, createBackPainter, createLedPainter, FRONT, LED, statusLedLook } from "../frame/leds.js";
+import { BACK, createBackPainter, createLedPainter, FRONT, LED } from "../frame/leds.js";
 
 const frame = (paint) => {
   const bgr = new Uint8Array(FRONT.width * FRONT.height * 3);
@@ -93,21 +93,4 @@ test("the back display's picture is its 160x80 frame, four bits a pixel, the fir
 test("a frame of the wrong size is refused", () => {
   assert.throws(() => createLedPainter(12).paint(new Uint8Array(10)), RangeError);
   assert.throws(() => createBackPainter().paint(new Uint8Array(10)), RangeError);
-});
-
-test("a status LED shows its hue at full strength, lit as the eye sees the firmware's PWM: plainly on, never off while lit", () => {
-  // The BUSY timer's red, 150 of 255, at the default brightness (0.48): 15 % PWM, fully lit on screen.
-  assert.deepEqual(statusLedLook([150, 0, 0], 0.48), { hue: [255, 0, 0], glow: 1, halo: 0.5329 });
-  // The rest's green keeps its hue.
-  assert.deepEqual(statusLedLook([10, 150, 5], 0.48).hue, [17, 255, 9]);
-  // The lowest brightness the setting gives (5 %): about half.
-  assert.equal(statusLedLook([150, 0, 0], 0.05).glow, 0.4499);
-  // The rainbow (HSV value 16 of 255): dimmer than the timer, still visible.
-  const rainbow = statusLedLook([255, 128, 0], 0.48, 16 / 255);
-  assert.ok(rainbow.glow > 0.6 && rainbow.glow < 0.7 && rainbow.halo < 0.3, JSON.stringify(rainbow));
-  // More brightness, a wider halo.
-  assert.ok(statusLedLook([150, 0, 0], 0.9).halo > statusLedLook([150, 0, 0], 0.48).halo);
-  // Black or level 0: dark.
-  assert.equal(statusLedLook([0, 0, 0], 1), null);
-  assert.equal(statusLedLook([255, 0, 0], 0), null);
 });

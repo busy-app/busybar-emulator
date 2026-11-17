@@ -1,14 +1,15 @@
 {
-  "about": "Where each file of build/apps-assets comes from and what its bytes are. The emulated bar serves these as /ext/apps_assets to the firmware's GUI and system apps; one set serves every firmware version. build.mjs checks the folder against this list before it builds anything, and stops if a file is there and not listed, listed and not there, or has other bytes than the sha256 here.",
+  "about": "Where each file of build/apps-assets comes from and what its bytes are. The emulated bar serves these as /ext/apps_assets to the firmware's GUI and system apps; one set serves every firmware version, and a file a later release added says which (\"since\"): the emulated BUSY Bar on an older firmware does not have it (packages/server/firmware.mjs, appsAssetFile). build.mjs checks the folder against this list before it builds anything, and stops if a file is there and not listed, listed and not there, or has other bytes than the sha256 here.",
   "firmware": {
-    "version": "1.3.1",
-    "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7"
+    "version": "1.4.1",
+    "commit": "28c175b3b5c8cda231582d07b276690eaf94a136"
   },
   "origins": {
     "firmware-build": "Taken from the output of the firmware's own build (fbt, target f22: build/f22-firmware-D/resources/apps_assets) on 2026-10-23 and 2026-10-26. fbt converts each PNG to .image, each .zip of frames to .anim and each WAV to .snd, and copies fonts and scripts as they are. Which firmware commit that build was made from was not recorded. build.mjs --assets-from <that folder> takes these files again and records their new sha256 here.",
-    "bar": "Read by hand from a BUSY Bar running release 1.3.1 on 2026-11-09, file by file: GET /api/storage/read?path=/ext/apps_assets/<file>. They are converted files of the same kinds, as release 1.3.1 has them on a bar. The build never replaces them."
+    "bar": "Read by hand from a BUSY Bar running release 1.3.1 on 2026-11-09, file by file: GET /api/storage/read?path=/ext/apps_assets/<file>. They are converted files of the same kinds, as release 1.3.1 has them on a bar. The build never replaces them.",
+    "firmware-converter": "Converted by hand on 2026-11-16 from its PNG with the firmware's own converter, as fbt's ImageConverter runs it (scripts/image.py -f BIN: lib/lvgl/scripts/LVGLImage.py, from_png, adjust_stride(align=1), to_bin). The same conversion of the 84 other PNGs of assets/shared/images/external gives, byte for byte, the files of shared/images that came from a firmware build. Firmware 1.4.1 added this image (since: 1.4.1)."
   },
-  "source": "The file in the firmware repository, at the commit above, that the asset is made from.",
+  "source": "The file in the firmware repository, at the commit above, that the asset is made from. Between releases 1.3.1 and 1.4.1 the firmware's assets outside the local web changed in one file only: 1.4.1 added assets/shared/images/external/back_arrow_front_7x7.png.",
   "sha256": "SHA-256 of the file in build/apps-assets.",
   "files": {
     "about/images/about_ce_back_24x24.image": { "origin": "bar", "source": "assets/images/external/about/about_ce_back_24x24.png", "sha256": "e49e99b0b0c5bd7cc6bed963932a02edc182b18519256dd6e21f4534927a02a4" },
@@ -135,6 +136,7 @@
     "shared/images/active_indicator_left_28x7.image": { "origin": "firmware-build", "source": "assets/shared/images/external/active_indicator_left_28x7.png", "sha256": "c7794df6b8d94f594f633e8964376bbd97660b7b5f5c78a1ab30b2198d31cfdc" },
     "shared/images/active_indicator_right_28x7.image": { "origin": "firmware-build", "source": "assets/shared/images/external/active_indicator_right_28x7.png", "sha256": "611208607dcaf61f118e4cdea337602ad36d256ac22f1ed66dfb0ae3ac4d0df4" },
     "shared/images/apps_menu_back_12x12.image": { "origin": "firmware-build", "source": "assets/shared/images/external/apps_menu_back_12x12.png", "sha256": "67ed39c9f75f488dd3448ccc1be015a0633e75f00476d46b86a9930dc01831a6" },
+    "shared/images/back_arrow_front_7x7.image": { "origin": "firmware-converter", "source": "assets/shared/images/external/back_arrow_front_7x7.png", "since": "1.4.1", "sha256": "fdd1e34c4fc74e453b79e66d954946d46c17ec485bf76759e515cf656a3b0d7f" },
     "shared/images/charging_battery_front_8x8.image": { "origin": "firmware-build", "source": "assets/shared/images/external/charging_battery_front_8x8.png", "sha256": "f7f6bd19ddad64b4c77d562f4ab7c5a595cb987deb0006423a045065b7c76ab8" },
     "shared/images/checkmark_back_11x11.image": { "origin": "firmware-build", "source": "assets/shared/images/external/checkmark_back_11x11.png", "sha256": "d3e29fedad6b905585290b95dd19d01a8a7c39e0c7e27a7c3e4c2e75447753ed" },
     "shared/images/checkmark_front_8x8.image": { "origin": "firmware-build", "source": "assets/shared/images/external/checkmark_front_8x8.png", "sha256": "6440ea9363732a77b57b2c8b657a84ed4a82367d45e0e7db505bfe6e0d88fc24" },

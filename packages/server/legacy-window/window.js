@@ -1,6 +1,10 @@
 // The device window: draws the frames the emulator streams, sends the buttons and the wheel, shows the app console.
 // Everything comes from /_emu/events (device-window.mjs); keys go to /_emu/key (held) and /api/input (wheel clicks).
 
+// The status lights' timeline as the firmware runs it, and how a lit LED looks: one module for this view, the 3D view
+// and the server.
+import { lightsAt, parseLights, redrawDelay, statusLedLook } from "./status-lights.mjs";
+
 const FRONT = { width: 72, height: 16 };
 const BACK = { width: 160, height: 80 };
 // The LED look of busy-lib's LedRenderer: square LEDs with rounded corners, a gap between them, dark ones off.
@@ -97,8 +101,12 @@ const post = (url) => fetch(url, { method: "POST" }).catch(() => {});
 const held = new Set();
 const downs = new Map(); // a key → its "down" on the way to the bar: its "up" goes after it
 
+// The BUSY Bar is switching firmware (the firmware section sets it): it is down, and its controls wait.
+let barSwitching = false;
+
 function keyDown(key) {
-  if (held.has(key)) return;
+  // While the BUSY Bar switches firmware it is down: its controls wait (the firmware section).
+  if (held.has(key) || barSwitching) return;
   held.add(key);
   document.querySelectorAll(`[data-key="${key}"]`).forEach((el) => el.classList.add("down"));
   downs.set(key, post(`/_emu/key?key=${key}&action=down`));
@@ -134,6 +142,7 @@ const wheelRing = $("#wheel-ring");
 let wheelAngle = 0;
 
 function turn(direction) {
+  if (barSwitching) return;
   wheelAngle += direction === "up" ? DETENT : -DETENT;
   wheelRing.style.transform = `rotate(${wheelAngle}deg)`;
   post(`/api/input?key=${direction}`);
@@ -231,7 +240,10 @@ addEventListener("mousedown", (e) => e.target.closest?.(CONTROL) && e.preventDef
 addEventListener("change", (e) => byPointer && e.target.matches?.("input[type=checkbox], input[type=range], select") && e.target.blur(), true);
 addEventListener("keydown", (e) => {
   byPointer = false;
-  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest("input, textarea, select")) return;
+  // What is typed in a field (the project's folder's path is a read-only field, role=textbox) stays there.
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest("input, textarea, select, [role=textbox]")) return;
+  // Escape with the console's kinds of line open (a popover) is theirs: the browser closes them.
+  if (e.key === "Escape" && $("#console-kinds")?.matches?.(":popover-open")) return;
   const own = e.target.closest(CONTROL);
   if (own) {
     const key = own.dataset?.key;
@@ -348,36 +360,32 @@ lever.addEventListener("keydown", (e) => {
 
 // The bar's two RGB LEDs, its status lights, show from under the ends of Start / Pause; the firmware lights them (the
 // BUSY timer, the brightness setting, pairing) and so does an app (POST /api/display/draw with
-// led_notification_color). The emulator says their state in the event "lights" of /_emu/events:
-//   { preset: "off" | "static" | "fade" | "rainbow" | "blink" | "notification", color: "#rrggbb", brightness: 0..1 }
-// as the firmware's status_lights_run_preset() and its brightness have it. Both LEDs show the same. Until the event
-// comes they are off. A notification is three blinks at full brightness, then dark, as on the bar.
-const LIGHT_PRESETS = ["off", "static", "fade", "rainbow", "blink", "notification"];
-// The firmware's rainbow is dim: its colors have the HSV value 16 of 255 (status_lights/presets/rainbow_gradient.c),
-// under the brightness the lights run at.
-const RAINBOW_VALUE = 16 / 255;
+// led_notification_color). The emulator says their state in the event "lights" of /_emu/events (README.md):
+//   { preset: "off" | "static" | "fade" | "rainbow" | "blink" | "notification", color: "#rrggbb", brightness: 0..1,
+//     elapsed: ms }
+// as the firmware's status_lights_run_preset() and its brightness have it, and how long the preset has run. What the
+// LEDs show from moment to moment is the firmware's own timeline (status-lights.mjs, which the 3D view and the server
+// go by too): each step is drawn when it comes, so a notification blinks three times at full brightness and then
+// nothing of it is left lit, as on the bar. Both LEDs show the same. Until the event comes they are off.
 const leds = [$("#led-left"), $("#led-right")];
+// Asked for less motion, the presets that never hold still (fade, the rainbow) show one step of theirs and stay
+// there; the blinks, which say something, go on.
+const lessMotion = matchMedia("(prefers-reduced-motion: reduce)");
+let lights = parseLights(null);
+let lightsSince = performance.now(); // when the preset started, by this page's clock
+let lightsTimer = 0;
 
-// What the eye makes of a status LED, as the 3D view has it (stage/frame/leds.js, statusLedLook): the firmware drives
-// each channel at component / 255 × brightness^1.85 of full PWM, and a real LED even at a few percent of that reads as
-// plainly lit and saturated, while its color times the duty on a screen looks dull. So the LED shows its own hue at
-// full strength (its largest channel at 255); `glow` 0..1, the cube root of the duty doubled and eased, says how lit
-// it looks (the BUSY timer's red at the default brightness: full; the rainbow: about two thirds; the lowest brightness:
-// about half); `halo`, the cube root of the duty, how far its light spreads, which grows on with the brightness.
-function ledLook(rgb, level, value) {
-  const peak = Math.max(...rgb);
-  if (!(peak > 0) || !(level > 0)) return null;
-  const halo = Math.cbrt(Math.min(1, value ?? peak / 255) * Math.min(1, level) ** 1.85);
-  return { hue: rgb.map((v) => Math.round((v / peak) * 255)), glow: Math.min(1, 2 * halo) ** 0.6, halo };
+function setLights(message) {
+  lights = parseLights(message);
+  lightsSince = performance.now() - lights.elapsed;
+  drawLights();
 }
 
-function renderLights(lights) {
-  const preset = LIGHT_PRESETS.includes(lights?.preset) ? lights.preset : "off";
-  const color = /^#[0-9a-f]{6}$/i.test(lights?.color ?? "") ? lights.color.toLowerCase() : "#000000";
-  const brightness = preset === "notification" ? 1 : Math.min(1, Math.max(0, Number.isFinite(lights?.brightness) ? lights.brightness : 1));
-  // The rainbow turns from red.
-  const rgb = preset === "rainbow" ? [255, 0, 0] : [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-  const look = preset === "off" ? null : ledLook(rgb, brightness, preset === "rainbow" ? RAINBOW_VALUE : undefined);
+function drawLights() {
+  clearTimeout(lightsTimer);
+  const elapsed = performance.now() - lightsSince;
+  const { rgb, level, next } = lightsAt(lights, elapsed, { still: lessMotion.matches });
+  const look = statusLedLook(rgb, level);
   const hex = (bytes) => `#${bytes.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
   const lit = Boolean(look);
   // The core: the hue, toward the dark LED's gray the less lit it looks; at full glow a touch of white, as a lit LED's
@@ -387,17 +395,18 @@ function renderLights(lights) {
   const r = (n) => Math.round(n * 10) / 10;
   const filter = !lit ? "none" : `drop-shadow(0 0 ${r(1 + 2 * look.glow)}px ${hue}) drop-shadow(0 0 ${r(4 + 12 * look.halo)}px color-mix(in srgb, ${hue} ${Math.round(35 + 45 * look.halo)}%, transparent)) drop-shadow(0 0 ${r(10 + 22 * look.halo)}px color-mix(in srgb, ${hue} ${Math.round(12 + 28 * look.halo)}%, transparent))`;
   for (const led of leds) {
-    for (const name of LIGHT_PRESETS) led.classList.remove(name);
     led.classList.toggle("lit", lit);
     led.style.setProperty("--led", core);
     led.style.setProperty("--led-hue", hue);
     led.style.setProperty("--led-filter", filter);
-    if (!lit) continue;
-    void led.offsetWidth; // a new notification blinks from its start
-    led.classList.add(preset);
   }
+  const wait = redrawDelay(lights.preset, elapsed, next);
+  lightsTimer = wait === null ? 0 : setTimeout(drawLights, wait);
 }
-renderLights(null);
+lessMotion.addEventListener("change", drawLights);
+// A page nobody sees gets its timers late (the browser throttles them): back in sight, the step it is at, at once.
+document.addEventListener("visibilitychange", () => document.hidden || drawLights());
+drawLights();
 
 // ---------------------------------------------------------------- the view: 2D, and 3D when it is there
 
@@ -427,8 +436,6 @@ function showView(in3d) {
   mounted = in3d;
   showCameraViews(in3d); // the 3D view's camera, below
   $("#bar").hidden = in3d;
-  view2d.classList.toggle("on", !in3d);
-  view3d.classList.toggle("on", in3d);
   aria(view2d, "pressed", String(!in3d));
   aria(view3d, "pressed", String(in3d));
 }
@@ -476,9 +483,7 @@ function cameraView() {
 const cameraGroup = $("#camera-views");
 function markCameraView(view) {
   for (const button of cameraGroup.querySelectorAll("button")) {
-    const on = button.dataset.camera === view;
-    button.classList.toggle("on", on);
-    aria(button, "pressed", String(on));
+    aria(button, "pressed", String(button.dataset.camera === view));
   }
 }
 function showCameraViews(on) {
@@ -694,16 +699,29 @@ barAddressCopy.addEventListener("click", async () => {
 });
 
 // Restart bar: the restart a bar does when Back and Start are held, whatever its software does. The button turns
-// until the bar is up again (the server answers then, wait=1) and says how long it took.
+// until the bar is up again (the server answers then, wait=1) and says how long it took. Its words come in two
+// lengths, the card's width chooses (window.css): its name, "Restart BUSY Bar" or "Restart"; what it says meanwhile is
+// the same in both, and is "said" until its name comes back. A screen reader hears what it says (#restart-said, a
+// polite live region): the button's own name stays "Restart BUSY Bar".
 const powerRestart = $("#power-restart");
 const powerRestartLabel = powerRestart.querySelector(".label");
+const powerRestartShort = powerRestart.querySelector(".label-short");
+const restartSaid = $("#restart-said");
+function sayRestart(words) {
+  powerRestartLabel.textContent = words ?? "Restart BUSY Bar";
+  powerRestartShort.textContent = words ?? "Restart";
+  powerRestart.classList.toggle("said", Boolean(words) && powerRestart.ariaBusy !== "true");
+  restartSaid.textContent = words ?? "";
+}
 let powerRestartReset = null;
 powerRestart.addEventListener("click", async () => {
   if (powerRestart.ariaBusy === "true") return;
   clearTimeout(powerRestartReset);
   powerRestart.classList.remove("done");
   powerRestart.ariaBusy = "true";
-  powerRestartLabel.textContent = "Restarting";
+  sayRestart("Restarting");
+  // A firmware chosen for the restart is switched to by it: the firmware section leaves the button to this handler.
+  restartPressed = true;
   let said = "Not restarted";
   try {
     const answer = await fetch("/_emu/power?action=restart&wait=1", { method: "POST" });
@@ -715,10 +733,11 @@ powerRestart.addEventListener("click", async () => {
   } catch {
     // The server went away: said stays "Not restarted".
   }
+  restartPressed = false;
   powerRestart.ariaBusy = "false";
-  powerRestartLabel.textContent = said;
+  sayRestart(said);
   powerRestartReset = setTimeout(() => {
-    powerRestartLabel.textContent = "Restart BUSY Bar";
+    sayRestart(null);
     powerRestart.classList.remove("done");
   }, 3000);
 });
@@ -738,8 +757,8 @@ statusVolume.addEventListener("input", () => {
   post(`/api/audio/volume?volume=${statusVolume.value}`);
 });
 
-// layout-v2: what the bar is (its serial number) and how long it has been on, from GET /api/status/system, read
-// again now and then; the clock ticks here between.
+// layout-v2: how long the bar has been on, from GET /api/status/system, read again now and then; the clock ticks here
+// between.
 let uptimeFrom = null; // the computer's time the bar started, ms
 function renderUptime() {
   if (uptimeFrom === null) return void ($("#device-uptime").textContent = "");
@@ -749,13 +768,10 @@ function renderUptime() {
 }
 async function loadDevice() {
   try {
-    const [system, device] = await Promise.all(["system", "device"].map((part) => fetch(`/api/status/${part}`).then((r) => (r.ok ? r.json() : null))));
+    const system = await fetch("/api/status/system").then((r) => (r.ok ? r.json() : null));
     const m = String(system?.uptime ?? "").match(/^(\d+)d (\d+)h (\d+)m (\d+)s$/);
     // The hours are counted with the days in them (api_status.c).
     uptimeFrom = m ? Date.now() - (Number(m[2]) * 3600 + Number(m[3]) * 60 + Number(m[4])) * 1000 : null;
-    $("#device-serial").textContent = typeof device?.serial_number === "string" ? device.serial_number : "";
-    // bar-address: the serial number is the address line's tooltip.
-    $("#bar-address-line").title = $("#device-serial").textContent ? `Serial number ${$("#device-serial").textContent}` : "";
   } catch {
     uptimeFrom = null;
   }
@@ -934,56 +950,6 @@ function takeTitle(target) {
 document.addEventListener?.("pointerover", (e) => takeTitle(e.target), true);
 document.addEventListener?.("focusin", (e) => takeTitle(e.target), true);
 
-// ---- The view tools over the BUSY Bar: the top bar's Screenshot and 2D/3D group stands over the BUSY Bar's middle
-// button (Start / Pause), not wherever the top bar's flow leaves it. It keeps clear of the links on its
-// left and of the account and Publish on its right; where there is no room, it stays in the flow.
-(() => {
-  const bar = $("#topbar");
-  const tools = bar?.querySelector(".top-tools");
-  const stage = $("#stage");
-  if (!bar || !tools || !stage) return;
-  const place = () => {
-    const key = [...document.querySelectorAll(".key-start")].find((el) => el.getClientRects().length);
-    const at = key?.getBoundingClientRect() ?? stage.getBoundingClientRect();
-    const middle = at.left + at.width / 2;
-    // Where it stands without our margin: measured, not tried (resetting it every time made it flicker).
-    const placed = tools.getBoundingClientRect();
-    const ours = parseFloat(tools.style.marginLeft || "0") || 0; // the style sheet's own margin is 8
-    const now = { left: placed.left - (ours ? ours - 8 : 0), width: placed.width };
-    const before = tools.previousElementSibling?.getBoundingClientRect();
-    const after = bar.querySelector(".top-end")?.getBoundingClientRect();
-    const want = middle - now.width / 2;
-    const least = (before ? before.right : bar.getBoundingClientRect().left) + 16;
-    // The right end from the bar's own edge, not from where the account and Publish stand now: our margin pushes them,
-    // and measured after it they would let it push further (at 1240 Publish went off the window).
-    const box = bar.getBoundingClientRect();
-    const end = box.right - parseFloat(getComputedStyle(bar).paddingRight || "0") - (after?.width ?? 0);
-    const most = end - 16 - now.width;
-    if (most < least) {
-      if (tools.style.marginLeft) tools.style.marginLeft = "";
-      return;
-    }
-    const left = Math.min(Math.max(want, least), most);
-    const margin = `${Math.round(left - now.left + 8)}px`;
-    if (tools.style.marginLeft !== margin) tools.style.marginLeft = margin;
-  };
-  let timer = 0;
-  const soon = () => {
-    clearTimeout(timer);
-    timer = setTimeout(place, 16);
-  };
-  const watch = new ResizeObserver(soon);
-  // The account and Publish too: the account button comes later (once GitHub's state is read) and makes them wider.
-  for (const el of [bar, stage, $(".side"), bar.querySelector(".top-end")].filter(Boolean)) watch.observe(el);
-  addEventListener("resize", soon);
-  // The BUSY Bar's drawing settles after the first frames (fonts, the 2D or 3D view): place again when it has.
-  addEventListener("load", soon);
-  for (const ms of [300, 1000, 2500]) setTimeout(soon, ms);
-  const key = document.querySelector(".key-start");
-  if (key) watch.observe(key);
-  soon();
-})();
-
 // What the console said of each app's last run: its errors and how it ended ("Launch <id>", "<id> error: …",
 // "App <id> exited: <reason>; …"). An app that ended for an error, or with errors, has crashed.
 const appRuns = new Map(); // id → { errors, first, ended }
@@ -1082,52 +1048,91 @@ function renderAppTop(row) {
 
   // The actions: the prompt first and apart (it is not a control of the app), then Stop, then Run or Refresh.
   const stopNow = () => (project && shell ? act(row, "stop", (folder) => actions().projects.stop(folder)) : post("/api/apps/quit"));
-  const stop = button("icon-btn ac-stop ac-stop-c", "", on ? null : "Not running", stopNow, "", "control-stop");
+  const stop = button("icon-btn ac-stop", "", on ? null : "Not running", stopNow, "", "control-stop");
   stop.ariaLabel = "Stop";
   tip(stop, on ? "Stop" : "Not running");
   // The button that says Copied is kept while it says so: the column is drawn again as things change.
   const saying = appActions.querySelector?.("#copy-prompt");
-  const prompt = saying?.dataset?.copying && saying.dataset.app === row.id ? saying : project && shell ? button("btn ac-prompt ac-prompt-c", "", null, () => {
+  const prompt = (saying?.dataset?.copied || saying?.dataset?.copying) && saying.dataset.app === row.id ? saying : project && shell ? button("btn quiet ac-prompt", "", null, async () => {
     const text = promptFor(chosen());
     if (!text) return;
-    // Copied takes the button's place at its own width, centered, not a narrower button with the word on its left.
-    if (!prompt.style.width) {
-      prompt.style.width = `${prompt.getBoundingClientRect().width}px`;
-      prompt.dataset.copying = "yes";
-      setTimeout(() => {
-        prompt.style.width = "";
-        delete prompt.dataset.copying;
-      }, 2100);
-    }
-    copyWithFeedback(prompt, text);
-  }, "", "sparkles") : null;
+    // Kept from the click on (the column may be drawn again while the clipboard is written), and while it says Copied.
+    prompt.dataset.copying = "yes";
+    const done = await copyText(text);
+    delete prompt.dataset.copying;
+    prompt.title = done === "again" ? "Click again" : done ? "" : "Not copied";
+    if (done !== true) return;
+    // Copied in the label's place for two seconds; both are in the button's one cell (window.css), so its width holds.
+    clearTimeout(Number(prompt.dataset.copiedTimer));
+    prompt.dataset.copied = "yes";
+    prompt.dataset.copiedTimer = String(setTimeout(() => {
+      delete prompt.dataset.copied;
+      delete prompt.dataset.copiedTimer;
+    }, 2000));
+  }) : null;
   if (prompt && prompt !== saying) {
     // The whole name, or "Prompt for AI" where the column is narrow (window.css); its accessible name stays whole.
     prompt.dataset.app = row.id;
-    prompt.append(make("span", "wide", "Copy prompt for AI"), make("span", "narrow", "Prompt for AI"));
+    const label = make("span", "ac-prompt-label");
+    label.innerHTML = icon("sparkles");
+    label.append(make("span", "wide", "Copy prompt for AI"), make("span", "narrow", "Prompt for AI"));
+    const done = make("span", "ac-prompt-done");
+    done.innerHTML = icon("checkmark");
+    done.append(make("span", "", "Copied"));
+    prompt.append(label, done);
     prompt.id = "copy-prompt";
     prompt.ariaLabel = "Copy prompt for AI";
   }
   const label = on ? "Refresh" : "Run";
   const primary = project && shell
-    ? button("btn solid ac-run", label, why, () => refreshProject(row), "", on ? "refresh" : "control-play")
-    : button("btn solid ac-run", "Run", on ? "Running" : row.onBar ? null : "Not on the BUSY Bar", () => post(`/api/apps/launch?app_id=${encodeURIComponent(row.id)}`), "", "control-play");
+    ? button("btn solid ac-run", label, why, () => runOrAsk(row, () => refreshProject(row), { folder: project.folder }), "", on ? "refresh" : "control-play")
+    : button("btn solid ac-run", "Run", on ? "Running" : row.onBar ? null : "Not on the BUSY Bar", () => runOrAsk(row, () => post(`/api/apps/launch?app_id=${encodeURIComponent(row.id)}`), { id: row.id }, "installed"), "", "control-play");
   primary.id = "app-run";
-  const runRow = make("div", "ac-row ac-row-c");
-  runRow.append(...(prompt ? [prompt] : []), make("span", "ac-gap"), stop, primary);
+  const runRow = make("div", "ac-row");
+  runRow.append(...(prompt ? [prompt] : []), stop, primary);
   appActions.replaceChildren(runRow);
 
   // The folder.
   if (project && shell) {
     const folderWhy = project.unavailable ? AWAY : null;
     const pathRow = make("div", "ac-path-row");
-    const path = make("input", "ac-path");
-    path.readOnly = true;
-    path.value = project.shownFolder ?? project.folder;
+    // The path from ~ in two parts, the project's own folder whole at its end (pathLine; window.css, .ac-path): a
+    // read-only field for the keyboard and a screen reader, its whole path in its descriptor.
+    const path = pathLine(project.shownFolder ?? project.folder);
+    path.classList.add("ac-path");
+    path.title = "";
+    path.tabIndex = 0;
+    path.setAttribute("role", "textbox");
+    path.setAttribute("aria-readonly", "true");
     path.ariaLabel = "The project's folder";
-    path.spellcheck = false;
-    tip(path, "The project's folder", project.folder);
-    const copy = button("icon-btn ac-path-btn", "", null, async () => {
+    tip(path, "The project's folder", project.folder, { onText: true });
+    // Select all, in the field, is the path's, not the page's. The key goes by its letter, and by its place (e.code)
+    // only when the layout gives no Latin letter: on a Russian layout e.key is a Cyrillic letter, and the browser's
+    // Select all still takes the key; on AZERTY the key at KeyA is Q, and Cmd+Q must stay Quit.
+    path.addEventListener("keydown", (e) => {
+      const letter = (e.key ?? "").toLowerCase();
+      if (!(e.metaKey || e.ctrlKey) || (letter !== "a" && (/^[a-z]$/.test(letter) || e.code !== "KeyA"))) return;
+      e.preventDefault();
+      globalThis.getSelection?.().selectAllChildren(path);
+    });
+    // A selection in the field is copied as the path's own characters: the browser's text of it has a break between the
+    // path's two parts (pathLine), and may lose a space at a folder name's end. A selection that ends just past the
+    // field with nothing shown there (a triple-click, a drag onto the Copy button beside it) is the field's too: the
+    // browser would add line breaks after the path. A selection that takes text shown past the field is the browser's
+    // to copy, as it reads. "Shown": the selection's own text, without the hidden labels a range's text holds.
+    path.addEventListener("copy", (e) => {
+      const selection = globalThis.getSelection?.();
+      if (!e.clipboardData || selection?.rangeCount !== 1) return;
+      const range = selection.getRangeAt(0).cloneRange();
+      if (!path.contains(range.startContainer)) return;
+      if (!path.contains(range.endContainer)) range.setEnd(path, path.childNodes.length);
+      const chosen = range.cloneContents().textContent;
+      if (String(selection).replace(/\s/g, "") !== chosen.replace(/\s/g, "")) return;
+      if (!chosen) return;
+      e.preventDefault();
+      e.clipboardData.setData("text/plain", chosen);
+    });
+    const copy = button("icon-btn small ac-path-btn", "", null, async () => {
       const done = await copyText(project.folder);
       tip(copy, done === true ? "Copied" : done === "again" ? "Click again" : "Not copied");
       setTimeout(() => copy.isConnected && tip(copy, "Copy the path"), 1600);
@@ -1135,14 +1140,12 @@ function renderAppTop(row) {
     copy.ariaLabel = "Copy the path";
     tip(copy, "Copy the path");
     const openLabel = FILE_MANAGER === "Explorer" ? "Show in Explorer" : "Open in Finder";
-    const open = button("icon-btn ac-path-btn", "", folderWhy, () => actions().reveal(project.folder), "", "folder");
+    const open = button("icon-btn small ac-path-btn", "", folderWhy, () => actions().reveal(project.folder), "", "folder");
     open.ariaLabel = openLabel;
     tip(open, openLabel, folderWhy ?? "");
     pathRow.append(path, copy, open);
     appFolder.hidden = false;
     appFolder.replaceChildren(pathRow);
-    // The end of the path, the project's own folder, is what shows when it does not fit.
-    (globalThis.requestAnimationFrame ?? setTimeout)(() => (path.scrollLeft = path.scrollWidth));
   } else renderPackageFolder(row);
 
   // What happened.
@@ -1153,7 +1156,7 @@ function renderAppTop(row) {
     const card = make("div", "ac-crash");
     const words = make("div", "ac-crash-words");
     words.append(make("code", "", crash.said));
-    card.append(words, button("btn small", "Show in Console", null, showErrorsInConsole));
+    card.append(words, button("btn", "Show in Console", null, showErrorsInConsole));
     status.push(card);
   }
   const deps = project ? renderDeps(row) : null;
@@ -1178,7 +1181,7 @@ function quietJob(folder) {
 function settingsFoot() {
   const foot = make("div", "ac-settings-foot");
   foot.append(make("span", "", "The app reads its settings when it starts."));
-  const link = make("a", "btn small ac-local-web");
+  const link = make("a", "btn ac-local-web");
   link.id = "app-settings-local-web";
   link.href = appSettingsLink.href;
   link.target = "_blank";
@@ -1189,31 +1192,39 @@ function settingsFoot() {
   return foot;
 }
 
-/** A setting's description in two lines at most; a press or Enter opens all of it. */
+/** A setting's description in two lines at most (window.css, .ac-desc); where it is cut, a press or Enter opens all
+    of it. Whether it is cut is measured when the form is drawn and again whenever the form's size changes: the
+    column's width follows the window's. */
 function clampDescriptions() {
-  const later = globalThis.requestAnimationFrame ?? ((f) => setTimeout(f, 0));
-  later(() => {
-    for (const text of settingsBox.querySelectorAll?.(".field-name > span:not(.field-wrong), .group-about") ?? []) {
-      if (text.dataset.clamped) continue;
-      text.dataset.clamped = "checked";
-      text.classList.add("ac-desc");
-      if (text.scrollHeight <= text.clientHeight + 1) continue;
-      text.dataset.clamped = "yes";
+  for (const text of settingsBox.querySelectorAll?.(".field-name > span:not(.field-wrong), .group-about") ?? []) {
+    if (text.classList.contains("ac-desc")) continue;
+    text.classList.add("ac-desc");
+    const toggle = (e) => {
+      if (text.dataset.clamped !== "yes") return;
+      e.preventDefault();
+      e.stopPropagation();
+      text.setAttribute("aria-expanded", String(text.getAttribute("aria-expanded") !== "true"));
+      hideTip();
+    };
+    text.addEventListener("click", toggle);
+    text.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && toggle(e));
+  }
+  (globalThis.requestAnimationFrame ?? ((f) => setTimeout(f, 0)))(measureDescriptions);
+}
+/** Which descriptions are cut now: those are buttons that open them. One that is open stays a button that closes it. */
+function measureDescriptions() {
+  for (const text of settingsBox.querySelectorAll?.(".ac-desc") ?? []) {
+    if (text.getAttribute("aria-expanded") === "true") continue;
+    const cut = text.scrollHeight > text.clientHeight + 1;
+    text.dataset.clamped = cut ? "yes" : "no";
+    if (cut) {
       text.tabIndex = 0;
       text.setAttribute("role", "button");
       text.setAttribute("aria-expanded", "false");
-      const toggle = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const open = !text.classList.contains("open");
-        text.classList.toggle("open", open);
-        text.setAttribute("aria-expanded", String(open));
-        hideTip();
-      };
-      text.addEventListener("click", toggle);
-      text.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && toggle(e));
+    } else {
+      for (const name of ["tabindex", "role", "aria-expanded"]) text.removeAttribute(name);
     }
-  });
+  }
 }
 
 const appsList = $("#apps");
@@ -1249,7 +1260,7 @@ function rows() {
     // A folder that is gone is not listed; one whose disk is away (unavailable) stays and waits for it.
     if (p.exists !== false || p.unavailable) byId.set(p.id, { id: p.id, name: p.name ?? p.id, version: "", onBar: false, project: p });
   }
-  for (const app of installed ?? []) byId.set(app.id, { ...(byId.get(app.id) ?? { project: null }), id: app.id, name: app.name, version: app.version, icon_path: app.icon_path, onBar: true });
+  for (const app of installed ?? []) byId.set(app.id, { ...(byId.get(app.id) ?? { project: null }), id: app.id, name: app.name, version: app.version, api_version: app.api_version, icon_path: app.icon_path, onBar: true });
   if (runningId !== null && !byId.has(runningId)) byId.set(runningId, { id: runningId, name: runningId, version: "", onBar: true, project: null });
   const all = [...byId.values()];
   return [...all.filter((row) => row.project), ...all.filter((row) => !row.project)];
@@ -1419,7 +1430,6 @@ function renderApps() {
     const li = document.createElement("li");
     const on = row.id === runningId;
     li.className = ["app", on ? "on" : "", row.id === chosenId ? "chosen" : ""].filter(Boolean).join(" ");
-    li.title = row.name === row.id ? row.id : `${row.name} ${row.version}\n${row.id}`;
     li.innerHTML = `<span class="app-icon"></span><div class="app-meta"><span class="app-name"></span><span class="app-note"></span></div><div class="row-actions"></div>`;
     if (icons.get(row.id)) {
       const picture = document.createElement("img");
@@ -1429,23 +1439,34 @@ function renderApps() {
       li.querySelector(".app-icon").replaceWith(picture);
     }
     li.querySelector(".app-name").textContent = row.name;
+    // The row's buttons stand over the name's end while they show: the name's descriptor is the whole name, its version
+    // and its id.
+    tip(li.querySelector(".app-name"), row.name, row.name === row.id ? row.version ?? "" : [row.version, row.id].filter(Boolean).join(", "), { onText: true });
     li.querySelector(".app-note").textContent = noteOf(row);
     if (depsTrouble(row) && !working(row)) li.querySelector(".app-note").classList.add("trouble");
+    // An app for a newer API than the firmware that runs: which firmware it needs (EMU-322), on a line of its own
+    // under the version, as wide as the row, so that it is never cut by the row's buttons.
+    const need = needsFirmware(row, "project") ?? (row.onBar ? needsFirmware(row, "installed") : null);
+    if (need) {
+      li.classList.add("with-chip");
+      li.append(firmwareChip(row, need));
+    }
     const rowActions = li.querySelector(".row-actions");
+    let retry = null;
     if (row.project && depsTrouble(row) && !working(row)) {
       // Its dependencies did not come (create-offline): Retry installs them; when it was a Refresh that stopped at
       // them, the desktop app then goes on with that Refresh.
-      const retry = button("btn small row-retry", "Retry", row.project.unavailable ? AWAY : null, () => retryDependencies(row), "Install its dependencies again");
+      retry = button("btn row-retry", "Retry", row.project.unavailable ? AWAY : null, () => retryDependencies(row), "Install its dependencies again");
       retry.ariaLabel = `Retry installing the dependencies of ${row.name}`;
-      rowActions.append(retry);
     } else if (row.project) {
       const busy = working(row) !== null;
-      const refresh = button(`icon-btn small${busy ? " busy" : ""}`, "", busy ? "Working" : row.project.unavailable ? AWAY : null, () => refreshProject(row), "Refresh: build, install and start it again", "refresh");
+      const refresh = button(`icon-btn${busy ? " busy" : ""}`, "", busy ? "Working" : row.project.unavailable ? AWAY : null, () => runOrAsk(row, () => refreshProject(row), { folder: row.project.folder }), "Refresh: build, install and start it again", "refresh");
       refresh.ariaLabel = `Refresh ${row.name}`;
       rowActions.append(refresh);
     }
     if (row.onBar) {
-      const start = button(on ? "icon-btn solid" : "icon-btn outline", "", null, () => post(on ? "/api/apps/quit" : `/api/apps/launch?app_id=${encodeURIComponent(row.id)}`), on ? "Stop" : "Start", on ? "control-stop" : "control-play");
+      const launch = () => post(`/api/apps/launch?app_id=${encodeURIComponent(row.id)}`);
+      const start = button("icon-btn", "", null, () => (on ? post("/api/apps/quit") : runOrAsk(row, launch, { id: row.id }, "installed")), on ? "Stop" : "Start", on ? "control-stop" : "control-play");
       start.ariaLabel = `${on ? "Stop" : "Start"} ${row.name}`;
       rowActions.append(start);
     }
@@ -1453,6 +1474,9 @@ function renderApps() {
     if (on) li.append(make("span", "live-state", "Running"));
     li.addEventListener("click", () => openApp(row.id));
     rowMenuHooks(li, row); // the row's menu: right-click, the More button, Shift+F10 (below)
+    // Retry last, at the row's end: the row's other buttons show before it under the pointer, and it stays where it was
+    // (window.css); the focus goes through them in the order they are seen.
+    if (retry) rowActions.append(retry);
     return li;
   });
   if (creating) items.unshift(make("li", "notice", "Creating the app"));
@@ -1496,7 +1520,7 @@ let menuClosedBy = null; // the More button whose press just closed its menu
 
 function rowMenuHooks(li, row) {
   li.dataset.id = row.id;
-  const more = button("icon-btn small row-more", "", null, (e) => {
+  const more = button("icon-btn row-more", "", null, (e) => {
     // A second click on the button of an open menu closes it (the press outside the menu has done that).
     if (menuClosedBy === more) return void (menuClosedBy = null);
     const box = more.getBoundingClientRect();
@@ -1603,7 +1627,18 @@ addEventListener(
   },
   true,
 );
-addEventListener("scroll", (e) => rowMenu && !rowMenu.el.contains(e.target) && closeRowMenu({ refocus: false }), true);
+// A scroll that moves the menu's row away closes it (the list's, the page's); another one does not: the console scrolls
+// to its last line each time one comes, and with the firmware's log shown that is several times a second.
+addEventListener(
+  "scroll",
+  (e) => {
+    if (!rowMenu || rowMenu.el.contains(e.target)) return;
+    const moved = e.target === document ? document.documentElement : e.target;
+    const row = [...appsList.querySelectorAll("li.app")].find((li) => li.dataset.id === rowMenu.id);
+    if (!row || moved.contains?.(row)) closeRowMenu({ refocus: false });
+  },
+  true,
+);
 addEventListener("resize", () => closeRowMenu({ refocus: false }));
 addEventListener("blur", () => closeRowMenu({ refocus: false }));
 
@@ -1655,13 +1690,11 @@ function openDeleteDialog(id) {
       input.checked = deleting.choice === value;
       input.addEventListener("change", () => {
         deleting.choice = value;
-        for (const one of choices.querySelectorAll(".choice")) one.classList.toggle("on", one.querySelector("input").checked);
         action.querySelector("span").textContent = value === "files" ? `Move to ${TRASH}` : "Remove";
       });
       const words = make("span", "words");
       words.append(make("b", "", head), make("span", "", text));
       el.append(input, words);
-      el.classList.toggle("on", input.checked);
       return el;
     };
     choices.append(
@@ -1904,10 +1937,435 @@ async function act(row, kind, call) {
   }
   setJob(folder, { kind, state: answer.ok ? "done" : "failed", ended: Date.now(), message: answer.message ?? null, hint: answer.ok ? null : windowHint(answer.hint, answer.code === "tool_failed" ? (NEXT[kind] ?? null) : null) });
   await loadApps();
+  // The firmware refused the app (api_mismatch) though its manifest was not known to ask for more: the dialog now.
+  if (kind === "refresh" && saysMismatch(answer) && !fwDialog && fw.running) {
+    const latest = latestFirmware();
+    const need = needsFirmware(row) ?? { api: apiOf(row) ?? "newer", firmware: latest && latest.version !== fw.running.version ? latest : null, manifest: row.project?.manifest ?? null };
+    openFirmwareDialog({ name: row.name, ...need }, (version) => switchAndRun(row, version, { folder }));
+  }
   return answer;
 }
 
 const refreshProject = (row) => act(row, "refresh", (folder) => actions().projects.refresh(folder));
+
+// ---------------------------------------------------------------- the firmware (EMU-322)
+//
+// Under the BUSY Bar's name, "Firmware 1.4.1" opens the list of this emulator's firmwares. A choice there waits for a
+// restart, as a firmware put on a real BUSY Bar does: the BUSY Bar runs on, the label still names what runs, Restart
+// BUSY Bar turns primary with a red line over it, and any restart applies the choice (the server does that, whoever
+// restarts it). Choosing the one that runs again takes the choice back. The choice goes to the server through the
+// desktop app, which holds the server's key (POST /_emu/firmware); what runs, the list, the choice and a switch under
+// way come from the server: its hello on connecting, then its "firmware" events, so a window loaded again shows them.
+//
+// An app whose api_version is newer than the API of the firmware that runs is refused by the firmware (api_mismatch):
+// its row says which firmware it needs, and Run asks to switch first, or to lower api_version in the manifest, which
+// the emulator never edits itself.
+
+const fw = { running: null, list: [], pending: null, switching: null };
+const fwButton = $("#firmware");
+const fwLabel = $("#firmware .fw-label");
+const fwPendingLine = $("#fw-pending");
+const fwPendingSaid = $("#fw-pending .fw-pending-said");
+const fwPendingLong = $("#fw-pending .fw-pending-long");
+const fwPendingShort = $("#fw-pending .fw-pending-short");
+const fwApi = $("#api");
+const localWebLink = $("#local-web");
+let fwMenu = null; // { el }
+let restartPressed = false; // the window's own Restart is under way: its button is its handler's to set
+let restartBySwitch = false; // the button says "Restarting" for a firmware switch (renderFirmware)
+
+/** API versions in order: -1, 0 or 1, by their three numbers. */
+function apiOrder(a, b) {
+  const [x, y] = [a, b].map((v) => String(v ?? "").split(".").map((n) => Number(n) || 0));
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0) ? -1 : 1;
+  return 0;
+}
+const latestFirmware = () => fw.list.find((one) => one.alias === "latest") ?? null;
+/** "1.4.1, latest, API 27.15.0" */
+const firmwareWords = (one) => [one.version, one.alias, one.api ? `API ${one.api}` : null].filter(Boolean).join(", ");
+
+/** What the server says of the firmware, from its hello or GET /_emu/firmware: what runs, the list, the choice. */
+function takeFirmware(said) {
+  if (!said) return;
+  if (said.firmware) fw.running = { ...said.firmware, version: said.firmware.version ?? said.firmware.name };
+  if (Array.isArray(said.firmwares)) fw.list = said.firmwares.filter((one) => one && typeof one.version === "string");
+  if ("pending" in said) fw.pending = said.pending ?? null;
+  if ("switching" in said) fw.switching = said.switching?.to ? { version: said.switching.to } : (said.switching ?? null);
+}
+
+function renderFirmware() {
+  const { running, switching, pending } = fw;
+  fwLabel.textContent = switching ? `Switching to ${switching.version}` : running ? `Firmware ${running.version}` : "Firmware";
+  fwButton.classList.toggle("working", Boolean(switching));
+  // Not the latest: the label in the warning color; the list's head says why (the catalog checks by the latest).
+  fwButton.classList.toggle("behind", Boolean(!switching && running && latestFirmware() && running.version !== latestFirmware().version));
+  aria(fwButton, "disabled", switching || !running ? "true" : "false");
+  if (switching && fwMenu) closeFirmwareMenu({ refocus: false });
+  fwApi.textContent = running ? `API ${running.api}` : "API";
+  fwApi.hidden = Boolean(switching);
+  // The firmware that waits: the uptime's second line, by its number where the room beside Restart is short (window.css);
+  // the whole sentence for a screen reader, and as its descriptor (its words are a shortened sentence).
+  fwPendingLine.hidden = !(pending && !switching);
+  fwPendingSaid.textContent = pending ? `Restart to switch to firmware ${pending.version}` : "";
+  if (pending) tip(fwPendingLine, `Restart to switch to firmware ${pending.version}`, "", { onText: true });
+  fwPendingLong.textContent = pending ? `Next: firmware ${pending.version}` : "";
+  fwPendingShort.textContent = pending ? `Next: ${pending.version}` : "";
+  powerRestart.classList.toggle("solid", Boolean(pending && !switching));
+  // While it switches, the BUSY Bar is down: its controls, its settings and its local web wait.
+  barSwitching = Boolean(switching);
+  $("#stage").classList.toggle("switching", barSwitching);
+  for (const part of [$("#dock"), $(".device-card .sets")]) part.inert = Boolean(switching);
+  aria(localWebLink, "disabled", switching ? "true" : "false");
+  // A switch restarts the BUSY Bar: the button says so while it lasts, and gives its words back when it ends. Otherwise
+  // they are the button's own ("Back up in 1.2 s" stays its three seconds while the firmware is drawn again).
+  if (!restartPressed && (switching || restartBySwitch)) {
+    restartBySwitch = Boolean(switching);
+    powerRestart.ariaBusy = switching ? "true" : "false";
+    sayRestart(switching ? "Restarting" : null);
+    if (switching) powerRestart.classList.remove("done");
+  }
+  if (switching) {
+    uptimeFrom = null;
+    renderUptime();
+  }
+  if (fwMenu) fillFirmwareMenu();
+}
+localWebLink.addEventListener("click", (e) => localWebLink.ariaDisabled === "true" && e.preventDefault(), true);
+
+// ---- the list
+
+function closeFirmwareMenu({ refocus = true } = {}) {
+  if (!fwMenu) return;
+  fwMenu.el.remove();
+  fwMenu = null;
+  fwButton.ariaExpanded = "false";
+  fwButton.setAttribute("aria-expanded", "false");
+  if (refocus) fwButton.focus({ preventScroll: true });
+}
+
+/** The list's head and its items, as the firmware is now. */
+function fillFirmwareMenu() {
+  const el = fwMenu.el;
+  const { running, pending } = fw;
+  const chosen = pending?.version ?? running?.version;
+  const latest = latestFirmware();
+  const items = [];
+  if (latest) items.push(make("div", "menu-head", `Apps, their data and settings stay. The catalog checks apps against the latest, ${latest.version}.`));
+  for (const one of fw.list) {
+    const why = !inShell() ? NEEDS_APP : one.available === false ? "Not in this copy of the emulator" : null;
+    const item = button("menu-item fw", "", why, () => chooseFirmware(one.version), why ?? "");
+    item.setAttribute("role", "menuitemradio");
+    item.setAttribute("aria-checked", String(one.version === chosen));
+    item.tabIndex = -1;
+    item.dataset.version = one.version;
+    if (one.version === chosen) item.innerHTML = icon("checkmark");
+    else item.replaceChildren(make("span", "slot"));
+    const words = make("span", "words");
+    words.append(make("b", "", firmwareWords(one)));
+    if (one.news) words.append(make("span", "", one.news));
+    if (pending && one.version === running?.version) words.append(make("span", "fw-state", "Running now"));
+    if (pending && one.version === pending.version) words.append(make("span", "fw-state pending", "After restart"));
+    item.append(words);
+    item.classList.toggle("current", one.version === chosen);
+    items.push(item);
+  }
+  const focused = document.activeElement?.dataset?.version;
+  el.replaceChildren(...items);
+  if (focused) el.querySelector(`[data-version="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+}
+
+function openFirmwareMenu({ byKey = false } = {}) {
+  closeRowMenu({ refocus: false });
+  if (fwButton.ariaDisabled === "true") return;
+  const el = make("div", "row-menu fw-menu");
+  el.setAttribute("role", "menu");
+  el.ariaLabel = "Firmware";
+  fwMenu = { el };
+  fillFirmwareMenu();
+  document.body.append(el);
+  fwButton.setAttribute("aria-expanded", "true");
+  // Under the label, its left edge with the label's; above it where there is no room below.
+  const at = fwButton.getBoundingClientRect();
+  const box = el.getBoundingClientRect();
+  el.style.left = `${Math.round(Math.max(8, Math.min(at.left - 4, innerWidth - box.width - 8)))}px`;
+  el.style.top = `${Math.round(at.bottom + 6 + box.height > innerHeight - 8 ? Math.max(8, at.top - 6 - box.height) : at.bottom + 6)}px`;
+  const enabled = () => [...el.querySelectorAll(".menu-item")].filter((item) => item.ariaDisabled !== "true");
+  el.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // the BUSY Bar's own keys are not pressed from inside the list
+    const all = enabled();
+    const at = all.indexOf(document.activeElement);
+    if (e.key === "Escape" || e.key === "Tab") closeFirmwareMenu();
+    else if (e.key === "ArrowDown") all[(at + 1) % all.length]?.focus();
+    else if (e.key === "ArrowUp") all[(at - 1 + all.length) % all.length]?.focus();
+    else if (e.key === "Home") all[0]?.focus();
+    else if (e.key === "End") all.at(-1)?.focus();
+    else return;
+    e.preventDefault();
+  });
+  el.tabIndex = -1;
+  (byKey ? (enabled().find((item) => item.getAttribute("aria-checked") === "true") ?? enabled()[0] ?? el) : el).focus({ preventScroll: true });
+}
+
+fwButton.addEventListener("click", (e) => {
+  if (fwMenu) return closeFirmwareMenu();
+  openFirmwareMenu({ byKey: e.detail === 0 });
+});
+// A press outside closes the list; the press on its own label is the label's click, which closes it.
+addEventListener("pointerdown", (e) => fwMenu && !fwMenu.el.contains(e.target) && !fwButton.contains(e.target) && closeFirmwareMenu({ refocus: false }), true);
+addEventListener("scroll", (e) => fwMenu && !fwMenu.el.contains(e.target) && closeFirmwareMenu({ refocus: false }), true);
+addEventListener("resize", () => closeFirmwareMenu({ refocus: false }));
+addEventListener("blur", () => closeFirmwareMenu({ refocus: false }));
+
+/** A firmware of the list: chosen for the next restart; the one that runs takes the choice back. */
+async function chooseFirmware(version) {
+  closeFirmwareMenu();
+  if (version === (fw.pending?.version ?? fw.running?.version)) return;
+  let answer;
+  try {
+    answer = await actions().firmware.use({ version, when: "restart" });
+  } catch (e) {
+    answer = { ok: false, code: e?.code, message: e?.code === NO_GESTURE ? "Click again" : String(e?.message ?? e), hint: e?.hint ?? null };
+  }
+  if (answer?.ok === false) return firmwareToast([answer.message, windowHint(answer.hint)].filter(Boolean).join(" "), { failed: answer.code !== NO_GESTURE });
+  // The server's "firmware" event says the same; the answer is drawn at once.
+  takeFirmware({ firmware: answer.firmware, pending: answer.pending ?? null });
+  renderFirmware();
+}
+
+// ---- what the window says of the firmware: a card at the canvas's top left, as a screenshot's (frame 6)
+
+const fwToast = $("#fw-toast");
+let fwToastTimer = null;
+function firmwareToast(text, { failed = false, ms = 12_000 } = {}) {
+  clearTimeout(fwToastTimer);
+  $("#fw-toast-said").textContent = text;
+  fwToast.classList.toggle("failed", failed);
+  fwToast.hidden = false;
+  fwToastTimer = setTimeout(() => (fwToast.hidden = true), ms);
+}
+$("#fw-toast-ok").addEventListener("click", () => {
+  clearTimeout(fwToastTimer);
+  fwToast.hidden = true;
+});
+
+/** The firmware the server could not keep: said once a window (the console has its line too). */
+function showFirmwareNotice(notice) {
+  if (!notice) return;
+  try {
+    if (sessionStorage.getItem("firmware-notice") === notice) return;
+    sessionStorage.setItem("firmware-notice", notice);
+  } catch {
+    // No storage: said at every connection, which is rare.
+  }
+  firmwareToast(notice, { ms: 20_000 });
+}
+
+/** What the window says of a switch that failed: the server's error as a sentence, then its hint (the BUSY Bar runs the
+    firmware it ran, or is off). */
+function failedSwitch(event) {
+  const error = String(event.error ?? `Firmware ${event.to?.version ?? ""} did not start`).trim();
+  const hint = event.hint ?? `The BUSY Bar runs firmware ${fw.running?.version} as before.`;
+  return `${/[.!?]$/.test(error) ? error : `${error}.`} ${hint}`;
+}
+
+/** The hello and the "firmware" events of /_emu/events. */
+function onFirmwareEvent(event) {
+  if (event.state === "pending") takeFirmware({ firmware: event.firmware, pending: event.pending ?? null });
+  else if (event.state === "switching") {
+    fw.switching = event.to ? { ...event.to } : { version: "another firmware" };
+    fw.pending = null;
+  } else if (event.state === "ready" || event.state === "failed") {
+    fw.switching = null;
+    takeFirmware({ firmware: event.firmware, pending: event.pending ?? null });
+    if (fw.running) for (const one of fw.list) one.running = one.version === fw.running.version;
+    if (event.state === "failed") firmwareToast(failedSwitch(event), { failed: true });
+  }
+  renderFirmware();
+  if (event.state === "ready" || event.state === "failed") {
+    loadApps();
+    loadDevice();
+  }
+  if (event.state !== "switching" && event.state !== "pending") renderApps();
+}
+
+// ---- an app that needs a newer firmware
+
+/**
+ * The API the row's app asks for, for what is about to run: "project", what Run and Refresh build and put on the BUSY
+ * Bar (the project's manifest; the installed app's when there is no project), or "installed", the copy on the BUSY Bar
+ * that Start starts (/api/apps/list; the project's manifest for an app not on the BUSY Bar yet).
+ */
+function apiOf(row, copy = "project") {
+  if (copy === "installed" && row.onBar) return row.api_version ?? null;
+  return row.project?.api_version ?? row.api_version ?? null;
+}
+
+/**
+ * Whether the row's app needs a newer firmware than the one that runs: null when not (an older api_version is fine,
+ * as the firmware has it); else { api, firmware }, the oldest firmware of this emulator whose API is not older than
+ * the app's (null when there is none), and `manifest`, the project's manifest file when there is one. `copy`: which
+ * of the app's copies is meant (apiOf).
+ */
+function needsFirmware(row, copy = "project") {
+  const api = apiOf(row, copy);
+  if (!api || !fw.running?.api || apiOrder(api, fw.running.api) <= 0) return null;
+  const fits = fw.list.filter((one) => one.available !== false && one.api && apiOrder(api, one.api) <= 0);
+  fits.sort((a, b) => apiOrder(a.api, b.api) || apiOrder(a.version, b.version));
+  return { api, firmware: fits[0] ?? null, manifest: row.project?.manifest ?? null };
+}
+
+/** The row's mark: "Needs firmware 1.4.1", with what to do in its descriptor. */
+function firmwareChip(row, need) {
+  const chip = make("span", "chip warn fw-chip", need.firmware ? `Needs firmware ${need.firmware.version}` : "Needs a newer firmware");
+  chip.tabIndex = 0; // its descriptor from the keyboard too
+  tip(chip, `This BUSY Bar runs ${fw.running.version}`, need.firmware ? `Switch it to ${need.firmware.version} to run ${row.name}.` : `Update BUSY Bar Emulator to run ${row.name}.`, { onText: true });
+  return chip;
+}
+
+/**
+ * Run, Refresh or Start of the row's app: the firmware dialog first when what runs needs a newer firmware. `copy`:
+ * "project" for Run and Refresh (they build from the project), "installed" for Start (it starts the copy on the BUSY Bar).
+ */
+function runOrAsk(row, go, run, copy = "project") {
+  const need = needsFirmware(row, copy);
+  if (!need) return go();
+  openFirmwareDialog({ name: row.name, ...need }, (version) => switchAndRun(row, version, run));
+}
+
+/** "Switch to 1.4.1 and run": one action of the desktop app, the switch and then the run. */
+function switchAndRun(row, version, run) {
+  if (run.folder) {
+    return act(row, "refresh", async (folder) => {
+      const answer = await actions().firmware.use({ version, when: "now", run: { folder } });
+      return answer?.ok && answer.ran ? answer.ran : answer;
+    });
+  }
+  return (async () => {
+    let answer;
+    try {
+      answer = await actions().firmware.use({ version, when: "now", run });
+    } catch (e) {
+      answer = { ok: false, message: e?.code === NO_GESTURE ? "Click again" : String(e?.message ?? e), hint: e?.hint ?? null };
+    }
+    const result = answer?.ok && answer.ran ? answer.ran : answer;
+    if (result?.ok === false && result.code !== "declined") firmwareToast([result.message, windowHint(result.hint)].filter(Boolean).join(" "), { failed: true });
+    return result;
+  })();
+}
+
+/** The api_mismatch the desktop app answered for a Refresh, when the window did not know the app's API beforehand. */
+const saysMismatch = (answer) => answer?.ok === false && (answer.code === "api_mismatch" || /\bapi_mismatch\b|API version mismatch/i.test(String(answer.message ?? "")));
+
+// The dialog (frame 5b), in the window's dialog style (Delete's). Cancel is where the focus starts.
+let fwDialog = null; // the scrim
+
+/** Closes the dialog; `canceled`: by Cancel, Escape or a press beside it, which its onCancel hears. */
+function closeFirmwareDialog({ canceled = false } = {}) {
+  if (!fwDialog) return;
+  const { back, onCancel } = fwDialog;
+  if (canceled) onCancel?.();
+  fwDialog.el.remove();
+  fwDialog = null;
+  if (!document.querySelector(".delete-scrim")) document.body.classList.remove("deleting");
+  if (back?.isConnected) back.focus({ preventScroll: true });
+}
+
+/**
+ * Asks before running an app that needs a newer firmware: { name, api, firmware, manifest }. `go(version)` switches and
+ * runs (the primary button); Open manifest opens the project's manifest in the system's app for it. The emulator
+ * never edits the manifest.
+ */
+function openFirmwareDialog(need, go, { onCancel = null } = {}) {
+  closeFirmwareDialog({ canceled: true });
+  const running = fw.running;
+  const target = need.firmware;
+  const scrim = make("div", "delete-scrim fw-scrim");
+  const box = make("div", "delete-dialog fw-dialog");
+  box.setAttribute("role", "alertdialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-labelledby", "fw-dialog-title");
+  box.setAttribute("aria-describedby", "fw-dialog-about");
+  scrim.append(box);
+  fwDialog = { el: scrim, back: document.activeElement, onCancel };
+
+  const title = make("h2", "", target ? `${need.name} needs firmware ${target.version}` : `${need.name} needs a newer firmware`);
+  title.id = "fw-dialog-title";
+  const about = make("p", "delete-about", target ? `This BUSY Bar runs ${running.version}. Switch it to ${target.version} to run ${need.name}. Your apps stay.` : `This BUSY Bar runs ${running.version}, and no firmware of this emulator has API ${need.api}. Update BUSY Bar Emulator to run ${need.name}.`);
+  about.id = "fw-dialog-about";
+  const cancel = button("btn", "Cancel", null, () => closeFirmwareDialog({ canceled: true }));
+  const foot = make("div", "delete-foot");
+  foot.append(cancel);
+  if (target) {
+    const why = !inShell() ? NEEDS_APP : fw.switching ? "Wait until the BUSY Bar is up" : null;
+    const primary = button("btn solid", `Switch to ${target.version} and run`, why, () => {
+      closeFirmwareDialog();
+      go(target.version);
+    });
+    primary.id = "fw-dialog-switch";
+    foot.append(primary);
+  }
+  box.append(title, about, foot);
+
+  // The author's other way out: a note under a line, with one small button.
+  const alt = make("div", "run-alt");
+  const note = make("p");
+  note.append(`Should ${need.name} run on ${running.version}${target ? " too" : ""}? Set `, make("code", "", '"api_version"'), " to ", make("code", "", `"${running.api}"`), " in its manifest.");
+  alt.append(note);
+  if (need.manifest) {
+    const open = button("btn", "Open manifest", !inShell() ? NEEDS_APP : null, async () => {
+      let opened = false;
+      try {
+        opened = await actions().open(need.manifest);
+      } catch {
+        opened = false;
+      }
+      if (opened) return closeFirmwareDialog();
+      said.textContent = "The manifest could not be opened.";
+    }, "", "open-in-new");
+    open.id = "fw-dialog-manifest";
+    alt.append(open);
+  }
+  const said = make("p", "delete-said failed");
+  said.setAttribute("role", "alert");
+  box.append(alt, said);
+
+  box.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // nothing typed here goes to the BUSY Bar
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeFirmwareDialog({ canceled: true });
+    } else if (e.key === "Tab") {
+      const all = [...box.querySelectorAll("button")].filter((one) => one.ariaDisabled !== "true");
+      const at = all.indexOf(document.activeElement);
+      e.preventDefault();
+      all[(at + (e.shiftKey ? -1 : 1) + all.length) % all.length]?.focus();
+    }
+  });
+  scrim.addEventListener("pointerdown", (e) => e.target === scrim && closeFirmwareDialog({ canceled: true }));
+  document.body.append(scrim);
+  document.body.classList.add("deleting");
+  cancel.focus({ preventScroll: true });
+}
+
+// Create app's Install a package (create-app.js) asks through this when the package needs a newer firmware: the
+// desktop app keeps the package, and "Switch to 1.4.1 and run" switches, then installs it (asking first, as always).
+globalThis.emulatorFirmware = Object.freeze({
+  /** { name, api_version } of the package: true when the dialog opened, false when the app needs no newer firmware. */
+  ask(app) {
+    const need = needsFirmware({ name: app.name, api_version: app.api_version, project: null });
+    if (!need) return false;
+    openFirmwareDialog({ name: app.name, ...need }, async (version) => {
+      const result = await switchAndRun(null, version, { refused: true });
+      if (result?.ok) firmwareToast(result.message ?? `${app.name} is installed.`, { ms: 6000 });
+      if (result?.ok === false && result.code === "declined") firmwareToast("Nothing was installed.", { ms: 6000 });
+      loadApps();
+    }, {
+      // Cancel: the desktop app lets go of the package it kept for this.
+      onCancel: () => actions()?.firmware?.forget?.().catch(() => {}),
+    });
+    return true;
+  },
+});
 
 // ---- dependencies that did not come (create-offline)
 //
@@ -1954,7 +2412,7 @@ const depsBox = make("div", "job deps");
 function renderDeps(row) {
   const deps = depsTrouble(row);
   if (!deps || working(row)) return null;
-  const retry = button("btn small", "Retry", row.project.unavailable ? AWAY : null, () => retryDependencies(row), "Install its dependencies again");
+  const retry = button("btn", "Retry", row.project.unavailable ? AWAY : null, () => retryDependencies(row), "Install its dependencies again");
   const line = make("div", "job-line failed", `Dependencies not installed: ${deps.reason}`);
   // Retry first: the section scrolls, and npm's words can be long.
   const parts = [line, retry];
@@ -2060,11 +2518,14 @@ const appFolder = $("#app-folder");
 let promptFacts = null;
 const jobBox = make("div", "job");
 const settingsBox = make("div", "settings");
+// The form's descriptions are measured again as its width changes (clampDescriptions).
+if (typeof ResizeObserver === "function") new ResizeObserver(measureDescriptions).observe(settingsBox);
 const appSettingsLink = $("#app-settings");
 
-/** A folder's path in one line, cut in the middle: its start gives way, the folder's own name stays. */
+/** A folder's path in one line, cut in the middle: its start gives way, the folder's own name stays, with the separator
+    before it (an ellipsis at the head's end would take it). */
 function pathLine(path) {
-  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
+  const cut = Math.max(0, path.lastIndexOf("/"), path.lastIndexOf("\\"));
   const line = make("span", "path");
   line.title = path;
   line.append(make("span", "head", path.slice(0, cut)), make("span", "tail", path.slice(cut)));
@@ -2092,7 +2553,7 @@ function folderLine(box, path) {
   };
   const copy = button("icon-btn small", "", null, copied, "Copy the path", "copy");
   copy.ariaLabel = "Copy the path";
-  const show = button("btn", "", inShell() ? null : NEEDS_APP, () => actions().reveal(path), `Show in ${FILE_MANAGER}`);
+  const show = button("btn small", "", inShell() ? null : NEEDS_APP, () => actions().reveal(path), `Show in ${FILE_MANAGER}`);
   // The button says "Show"; its tooltip and its name say the rest.
   show.append(make("span", "wide", `Show in ${FILE_MANAGER}`), make("span", "narrow", "Show"));
   show.ariaLabel = `Show in ${FILE_MANAGER}`;
@@ -2209,21 +2670,12 @@ function promptFor(row) {
   return made({ ...facts, name: row.name, id: row.id, folder: row.project.folder });
 }
 
-/** Copies a text with the publishing flow's feedback on the button (a tick and Copied), else with its tooltip. */
-async function copyWithFeedback(el, text) {
-  const copied = globalThis.emulatorPublish?.copied;
-  if (copied) return copied(el, text);
-  const done = await copyText(text);
-  el.title = done === "again" ? "Click again" : done ? "Copied" : "Not copied";
-  return done === true;
-}
-
 /** The folder's place for an app without a project: from a package, or not found yet. Nothing in a browser. */
 function renderPackageFolder(row) {
   const shell = inShell();
   appFolder.hidden = !shell;
   if (!shell) return appFolder.replaceChildren();
-  const line = make("div", "folder-line none");
+  const line = make("div", "folder-line");
   line.append(make("span", "", projectsKnown ? "Installed from a package" : "Looking for its project"));
   if (projectsKnown) line.append(button("btn small", "Open project", null, openProject, "Choose the folder of this app's project"));
   appFolder.replaceChildren(line);
@@ -2419,7 +2871,7 @@ const catalog = (() => {
     const editable = Boolean(row.project && inShell() && page?.drafts && globalThis.emulatorCreateApp?.pickIcon);
     if (editable) {
       for (const [tile, side] of [[tiles[0], "front"], [tiles[1], "back"]]) {
-        const upload = button("icon-btn small", "", page.saving ? "Saving" : null, () => uploadIcon(side), side === "front" ? "Upload a PNG of 8×8 pixels" : "Upload a PNG of 11×11 pixels", "upload");
+        const upload = button("icon-btn", "", page.saving ? "Saving" : null, () => uploadIcon(side), side === "front" ? "Upload a PNG of 8×8 pixels" : "Upload a PNG of 11×11 pixels", "upload");
         upload.ariaLabel = `Upload the ${side} icon`;
         tile.append(upload);
       }
@@ -2429,7 +2881,7 @@ const catalog = (() => {
     if (ours && page.iconSaid) box.append(make("p", `page-note${page.iconSaid.failed ? " failed" : ""}`, page.iconSaid.text));
     if (editable && draft) {
       const row_ = make("div", "page-save");
-      row_.append(button("btn solid small", "Use this icon", page.saving ? "Saving" : null, () => saveIcon(), "", "checkmark"), button("btn small", "Cancel", null, () => {
+      row_.append(button("btn solid", "Use this icon", page.saving ? "Saving" : null, () => saveIcon(), "", "checkmark"), button("btn", "Cancel", null, () => {
         page.iconDraft = null;
         page.iconSaid = null;
         rerender();
@@ -2501,7 +2953,7 @@ const catalog = (() => {
   function renderSave() {
     if (!page?.drafts) return saveRow.replaceChildren();
     const dirty = page.dirty.size > 0;
-    const save = button("btn solid small", page.saving ? "Saving" : "Save", !dirty || page.saving ? (page.saving ? "Saving" : "Nothing changed") : null, save_);
+    const save = button("btn solid", page.saving ? "Saving" : "Save", !dirty || page.saving ? (page.saving ? "Saving" : "Nothing changed") : null, save_);
     const said = make("span", `said${page.iconSaid?.failed ? " failed" : ""}`, page.iconSaid?.text ?? (dirty ? "Not saved yet" : ""));
     saveRow.replaceChildren(save, said);
     // Save shows once something is to be saved.
@@ -2659,7 +3111,7 @@ const catalog = (() => {
     const ready = counted.filter((item) => item.done).length;
     const head = make("div", "ac-fold-head");
     const count = make("span", "ac-fold-count", `${ready} of ${counted.length} ready`);
-    const go = button("btn small", "Publish", publishable(row), () => openPublish(row), "", "rocket");
+    const go = button("btn", "Publish", publishable(row), () => openPublish(row), "", "rocket");
     head.append(count, go);
     const list = make("div", "ac-folds");
     for (const item of items) {
@@ -2769,7 +3221,7 @@ const files = (() => {
     }
     const folder = row.project.folder;
     const head = make("div", "files-head");
-    head.append(make("p", "group-label", "Project files"), button("btn small files-reveal", `Show in ${FILE_MANAGER}`, null, () => actions().reveal(folder), "", "folder"));
+    head.append(make("p", "group-label", "Project files"), button("btn quiet files-reveal", `Show in ${FILE_MANAGER}`, null, () => actions().reveal(folder), "", "folder"));
     if (!list || list.folder !== folder) {
       load(folder);
       return appBody.replaceChildren(head, make("p", "page-note", "Reading the files"));
@@ -2915,8 +3367,8 @@ function stepperOf(field, values, id, changed) {
   el.ariaLabel = field.label ?? id;
   el.ariaValueMin = String(min);
   el.ariaValueMax = String(max);
-  const down = make("button", "step down");
-  const up = make("button", "step up");
+  const down = make("button", "icon-btn small step down");
+  const up = make("button", "icon-btn small step up");
   down.append(make("span", "minus"));
   up.innerHTML = icon("plus");
   for (const [b, label] of [[down, "Decrement"], [up, "Increment"]]) {
@@ -3148,7 +3600,7 @@ function colorOf(values, id, changed) {
   el.type = "color";
   el.tabIndex = -1;
   el.ariaHidden = "true";
-  const pill = make("button", "color-pill");
+  const pill = make("button", "btn color-pill");
   pill.type = "button";
   const swatch = make("span", "swatch");
   const hex = make("span", "hex");
@@ -3470,23 +3922,15 @@ const showAll = $("#show-all");
 const showErrors = $("#show-errors");
 function onlyErrors(on) {
   consoleBox.classList.toggle("only-errors", on);
-  showAll.classList.toggle("on", !on);
-  showErrors.classList.toggle("on", on);
   aria(showAll, "pressed", String(!on));
   aria(showErrors, "pressed", String(on));
   renderBlank();
 }
 showAll.addEventListener("click", () => onlyErrors(false));
-// In a narrow console the kinds of line are a menu behind the filter button; a click elsewhere closes it.
-const kindsButton = $("#console-kinds-btn");
-const kinds = $("#console-kinds");
-function openKinds(open) {
-  kinds.classList.toggle("open", open);
-  aria(kindsButton, "expanded", String(open));
-}
-kindsButton.addEventListener("click", () => openKinds(!kinds.classList.contains("open")));
-addEventListener("pointerdown", (e) => kinds.classList.contains("open") && !kinds.contains(e.target) && !kindsButton.contains(e.target) && openKinds(false), true);
 showErrors.addEventListener("click", () => onlyErrors(true));
+// The kinds of line in a narrow console are a pop-up (index.html, popover): the browser opens and closes it. A resize
+// closes it too, as it does the window's menus: the console may be wide enough now to have them in its head.
+addEventListener("resize", () => $("#console-kinds").matches?.(":popover-open") && $("#console-kinds").hidePopover());
 
 for (const box of document.querySelectorAll(".filters input")) {
   const apply = () => {
@@ -3505,10 +3949,11 @@ $("#clear").addEventListener("click", () => {
   renderBlank();
 });
 
-// layout-v2: the console collapses to its head, and its top edge resizes it; both are kept (localStorage).
+// layout-v2: the console collapses to its head, and its top edge resizes it; both are kept (localStorage). The height
+// the person drags it to is its --console-h; how much of it the stage has room for is the style sheet's (window.css,
+// .console-card), as the window is resized too: here it is only remembered, as it was shown when the drag ended.
 const consoleCard = $("#console-card");
 const CONSOLE_KEY = "busy-emulator.console";
-const CONSOLE_MIN = 120;
 function keptConsole() {
   try {
     const kept = JSON.parse(localStorage.getItem(CONSOLE_KEY) ?? "null");
@@ -3524,15 +3969,9 @@ function keepConsole(change) {
     // Not kept: this window still has it.
   }
 }
-/** The tallest the console may be: the stage keeps room for the bar, its controls and the bar's card. */
-function consoleMax() {
-  const stage = $("#stage").getBoundingClientRect();
-  const card = $(".device-card").getBoundingClientRect();
-  return Math.max(CONSOLE_MIN, stage.height - card.height - 300);
-}
 function sizeConsole(height) {
   if (!Number.isFinite(height)) return consoleCard.style.removeProperty?.("--console-h");
-  consoleCard.style.setProperty("--console-h", `${Math.round(Math.min(consoleMax(), Math.max(CONSOLE_MIN, height)))}px`);
+  consoleCard.style.setProperty("--console-h", `${Math.round(Math.max(0, height))}px`);
 }
 function collapseConsole(collapsed) {
   consoleCard.classList.toggle("collapsed", collapsed);
@@ -3566,7 +4005,7 @@ for (const type of ["pointerup", "pointercancel"]) {
     if (!gripFrom) return;
     gripFrom = null;
     grip.classList.remove("dragging");
-    keepConsole({ height: consoleCard.getBoundingClientRect().height });
+    keepShownConsole();
   });
 }
 // With the keyboard: the arrows make it taller or shorter.
@@ -3576,13 +4015,15 @@ grip.addEventListener("keydown", (e) => {
   e.preventDefault();
   e.stopPropagation();
   sizeConsole(consoleCard.getBoundingClientRect().height + step);
-  keepConsole({ height: consoleCard.getBoundingClientRect().height });
+  keepShownConsole();
 });
-// A smaller window: a console kept tall gives the stage its room back.
-addEventListener("resize", () => {
-  const kept = keptConsole();
-  if (Number.isFinite(kept.height)) sizeConsole(kept.height);
-});
+/** The height the console is shown at, once a drag ends: its own (--console-h) and the one kept, so that a drag past
+    where the stage stops it leaves nothing more than was shown. */
+function keepShownConsole() {
+  const shown = consoleCard.getBoundingClientRect().height;
+  sizeConsole(shown);
+  keepConsole({ height: Math.round(shown) });
+}
 
 // ---- the console in the system's terminal: "Open in Terminal" on macOS, "Open in cmd" on Windows. The desktop app
 // opens it in the chosen app's project folder, running busy-emulator logs --follow with the filters that are on and
@@ -3637,11 +4078,12 @@ function connect() {
   const events = new EventSource("/_emu/events");
   const link = $("#link");
   events.addEventListener("hello", (e) => {
-    const { firmware, apiVersion } = JSON.parse(e.data);
-    $("#firmware").textContent = `Firmware ${firmware.name}`;
-    // What this firmware means for an app's author, and which build it is.
-    $("#firmware").title = [firmware.summary, `Commit ${firmware.commit}`].filter(Boolean).join("\n");
-    $("#api").textContent = `API ${apiVersion}`;
+    // The firmware that runs, the list, a choice that waits for the restart and a switch under way (the firmware
+    // section). The API link keeps its address: the documentation there is the running firmware's.
+    const hello = JSON.parse(e.data);
+    takeFirmware({ ...hello, firmware: { ...hello.firmware, api: hello.firmware?.api ?? hello.apiVersion } });
+    renderFirmware();
+    showFirmwareNotice(hello.notice);
     link.textContent = "Connected";
     link.classList.add("live");
     consoleBox.replaceChildren();
@@ -3661,8 +4103,11 @@ function connect() {
   });
   events.addEventListener("log", (e) => addLine(JSON.parse(e.data)));
   events.addEventListener("apps", loadApps);
+  // A firmware chosen for the next restart, a switch, its end: the card says so, and after a switch (or one that
+  // failed) what depends on the firmware is read again.
+  events.addEventListener("firmware", (e) => onFirmwareEvent(JSON.parse(e.data)));
   events.addEventListener("audio", (e) => onAudio(JSON.parse(e.data)));
-  events.addEventListener("lights", (e) => renderLights(JSON.parse(e.data)));
+  events.addEventListener("lights", (e) => setLights(JSON.parse(e.data)));
   events.addEventListener("state", (e) => {
     const { running, selector, barSpeed, status } = JSON.parse(e.data);
     renderSpeed(barSpeed);
@@ -3742,15 +4187,15 @@ function renderAccount() {
   account.title = login ? `GitHub: ${login}` : "Not signed in to GitHub: you sign in when you publish";
   account.ariaLabel = account.title;
 }
-account.addEventListener("click", () => {
+account.addEventListener("click", (e) => {
   if (!accountSaid?.signedIn) return openPublish();
-  closeRowMenu({ refocus: false });
-  const box = account.getBoundingClientRect();
+  if (topMenuClosedBy(account, e)) return;
   const el = make("div", "row-menu");
   el.setAttribute("role", "menu");
+  el.ariaLabel = "GitHub account";
   const item = (label, picture, onPick) => {
     const one = button("menu-item", label, null, () => {
-      el.remove();
+      closeTopMenu({ refocus: false });
       onPick();
     }, "", picture);
     one.setAttribute("role", "menuitem");
@@ -3763,7 +4208,7 @@ account.addEventListener("click", () => {
   page.setAttribute("role", "menuitem");
   page.innerHTML = icon("open-in-new");
   page.append(make("span", "", "Open on GitHub"));
-  page.addEventListener("click", () => el.remove());
+  page.addEventListener("click", () => closeTopMenu({ refocus: false }));
   // Switch and add: Publish's Choose a GitHub account, opened for the app that is open.
   const row = chosen();
   const why = publishable(row);
@@ -3783,21 +4228,82 @@ account.addEventListener("click", () => {
     }
     loadAccount();
   }));
+  dropMenu(el, account, { byKey: e.detail === 0 });
+});
+
+// A menu of the top bar (the account's, the failed update's), one at a time, as the window's other menus behave (the
+// row's, openRowMenu): under its button, its right edge at the button's; the keys inside it are its own and never the
+// BUSY Bar's (the arrows, Home and End go through its items; Escape and Tab close it and give the focus back to the
+// button); a press outside it, the window's resize or blur close it. Its button says whether it is open (aria-expanded).
+let topMenu = null; // { el, button, done }
+let topMenuPressed = null; // the button whose press closed its own menu: that click does not open it again
+function closeTopMenu({ refocus = true } = {}) {
+  if (!topMenu) return;
+  const { el, button: back, done } = topMenu;
+  topMenu = null;
+  el.remove();
+  done();
+  aria(back, "expanded", "false");
+  if (refocus) back.focus({ preventScroll: true });
+}
+/**
+ * Whether this click on `button` comes from the press that closed its open menu (then it opens nothing). A click from
+ * the keyboard (Enter or Space: detail 0) has no press, whatever press came before it.
+ */
+function topMenuClosedBy(button, e) {
+  const was = topMenuPressed === button && e.detail !== 0;
+  topMenuPressed = null;
+  return was;
+}
+// A press outside the open menu closes it; one on its button notes that its click opens nothing. Each press starts
+// afresh, as the row's menus do: a press on the button let go elsewhere has no click, and the next click opens the menu.
+addEventListener(
+  "pointerdown",
+  (e) => {
+    topMenuPressed = null;
+    if (!topMenu || topMenu.el.contains(e.target)) return;
+    if (topMenu.button.contains(e.target)) topMenuPressed = topMenu.button;
+    closeTopMenu({ refocus: false });
+  },
+  true,
+);
+function dropMenu(el, button, { byKey = false } = {}) {
+  closeRowMenu({ refocus: false });
+  closeTopMenu({ refocus: false });
   document.body.append(el);
+  const box = button.getBoundingClientRect();
   const width = el.getBoundingClientRect().width;
   el.style.left = `${Math.max(8, box.right - width)}px`;
   el.style.top = `${box.bottom + 6}px`;
-  el.tabIndex = -1;
-  el.focus({ preventScroll: true });
-  const close = (e) => {
-    if (e.type === "keydown" ? e.key !== "Escape" : el.contains(e.target)) return;
-    el.remove();
-    removeEventListener("pointerdown", close, true);
-    removeEventListener("keydown", close, true);
+  const enabled = () => [...el.querySelectorAll(".menu-item")].filter((item) => item.getAttribute("aria-disabled") !== "true");
+  el.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // the BUSY Bar's keys (the arrows, Escape, Enter) are not pressed from inside the menu
+    const all = enabled();
+    const at = all.indexOf(document.activeElement);
+    if (e.key === "Escape" || e.key === "Tab") closeTopMenu();
+    else if (e.key === "ArrowDown") all[(at + 1) % all.length]?.focus();
+    else if (e.key === "ArrowUp") all[(at - 1 + all.length) % all.length]?.focus();
+    else if (e.key === "Home") all[0]?.focus();
+    else if (e.key === "End") all.at(-1)?.focus();
+    else return;
+    e.preventDefault();
+  });
+  const away = () => closeTopMenu({ refocus: false });
+  addEventListener("resize", away);
+  addEventListener("blur", away);
+  topMenu = {
+    el,
+    button,
+    done: () => {
+      removeEventListener("resize", away);
+      removeEventListener("blur", away);
+    },
   };
-  addEventListener("pointerdown", close, true);
-  addEventListener("keydown", close, true);
-});
+  aria(button, "expanded", "true");
+  // Opened from the keyboard, its first item has the focus; with the pointer, the menu itself, so that the keys work.
+  el.tabIndex = -1;
+  (byKey ? enabled()[0] ?? el : el).focus({ preventScroll: true });
+}
 // Publishing may have signed in or out.
 addEventListener("publish-closed", loadAccount);
 addEventListener("focus", loadAccount);
@@ -3817,7 +4323,9 @@ const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(-[0-9A-Za-z][0-9A-Za-z.-]{0,63})?$/;
 // state through emulatorActions.update. Where the app can install the new version, the line is a button: Update to
 // <version>, then a bar while it downloads and is checked, then Restart to update (the app asks once more in a
 // dialog). Where it cannot (a browser, the disk image, a folder it may not write to), the line stays the link to the
-// download page, and its tooltip says why.
+// download page, and its tooltip says why. An update that failed is one short button, Update failed, in the warning
+// color: its menu says why and offers Try again and the download page (EMU-327: the version and Try again side by side
+// did not fit the top bar beside the account).
 let updateState = null;
 
 function renderUpdate() {
@@ -3828,6 +4336,8 @@ function renderUpdate() {
   const why = updateState && updateState.canInstall === false && updateState.why ? updateState.why : null;
   const version = s ? s.version : told;
   const show = VERSION.test(version);
+  // The failed update's menu says what was so when it opened: another state closes it, the line's going too.
+  if (topMenu?.el.classList.contains("update-menu") && topMenu.el.dataset.said !== updateSaid(s)) closeTopMenu({ refocus: false });
   $("#update-note").hidden = !show;
   if (!show) return;
   const link = $("#update-link");
@@ -3837,27 +4347,74 @@ function renderUpdate() {
   link.href = `${RELEASES}v${version}`;
   const installing = s && s.canInstall;
   const working = installing && ["downloading", "preparing", "restarting"].includes(s.state);
-  link.hidden = Boolean(installing && s.state !== "failed");
+  const failed = Boolean(installing && s.state === "failed");
+  link.hidden = Boolean(installing);
   link.title = why ? `Version ${version} is available. ${why} Open its download page.` : s?.state === "failed" ? `${s.message ?? "The update failed."} ${s.hint ?? ""} Open the download page.`.trim() : "A newer version of the emulator is available: open its download page";
   go.hidden = !installing || working;
+  go.classList.toggle("failed", failed);
+  if (failed) {
+    go.setAttribute("aria-haspopup", "menu");
+    if (go.getAttribute("aria-expanded") === null) aria(go, "expanded", "false");
+  } else {
+    go.removeAttribute("aria-haspopup");
+    go.removeAttribute("aria-expanded");
+  }
   progress.hidden = !working;
   if (installing && !working) {
     const ready = s.state === "ready";
-    $("#update-go-icon").setAttribute("href", `/emulator/icons/busy-sprite.svg#${ready ? "bi-cycles-arrow" : "bi-download"}`);
-    $("#update-go-text").replaceChildren(...(ready ? [document.createTextNode("Restart to update")] : [document.createTextNode(s.state === "failed" ? "Try again: " : "Update to "), make("b", "", version)]));
-    go.title = ready ? `Version ${version} is downloaded and checked: restart the emulator to install it` : s.state === "failed" ? `${s.message ?? "The update failed."} ${s.hint ?? ""}`.trim() : `Download version ${version} from GitHub and check its signature; nothing is installed before you restart`;
+    $("#update-go-icon").setAttribute("href", `/emulator/icons/busy-sprite.svg#${failed ? "bi-alert" : ready ? "bi-cycles-arrow" : "bi-download"}`);
+    $("#update-go-text").replaceChildren(...(failed ? [document.createTextNode("Update failed")] : ready ? [document.createTextNode("Restart to update")] : [document.createTextNode("Update to "), make("b", "", version)]));
+    go.title = failed ? s.message ?? `Update to ${version} failed.` : ready ? `Version ${version} is downloaded and checked: restart the emulator to install it` : `Download version ${version} from GitHub and check its signature; nothing is installed before you restart`;
   }
   if (working) {
     const percent = s.state === "downloading" && s.total ? Math.min(100, Math.floor((100 * s.received) / s.total)) : null;
     $("#update-fill").style.width = `${s.state === "downloading" ? (percent ?? 0) : 100}%`;
     progress.setAttribute("aria-valuenow", String(percent ?? 100));
-    $("#update-progress-text").textContent = s.state === "downloading" ? `Downloading ${version}${percent === null ? "" : `, ${percent}%`}` : s.state === "preparing" ? `Checking ${version}` : "Restarting";
+    // Short, beside the bar (EMU-327: the top bar's room); the version in the descriptor.
+    $("#update-progress-text").textContent = s.state === "downloading" ? `Downloading${percent === null ? "" : ` ${percent}%`}` : s.state === "preparing" ? "Checking" : "Restarting";
+    progress.title = s.state === "downloading" ? `Downloading version ${version}` : s.state === "preparing" ? `Checking version ${version}` : `Restarting to version ${version}`;
   }
 }
 addEventListener("hashchange", renderUpdate);
 renderUpdate();
 
-$("#update-go").addEventListener("click", async () => {
+$("#update-go").addEventListener("click", (e) => {
+  if (topMenuClosedBy(e.currentTarget, e)) return;
+  if (updateState?.state === "failed") return openUpdateMenu(e.currentTarget, { byKey: e.detail === 0 });
+  return updateNow();
+});
+
+/** The failed update's menu: what went wrong and what to do, then Try again and the release's download page. */
+function openUpdateMenu(go, { byKey = false } = {}) {
+  const s = updateState;
+  const el = make("div", "row-menu update-menu");
+  el.setAttribute("role", "menu");
+  el.ariaLabel = "Update failed";
+  // What it says: drawn again from another state, the menu closes (renderUpdate).
+  el.dataset.said = updateSaid(s);
+  const head = make("div", "menu-head");
+  head.append(make("b", "", s.message ?? `The update to ${s.version} did not finish.`), ...(s.hint ? [make("span", "", s.hint)] : []));
+  const again = button("menu-item", `Try again: update to ${s.version}`, null, () => {
+    closeTopMenu({ refocus: false });
+    updateNow();
+  }, "", "download");
+  again.setAttribute("role", "menuitem");
+  const page = make("a", "menu-item");
+  page.href = `${RELEASES}v${s.version}`;
+  page.target = "_blank";
+  page.rel = "noopener noreferrer";
+  page.setAttribute("role", "menuitem");
+  page.innerHTML = icon("open-in-new");
+  page.append(make("span", "", "Open the download page"));
+  page.addEventListener("click", () => closeTopMenu({ refocus: false }));
+  el.append(head, again, page);
+  dropMenu(el, go, { byKey });
+}
+/** The failed update as its menu says it. */
+const updateSaid = (s) => JSON.stringify([s?.state, s?.version, s?.message, s?.hint]);
+
+/** Update to, Try again or Restart to update: the app does it, and says how it stands. */
+async function updateNow() {
   const update = actions()?.update;
   if (!update) return;
   try {
@@ -3871,7 +4428,7 @@ $("#update-go").addEventListener("click", async () => {
     // The app is going away (restarting).
   }
   renderUpdate();
-});
+}
 
 if (actions()?.available().shell && actions().update) {
   try {

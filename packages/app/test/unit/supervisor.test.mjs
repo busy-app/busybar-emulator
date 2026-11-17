@@ -82,8 +82,8 @@ test("the server runs in the supervisor's process and says it is ready with its 
   await until(() => ready.length, "the ready message");
   assert.deepEqual(ready[0], { type: "ready", port: PORT, url: `http://127.0.0.1:${PORT}`, dataDir: folder, apiVersion: "0.0.0", controlPort: 8769, controlUrl: "http://127.0.0.1:8769", firmware: "fake" });
   // The supervisor adds only what cannot pass as data: among it `askPerson`, the server's way to a question that
-  // the shell asks the person (person-question.test.mjs).
-  assert.deepEqual(options.sort(), ["askPerson", "dataDir", "log", "onError", "port", "signal"]);
+  // the shell asks the person (person-question.test.mjs), and `onFirmware`, which tells the shell of a switch.
+  assert.deepEqual(options.sort(), ["askPerson", "dataDir", "log", "onError", "onFirmware", "port", "signal"]);
   await until(() => lines.some((line) => line.startsWith(`out:BUSY Bar emulator: http://127.0.0.1:${PORT}`)), "the first line");
   assert.ok(lines.some((line) => /^out:\d\d:\d\d:\d\d the fake bar is up$/.test(line)), lines.join("|"));
   await run.stop();
@@ -93,7 +93,7 @@ test("the options are passed to startServer as they are, whatever they are", asy
   const { run } = startFake({}, { barSpeed: false, firmware: "dev", controlKey: "k" });
   const { child, options } = await readReport();
   started.push(child);
-  assert.deepEqual(options.sort(), ["askPerson", "barSpeed", "controlKey", "dataDir", "firmware", "log", "onError", "port", "signal"]);
+  assert.deepEqual(options.sort(), ["askPerson", "barSpeed", "controlKey", "dataDir", "firmware", "log", "onError", "onFirmware", "port", "signal"]);
   await run.stop();
 });
 

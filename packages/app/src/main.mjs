@@ -262,6 +262,8 @@ const actions = createActions({
     return (await askPerson.confirm(question)).answer;
   },
   bar: { send: (method, pathname, body) => barRequest(config.port, method, pathname, body) },
+  // The BUSY Bar's firmware (EMU-322): the server's management address, with the key it wrote for this start.
+  control: { send: (method, pathname, json) => controlRequest(method, pathname, json) },
   welcome: {
     settings: config.greeted ? { ...appSettings, read: () => ({ ...appSettings.read(), welcomed: true }) } : appSettings,
     platform: process.platform,
@@ -356,6 +358,36 @@ const terminal = createTerminal({
 function barRequest(port, method, pathname, body = null) {
   return new Promise((resolve) => {
     const request = http.request({ host: "127.0.0.1", port, path: pathname, method, agent: false, timeout: 120_000, headers: { "Content-Length": body ? body.length : 0, ...(body ? { "Content-Type": "application/octet-stream" } : {}) } }, (response) => {
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => (text = (text + chunk).slice(0, 1_000_000)));
+      response.on("end", () => resolve({ status: response.statusCode, body: text }));
+      response.on("error", (e) => resolve({ failed: e?.code ?? String(e) }));
+    });
+    request.on("timeout", () => request.destroy(Object.assign(new Error("no answer"), { code: "ETIMEDOUT" })));
+    request.on("error", (e) => resolve({ failed: e?.code ?? String(e) }));
+    request.end(body ?? undefined);
+  });
+}
+
+/**
+ * A request to the server's management address (POST /_emu/firmware), with the key the server wrote into the data
+ * folder for this start. Resolves as barRequest does; { failed } when the server is not ready or the key is not there.
+ */
+function controlRequest(method, pathname, json = null) {
+  const port = keeper.state.controlPort;
+  if (keeper.state.name !== "ready" || !Number.isInteger(port)) return Promise.resolve({ failed: "the emulator is not ready" });
+  let key;
+  try {
+    key = readFileSync(path.join(config.dataDir, "key"), "utf8").trim();
+  } catch (e) {
+    return Promise.resolve({ failed: `no key (${e?.code ?? e})` });
+  }
+  const body = json === null ? null : Buffer.from(JSON.stringify(json));
+  return new Promise((resolve) => {
+    const headers = { Authorization: `Bearer ${key}`, "Content-Length": body ? body.length : 0, ...(body ? { "Content-Type": "application/json" } : {}) };
+    // A switch made now answers once the BUSY Bar is up on the new firmware: seconds, rarely more.
+    const request = http.request({ host: "127.0.0.1", port, path: pathname, method, agent: false, timeout: 120_000, headers }, (response) => {
       let text = "";
       response.setEncoding("utf8");
       response.on("data", (chunk) => (text = (text + chunk).slice(0, 1_000_000)));
@@ -934,6 +966,13 @@ async function start() {
   nativeTheme.on("updated", () => windows.retheme());
   keeper.on("state", showForState);
   keeper.on("state", mirrorState);
+  // The BUSY Bar runs another firmware now: an open local web is that firmware's own page, so it is loaded again. The
+  // device window hears of it from the server itself (its "firmware" event) and reads what depends on it.
+  keeper.on("firmware", (event) => {
+    if (event.state !== "ready") return;
+    log(`[shell] the BUSY Bar runs firmware ${event.firmware?.version ?? "?"} now`);
+    windows.localWeb?.win.webContents.reloadIgnoringCache();
+  });
 
   if (testVariant && config.testHook) {
     const { connectTestHook } = await import("../test-variant/hook.mjs");

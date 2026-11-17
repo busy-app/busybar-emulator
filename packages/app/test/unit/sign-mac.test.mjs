@@ -105,7 +105,10 @@ test("the code of an app, found in the files, and signed inside out: each bundle
   }
 });
 
-test("every codesign call: the identity, the hardened runtime, a secure timestamp, the entitlements, never --deep", { skip: process.platform !== "darwin" }, () => {
+// codeOf finds the bundles' main executables in their Info.plist, read with /usr/bin/plutil.
+const PLUTIL = process.platform !== "darwin" && "the bundles' Info.plist is read with macOS's plutil";
+
+test("every codesign call: the identity, the hardened runtime, a secure timestamp, the entitlements, never --deep", { skip: PLUTIL }, () => {
   const app = fakeApp(path.join(folder, "sign"));
   const calls = [];
   const exec = (program, args) => {
@@ -193,7 +196,7 @@ test("codesign -dv read: the authority, the team, the hardened runtime, the time
   assert.deepEqual(signatureDetails("/x", () => AD_HOC), { authorities: [], team: null, runtime: false, timestamp: false, adhoc: true });
 });
 
-test("the signed app's checks name every program that is not signed as a release's, and Gatekeeper's refusal", { skip: process.platform !== "darwin" }, () => {
+test("the signed app's checks name every program that is not signed as a release's, and Gatekeeper's refusal", { skip: PLUTIL }, () => {
   const app = fakeApp(path.join(folder, "checks"));
   const node = path.join(app, "Contents", "Resources", "node", "bin", "node");
   const exec = (program, args) => {
@@ -211,7 +214,7 @@ test("the signed app's checks name every program that is not signed as a release
   assert.deepEqual(problems, ["Contents/Resources/node/bin/node: signed by no one (ad hoc), without the hardened runtime, without a secure timestamp, by team none, not ABCDE12345", `spctl --assess --type execute: ${app}: rejected\nsource=Unnotarized Developer ID`]);
 });
 
-test("gh in a signed app carries the app's team, in an unsigned one GitHub's", { skip: process.platform !== "darwin" }, () => {
+test("gh in a signed app carries the app's team, in an unsigned one GitHub's", { skip: process.platform !== "darwin" && "ghProblems reads gh's signature with codesign on macOS only" }, () => {
   const resources = path.join(folder, "gh", "Resources");
   write(path.join(resources, "gh", "bin", "gh"), MACHO_64);
   const pin = readGhPin().version;

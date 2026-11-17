@@ -34,7 +34,7 @@ without a BUSY Bar.
 
 # Download
 
-This is a beta release, 0.1.0-beta.1. Get it from [GitHub Releases](https://github.com/busy-app/busybar-emulator/releases/latest):
+The emulator is in beta. Get the latest release from [GitHub Releases](https://github.com/busy-app/busybar-emulator/releases/latest):
 
 | System | File | Size |
 |---|---|---|
@@ -56,8 +56,8 @@ install it for the current user and start it. See [install.md](public-docs/insta
 
 # Features
 
-- Run the BUSY Bar's own firmware 1.3.1 code, compiled to WebAssembly: the JavaScript runtime, the displays, the
-  system screens and the local web
+- Run the BUSY Bar's own firmware, 1.4.1 or 1.3.1, compiled to WebAssembly: the JavaScript runtime, the displays,
+  the system screens and the local web. Switch between the two while it runs.
 - See both displays and use every control: the mode switch, Start / Pause, Back and the wheel, flat or in 3D
 - Run your app at a BUSY Bar's speed, with its memory, `fetch` and API limits
 - Install and run apps with the official `busy-cli`, as on a BUSY Bar

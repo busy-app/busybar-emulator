@@ -10,7 +10,7 @@ import { after, test as nodeTest } from "node:test";
 import { WINDOW_POLICY } from "../../packages/server/device-window.mjs";
 import { createEntryGuard, STAGE_FRAME_FILES } from "../../packages/server/entry-guard.mjs";
 import { startServer } from "../../packages/server/server.mjs";
-import { STAGE_FRAME_DIR, STAGE_FRAME_PATH, STAGE_POLICY } from "../../packages/server/stage3d.mjs";
+import { FROM_WINDOW, STAGE_FRAME_DIR, STAGE_FRAME_PATH, STAGE_POLICY } from "../../packages/server/stage3d.mjs";
 import { finish, port, tempDir } from "./helpers.mjs";
 
 after(finish);
@@ -63,6 +63,8 @@ test("the frame's files are served as what they are, and nothing outside its fol
   const types = {
     "stage.js": "text/javascript",
     "leds.js": "text/javascript",
+    // The window's module of the status lights, the same file the window gets.
+    "status-lights.mjs": "text/javascript",
     "stage.css": "text/css",
     "scene/bar.json": "application/json",
     "scene/bar.trd": "application/octet-stream",
@@ -86,13 +88,17 @@ test("the frame's files are served as what they are, and nothing outside its fol
     assert.notEqual(answer.status, 200, `${STAGE_FRAME_PATH}${outside}`);
   }
   assert.equal((await call(`${url}${STAGE_FRAME_PATH}stage.html`, { method: "POST" })).status, 405);
+  // The status lights' module is the window's own file, byte for byte: one timeline for both views.
+  const shared = await call(`${url}${STAGE_FRAME_PATH}status-lights.mjs`);
+  assert.ok(shared.body.length > 0);
+  assert.deepEqual(shared.body, (await call(`${url}/emulator/status-lights.mjs`)).body);
 });
 
 test("a frame without an origin may read the frame's files, and nothing else of the server", async (t) => {
   const { url, control } = await start(t);
   const sandboxed = { Origin: "null" };
   // Its own files: the scripts and what they fetch, across origins (the frame is another origin to everything).
-  for (const file of ["stage.js", "player/tride-web/tride_runtime_api_lite_bg.wasm", "scene/bar.trd"]) {
+  for (const file of ["stage.js", "status-lights.mjs", "player/tride-web/tride_runtime_api_lite_bg.wasm", "scene/bar.trd"]) {
     const answer = await call(`${url}${STAGE_FRAME_PATH}${file}`, { headers: sandboxed });
     assert.equal(answer.status, 200, file);
     assert.equal(answer.headers["access-control-allow-origin"], "*", file);
@@ -136,7 +142,9 @@ test("the entry guard's list of the frame's files is exactly the files the frame
     readdirSync(folder, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? under(path.join(folder, e.name), `${prefix}${e.name}/`) : [`${prefix}${e.name}`]));
   // scene/scene.json is the scene's contract, for the tests and the Tride agent: the frame never loads it.
   const files = under(STAGE_FRAME_DIR).filter((f) => f !== "player/LICENSE" && f !== "player/THIRD_PARTY_NOTICES.md" && f !== "scene/scene.json" && !f.split("/").pop().startsWith("._"));
-  assert.deepEqual([...STAGE_FRAME_FILES].sort(), files.sort());
+  // And the window's modules it loads as its own (stage3d.mjs, FROM_WINDOW): none of them is also a file of the folder.
+  for (const name of Object.keys(FROM_WINDOW)) assert.ok(!files.includes(name), name);
+  assert.deepEqual([...STAGE_FRAME_FILES].sort(), [...files, ...Object.keys(FROM_WINDOW)].sort());
   const { admit } = createEntryGuard();
   const bar = { kind: "bar", port: 9 };
   const req = (method, url) => ({ method, url, rawHeaders: ["Host", "127.0.0.1:9", "Origin", "null"] });

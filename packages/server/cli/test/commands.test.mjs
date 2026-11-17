@@ -138,7 +138,7 @@ test("an option a command does not have is a wrong call", async () => {
 test("help lists every command, says how to call one, and refuses one that does not exist", async () => {
   const all = await run(["help", "--json"]);
   assert.equal(all.code, 0);
-  assert.deepEqual(all.json.commands.map((command) => command.name), ["allow-local", "build", "catalog-texts", "check", "create", "dev", "help", "icon", "install", "logs", "mcp", "press", "projects", "publish", "quit", "record", "restart-bar", "run", "screenshot", "settings", "start", "status", "stop", "submit", "time", "trust", "typecheck", "uninstall", "update", "version"]);
+  assert.deepEqual(all.json.commands.map((command) => command.name), ["allow-local", "build", "catalog-texts", "check", "create", "dev", "firmware", "help", "icon", "install", "logs", "mcp", "press", "projects", "publish", "quit", "record", "restart-bar", "run", "screenshot", "settings", "start", "status", "stop", "submit", "time", "trust", "typecheck", "uninstall", "update", "version"]);
   const one = await run(["help", "status"]);
   assert.equal(one.code, 0);
   assert.match(one.out, /\/Users\/you\/\.busy-emulator\/bin\/busy-emulator status \[--json\]/);
@@ -150,7 +150,7 @@ test("help lists every command, says how to call one, and refuses one that does 
 test("version: the emulator's version, its Node, and this command's own path ready to paste", async () => {
   const mac = await run(["version", "--json"]);
   assert.equal(mac.code, 0);
-  const { firmware, create_app: createApp, busy_cli: busyCli, ...rest } = mac.json;
+  const { firmware, firmware_source: source, create_app: createApp, busy_cli: busyCli, ...rest } = mac.json;
   assert.deepEqual(rest, {
     ok: true,
     command: "version",
@@ -163,9 +163,15 @@ test("version: the emulator's version, its Node, and this command's own path rea
   });
   assert.match((await run(["version"])).out, /^busy-emulator 1\.2\.3, Node 24\.22\.2\n/);
   assert.match((await run(["version"])).out, /\nThis command: \/Users\/you\/\.busy-emulator\/bin\/busy-emulator$/);
-  // What the emulator is made of: the firmware's commit and API, the template's generator and its range.
+  // What the emulator is made of: the firmware's commit and API, the template's generator and its range. The
+  // emulator does not run and nothing was chosen: the firmware its next start runs, the latest, said as the default.
+  assert.deepEqual(Object.keys(firmware), ["version", "api", "alias", "commit"]);
+  assert.equal(firmware.alias, "latest");
+  assert.equal(firmware.version, JSON.parse(readFileSync(path.join(CLI_DIR, "..", "..", "engine", "firmware.json"), "utf8")).default);
   assert.match(firmware.commit, /^[0-9a-f]{40}$/);
   assert.match(firmware.api, /^\d+\.\d+\.\d+$/);
+  assert.equal(source, "default");
+  assert.match((await run(["version"])).out, new RegExp(`\\nFirmware ${firmware.version.replace(/\./g, "\\.")} \\(latest\\), API ${firmware.api.replace(/\./g, "\\.")}, commit ${firmware.commit.slice(0, 8)} \\(not running; starts on it\\)\\n`));
   assert.deepEqual(createApp, { package: "@busy-app/create-app", range: GENERATOR.range, installed: null });
   assert.equal(busyCli, null, "the test runs in a folder that is no project");
   const spaced = await run(["version"], { ctx: { ...macCtx, calledAs: ["/Applications/O'Brien Tools/BUSY Bar Emulator.app/Contents/Resources/bin/busy-emulator"] } });
@@ -221,7 +227,7 @@ test("a failure the command line did not foresee is still one line of JSON with 
 test("status: not running is an answer, not a failure", async () => {
   const { code, json, out } = await run(["status", "--json"]);
   assert.equal(code, 0);
-  assert.deepEqual(json, { ok: true, command: "status", running: false, version: "1.2.3", app: "/Applications/BUSY Bar Emulator.app", update_available: null });
+  assert.deepEqual(json, { ok: true, command: "status", running: false, version: "1.2.3", app: "/Applications/BUSY Bar Emulator.app", update_available: null, firmware: null });
   assert.equal((await run(["status"])).out, "The emulator is not running.");
   assert.equal(out.split("\n").length, 1, "one line");
 });
@@ -229,7 +235,8 @@ test("status: not running is an answer, not a failure", async () => {
 test("status: running and answering", async () => {
   const { code, json, out } = await run(["status", "--json"], { sys: fakeSystem({ states: [READY] }) });
   assert.equal(code, 0);
-  assert.deepEqual(json, { ok: true, command: "status", running: true, version: "1.2.3", app: macCtx.appPath, state: "ready", answering: true, url: "http://127.0.0.1:8640", port: 8640, pid: 4242, detail: null, update_available: null });
+  // A stand-in that gives no firmware: null, and the text says nothing of it.
+  assert.deepEqual(json, { ok: true, command: "status", running: true, version: "1.2.3", app: macCtx.appPath, state: "ready", answering: true, url: "http://127.0.0.1:8640", port: 8640, pid: 4242, detail: null, update_available: null, firmware: null });
   assert.equal(out.split("\n").length, 1);
   assert.equal((await run(["status"], { sys: fakeSystem({ states: [READY] }) })).out, "The emulator is running: the BUSY Bar answers at http://127.0.0.1:8640 (process 4242).");
 });

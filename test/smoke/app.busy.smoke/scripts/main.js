@@ -1,5 +1,5 @@
 // The smoke test's app (emulator/test/smoke.mjs). From its own JS it draws the scene "text-color-center" of
-// test/golden.mjs, whose front frame was recorded on a bar (test/golden/text-color-center.json); the expected PNG,
+// test/golden.mjs, whose front frame was recorded on a bar (test/golden/1.3.1/text-color-center.json); the expected PNG,
 // test/smoke/front.png, is that frame. Then it keeps running until it is stopped, as an app does. The elements are
 // written as JSON so that test/smoke.test.mjs can check them against the golden's.
 const APP = "app.busy.smoke";

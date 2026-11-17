@@ -40,7 +40,7 @@
 // buttons, not commands to type, and never the path of the Node or the command line inside the app.
 //
 // Pure but for what it is given, so that the rules can be tested on plain Node.
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -107,6 +107,8 @@ export const WINDOW_ACTIONS = Object.freeze([
   "browse",
   "welcome.get",
   "welcome.seen",
+  "firmware.use",
+  "firmware.forget",
 ]);
 
 /** github.entry and github.lookup: how many new questions to GitHub a minute (catalog-update). */
@@ -123,7 +125,7 @@ export const NAME_CHECKS_AN_HOUR = 100;
  * catalog.json put down when there is none, as `check` of an agent does (the flow runs it when it opens, after it has
  * read where the project stands, and that may take more than the click's two seconds).
  */
-export const NO_GESTURE_NEEDED = Object.freeze(["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.cancel", "github.checklist", "github.entry", "github.lookup"]);
+export const NO_GESTURE_NEEDED = Object.freeze(["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.cancel", "github.checklist", "github.entry", "github.lookup", "firmware.forget"]);
 
 /** publish.files without write and the paths to keep out or in only reads the plan of the repository's files. */
 const filesChange = (arg) => arg === null || typeof arg !== "object" || arg.write === true || ["keepOut", "keepIn", "readme"].some((key) => arg[key] !== undefined && arg[key] !== null);
@@ -262,6 +264,39 @@ function realOf(folder) {
 }
 
 const refusal = (code, message, hint = null) => ({ ok: false, code, message, ...(hint ? { hint } : {}) });
+
+/** An API version as busy-cli and the firmware write it: three numbers. */
+const SEMVER = /^\d{1,9}\.\d{1,9}\.\d{1,9}$/;
+/** Whether API version `a` is newer than `b` (both SEMVER). */
+export function apiNewer(a, b) {
+  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+/**
+ * The project's manifest where the official template keeps it (src/appmeta, or appmeta at the top), and the API
+ * version it asks for: { manifest, api_version } with nulls where there is none. Nothing under the project's folder on
+ * the way to the file may be a link (each folder and the file are looked at with lstat; the project's folder itself is
+ * the real path the list holds), and a file larger than a manifest is not read: the window only shows what it says
+ * (EMU-322).
+ */
+export function manifestFacts(folder) {
+  for (const parts of [["src", "appmeta", "manifest.json"], ["appmeta", "manifest.json"]]) {
+    const file = path.join(folder, ...parts);
+    try {
+      const steps = parts.map((_, i) => lstatSync(path.join(folder, ...parts.slice(0, i + 1))));
+      if (steps.slice(0, -1).some((step) => !step.isDirectory())) continue;
+      const stat = steps.at(-1);
+      if (!stat.isFile() || stat.size > 65_536) continue;
+      const said = JSON.parse(readFileSync(file, "utf8"))?.api_version;
+      return { manifest: file, api_version: typeof said === "string" && SEMVER.test(said) ? said : null };
+    } catch {
+      // Not there, or not JSON: the next place.
+    }
+  }
+  return { manifest: null, api_version: null };
+}
 
 /** The command line's one line of JSON: the last line it printed that is one. */
 export function answerOf(ended, logFile) {
@@ -571,8 +606,10 @@ export const AUTO_RETRY_MS = 20_000;
  *   in a dialog of the app's (person-question.mjs confirm): whether to install a package
  * @param {{ send: (method: string, pathname: string, body?: Buffer | null) => Promise<{ status?: number, body?: string, failed?: string }> }} [o.bar]
  *   the emulated BUSY Bar's own API on 127.0.0.1, for a package's upload
+ * @param {{ send: (method: string, pathname: string, json?: object | null) => Promise<{ status?: number, body?: string, failed?: string }> }} [o.control]
+ *   the server's management address, with its key: the BUSY Bar's firmware (POST /_emu/firmware, EMU-322)
  */
-export function createActions({ startCli: startCliProcess, dialogs, show, copy, open = () => {}, browse = () => {}, barOrigin = null, trash = null, trashRefusal = () => null, send, dataDir, logFile, log, folderThere = existsSync, platform = process.platform, welcome = null, github = null, newProjects = null, home = null, author = () => null, now = Date.now, confirm = null, bar = null }) {
+export function createActions({ startCli: startCliProcess, dialogs, show, copy, open = () => {}, browse = () => {}, barOrigin = null, trash = null, trashRefusal = () => null, send, dataDir, logFile, log, folderThere = existsSync, platform = process.platform, welcome = null, github = null, newProjects = null, home = null, author = () => null, now = Date.now, confirm = null, bar = null, control = null }) {
   // github.name asks GitHub (gh api, up to ten requests) and needs no gesture, as the name is checked while the person
   // types: a page that calls it in a loop must not spend the person's GitHub quota (audit H11). The same question
   // while one is under way gets its answer; an answer is kept NAME_CHECK_KEEP_MS; at most NAME_CHECKS_A_MINUTE new
@@ -692,6 +729,8 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
           stale: project.stale === true,
           dependencies: dependenciesOf(project.dependencies),
           shownFolder: shownPath(project.folder),
+          // Its manifest and the API it asks for: the window marks an app that needs a newer firmware (EMU-322).
+          ...(project.exists === true && project.unavailable !== true ? manifestFacts(project.folder) : { manifest: null, api_version: null }),
         }));
         owed = answer.bar !== "ready" && known.some((project) => !project.exists && !project.unavailable);
         for (const project of known) {
@@ -790,12 +829,28 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
   };
   const barSaid = (answer) => barJson(answer)?.error ?? answer?.failed ?? `HTTP ${answer?.status}`;
 
+  /** The API version of the emulated BUSY Bar that runs now (GET /api/version), or null when it does not say. */
+  async function barApiVersion() {
+    try {
+      const said = barJson(await bar.send("GET", "/api/version", null))?.api_semver;
+      return typeof said === "string" && SEMVER.test(said) ? said : null;
+    } catch {
+      return null;
+    }
+  }
+  /** The refusal of an app for a newer API than the BUSY Bar's: the window turns it into its firmware dialog. */
+  const mismatch = (facts, barApi) => refusal("api_mismatch", `${facts.name} needs API ${facts.api_version}, newer than the emulated BUSY Bar's${barApi ? ` (${barApi})` : ""}.`, "Switch the BUSY Bar to a newer firmware, or ask the app's author for a version for this firmware.");
+  // The package an api_mismatch kept, for firmware.use with run: { refused: true }; one at a time.
+  let refusedPackage = null;
+
   /**
    * A package's bytes, installed after the look and the person's yes (see the top of this file). `shown`: the first
    * line of the dialog (the file, or the release's file); `source`: where it came from. Resolves with { ok: true, id,
    * name, version, running, message }, { ok: false, code: "declined" } after Cancel, or a refusal.
    */
   async function installPackageBytes(bytes, { shown, source }) {
+    // A package kept by an earlier refusal is not wanted once another one is being installed.
+    refusedPackage = null;
     if (!bar || !confirm) return refusal("unavailable", "Installing a package is not available here.");
     const scratch = insideFolder(dataDir, `tmp/package-${process.pid}-${nextIcons++}`, { missing: true, platform });
     if (!scratch) return refusal("write_failed", "The package could not be put down for the command line: the data folder's tmp folder leads out of it.");
@@ -806,6 +861,13 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
       const looked = await ask(["install", copied, "--check"]);
       if (!looked.ok) return failed(looked);
       const facts = { id: looked.id, name: looked.name ?? looked.id, version: looked.version, api_version: looked.api_version, notes: Array.isArray(looked.notes) ? looked.notes.map(String).slice(0, 5) : [] };
+      // An app for a newer API than the BUSY Bar's would be refused by its firmware (api_mismatch): the window offers
+      // to switch the firmware first (EMU-322), and the package is kept until then, so that nothing is chosen again.
+      const barApi = await barApiVersion();
+      if (barApi && SEMVER.test(String(facts.api_version)) && apiNewer(facts.api_version, barApi)) {
+        refusedPackage = { bytes, shown, source };
+        return { ...mismatch(facts, barApi), app: { id: facts.id, name: facts.name, api_version: facts.api_version } };
+      }
       const said = await confirm(packageQuestion(facts, { shown, source }));
       if (said !== "yes") {
         log(`[shell] actions: ${facts.id} ${facts.version} not installed: ${said === "no" ? "the person chose Cancel" : "the person could not be asked"}`);
@@ -818,7 +880,11 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
       const staged = await bar.send("POST", "/api/apps/stage", sent);
       const stage = barJson(staged);
       if (staged?.status !== 200 || (typeof stage?.install_key !== "string" && typeof stage?.install_key !== "number")) {
-        if (stage?.error_code === "api_mismatch") return refusal("api_mismatch", `${facts.name} needs API ${facts.api_version}, newer than the emulated BUSY Bar's.`, "Update BUSY Bar Emulator, or ask the app's author for a version for this firmware.");
+        if (stage?.error_code === "api_mismatch") {
+          // The firmware's own refusal (the API was not known before): kept as well, for the dialog's Switch and run.
+          refusedPackage = { bytes, shown, source };
+          return { ...mismatch(facts, null), app: { id: facts.id, name: facts.name, api_version: facts.api_version } };
+        }
         return refusal("install_failed", staged?.failed ? `The emulated BUSY Bar is not answering (${staged.failed}).` : `The emulated BUSY Bar did not take the package: ${barSaid(staged)}.`);
       }
       if (stage.staged?.id && stage.staged.id !== facts.id) return refusal("install_failed", `The emulated BUSY Bar found ${stage.staged.id} in the package, not ${facts.id}, so it was not installed.`);
@@ -1002,7 +1068,80 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
     }
   }
 
+  /** POST /_emu/firmware on the management address: the server's answer, or a refusal in its words. */
+  async function useFirmware(version, when) {
+    if (!control) return refusal("unavailable", "Switching the firmware is not available here.");
+    let answer;
+    try {
+      answer = await control.send("POST", "/_emu/firmware", { version, when });
+    } catch (e) {
+      answer = { failed: e?.code ?? e?.message ?? String(e) };
+    }
+    let body = null;
+    try {
+      body = JSON.parse(answer?.body ?? "");
+    } catch {
+      // Said below.
+    }
+    if (answer?.status === 200 && body?.firmware) return { ok: true, ...body };
+    if (body?.code) return refusal(String(body.code), String(body.error ?? "The firmware was not switched."), body.hint ? String(body.hint) : null);
+    return refusal("no_answer", `The emulator did not answer (${answer?.failed ?? `HTTP ${answer?.status}`}), so the firmware was not switched.`, "Wait until the emulated BUSY Bar is up, then try again.");
+  }
+
   const methods = {
+    /**
+     * The BUSY Bar's firmware, from the window's list or its dialog for an app that needs a newer one (EMU-322):
+     * { version, when: "restart" | "now", run? }. "restart" chooses the firmware for the next restart and answers at
+     * once; "now" switches and answers once the BUSY Bar is up on it. `run`, with "now", is what the person asked for
+     * when the dialog came up, done in this one action once the switch is over: { folder } a Refresh of that project of
+     * the list, { id } a start of that app on the BUSY Bar, { refused: true } the install of the package the
+     * api_mismatch kept. The answer is the switch's, with `ran` the answer of what followed.
+     */
+    async "firmware.use"(arg) {
+      const version = arg?.version;
+      const when = arg?.when ?? "now";
+      if (typeof version !== "string" || !/^[A-Za-z0-9._-]{1,32}$/.test(version) || !["now", "restart"].includes(when)) throw new ActionFailure("usage", "Choose a firmware of the list.");
+      const run = arg?.run ?? null;
+      if (run !== null && (when !== "now" || typeof run !== "object")) throw new ActionFailure("usage", "An app is run only after a switch made now.");
+      if (run?.id !== undefined && (typeof run.id !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(run.id))) throw new ActionFailure("usage", "There is no such app.");
+      if (run?.folder !== undefined) {
+        // Refused before the switch, not after it: a folder that is no project of the list is not run.
+        const { refused } = await projectFor(run.folder);
+        if (refused) return refused;
+      }
+      // The kept package is taken before the switch, not after it: without one there is nothing to install, and the
+      // firmware is not switched for nothing.
+      let kept = null;
+      if (run?.refused === true) {
+        kept = refusedPackage;
+        refusedPackage = null;
+        if (!kept) return refusal("usage", "There is no package to install now.", "Choose it again.");
+      }
+      const switched = await useFirmware(version, when);
+      if (!switched.ok) {
+        // The switch failed: the package stays kept for the next try.
+        if (kept && refusedPackage === null) refusedPackage = kept;
+        return switched;
+      }
+      if (!run) return switched;
+      let ran;
+      if (typeof run.folder === "string") ran = await methods["projects.refresh"](run.folder);
+      else if (typeof run.id === "string") {
+        const launched = bar ? await bar.send("POST", `/api/apps/launch?app_id=${encodeURIComponent(run.id)}`, null) : { failed: "not available here" };
+        ran = launched?.status === 200 ? { ok: true, message: `${run.id} is running.` } : refusal("run_failed", `${run.id} did not start: ${barSaid(launched)}.`);
+      } else if (kept) {
+        ran = await installPackageBytes(kept.bytes, { shown: kept.shown, source: kept.source });
+      } else ran = refusal("usage", "There is nothing to run.");
+      return { ...switched, ran };
+    },
+
+    /** The firmware dialog's Cancel: the package an api_mismatch kept is let go. Changes nothing else, so no click needed. */
+    "firmware.forget": async () => {
+      const had = refusedPackage !== null;
+      refusedPackage = null;
+      return { forgotten: had };
+    },
+
     "projects.list": async () => withJobs(await sweep({ fresh: true })),
 
     async "projects.examples"() {

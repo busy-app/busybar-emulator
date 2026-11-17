@@ -1,12 +1,12 @@
 // The bar's local web as the server gives it: the firmware's files (`web` of firmware.mjs), with one change.
 //
 // The local web reads the bar's state stream (/api/status/ws) through busy-lib's LocalStateStream, which runs its
-// WebSocket in a SharedWorker made from a data: address (in 1.3.1 and dev: _nuxt/wifiStore-7c2bd48.js, the constant
-// kI). A worker of a data: address has an opaque origin, and Chromium opens its WebSocket with "Origin: null" — which
-// the entry refuses, as it refuses every page without an origin (ADR-0012 section 2). So the server gives that
-// worker as a file of the local web's own address instead: the data: address in the script is replaced by
-// WORKER_PATH, and WORKER_PATH answers with what the data: address held. The worker then connects with the bar's
-// address as its origin, and the rule "Origin: null is refused" needs no exception.
+// WebSocket in a SharedWorker made from a data: address (the constant kI of _nuxt/wifiStore-7c2bd48.js in 1.3.1,
+// _nuxt/wifiStore-53bb54d.js in 1.4.1). A worker of a data: address has an opaque origin, and Chromium opens its
+// WebSocket with "Origin: null" — which the entry refuses, as it refuses every page without an origin (ADR-0012
+// section 2). So the server gives that worker as a file of the local web's own address instead: the data: address
+// in the script is replaced by WORKER_PATH, and WORKER_PATH answers with what the data: address held. The worker then
+// connects with the bar's address as its origin, and the rule "Origin: null is refused" needs no exception.
 //
 // The worker is found by its shape, not by where it is: a string literal "data:application/javascript;base64,…"
 // whose content opens a WebSocket and takes connections as a SharedWorker. A build in which that is not found exactly

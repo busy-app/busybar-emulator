@@ -125,21 +125,13 @@ export function latinName(text) {
   return short && !nameProblem(short) ? short : null;
 }
 
-/** The folders of the apps on the emulated bar, of every firmware's bar in the data folder: their ids. */
+/** The folders of the apps on the emulated bar, the one BUSY Bar of the data folder (bar/ext, EMU-318): their ids. */
 function idsOnTheBar(dataDir) {
   const ids = new Set();
-  let bars = [];
   try {
-    bars = readdirSync(path.join(dataDir, "bar"), { withFileTypes: true }).filter((entry) => entry.isDirectory());
+    for (const entry of readdirSync(path.join(dataDir, "bar", "ext", "user_assets"), { withFileTypes: true })) if (entry.isDirectory()) ids.add(entry.name);
   } catch {
-    return ids;
-  }
-  for (const bar of bars) {
-    try {
-      for (const entry of readdirSync(path.join(dataDir, "bar", bar.name, "ext", "user_assets"), { withFileTypes: true })) if (entry.isDirectory()) ids.add(entry.name);
-    } catch {
-      // A bar without apps.
-    }
+    // No BUSY Bar yet, or one without apps.
   }
   return ids;
 }

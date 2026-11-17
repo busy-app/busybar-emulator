@@ -18,9 +18,10 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { jsonLine, momentOf, watchStart } from "../app-log.mjs";
+import { refusalFor, packageRefusal, manifestOf } from "../firmware.mjs";
 import { blockedNetwork, emulatorStatus, ready } from "../lifecycle.mjs";
 import { CliError } from "../output.mjs";
-import { again, barAddress, busyCli, commandFor, installedFromProject, projectAt, remember, requireTrust, requireValidSettings, runTool, shown, toolFailed, TRUST_OPTION } from "../project.mjs";
+import { again, barAddress, barApiVersion, busyCli, commandFor, installedFromProject, projectAt, remember, requireTrust, requireValidSettings, runTool, shown, toolFailed, TRUST_OPTION } from "../project.mjs";
 
 /** Whether the bar has the app: true, false, or null when it would not say. */
 async function onTheBar(sys, port, id) {
@@ -48,6 +49,20 @@ async function barRefusesSettings(sys, port, id) {
   }
 }
 
+/** The api_version of the app `id` as the BUSY Bar holds it, or null. */
+async function apiOnTheBar(sys, port, id) {
+  const answer = await sys.barGet?.(port, "/api/apps/list");
+  if (!answer || answer.status !== 200) return null;
+  try {
+    return JSON.parse(answer.body).apps?.find((app) => app?.id === id)?.api_version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** A launch the BUSY Bar refused for the app's API (device.mjs launch, 409): its words. */
+const MISMATCH = /API version mismatch/i;
+
 /** An app's id, as `busy-cli app run <app-id>` takes one: app.<author>.<name>. */
 const APP_ID = /^app\.[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+$/;
 
@@ -73,6 +88,10 @@ async function runById(ctx, sys, id, progress) {
     } catch {
       // not JSON
     }
+    if (launched.status === 409 && MISMATCH.test(said ?? "")) {
+      const refusal = await refusalFor(ctx, sys, status, { id, name: id, api: await apiOnTheBar(sys, port, id), manifest: "its project's manifest" });
+      if (refusal) throw refusal;
+    }
     throw new CliError("run_failed", `The emulated BUSY Bar did not start ${id}: ${said ?? launched.failed ?? `HTTP ${launched.status}`}.`, `Look at ${logs}.`, { id });
   }
   const seen = await watchStart(sys, port, id, since);
@@ -96,7 +115,7 @@ export default {
     const project = projectAt(ctx, sys, args[0]);
     const trust = requireTrust(ctx, sys, project, options, "run");
     remember(ctx, project);
-    requireValidSettings(ctx, project);
+    requireValidSettings(ctx, project, await barApiVersion(ctx, sys));
     const script = busyCli(ctx, project);
     const address = await barAddress(ctx, sys, project, "run");
     const port = Number(address.split(":")[1]);
@@ -107,7 +126,11 @@ export default {
     // The package build made, onto the bar.
     const pack = project.id ? path.join(project.dir, "dist", `${project.id}.tgz`) : null;
     let installed = false;
+    const status = await emulatorStatus(ctx, sys);
     if (pack && existsSync(pack)) {
+      // A package for a newer API than the firmware's: refused here, in the firmware's and the author's terms.
+      const refusal = await packageRefusal(ctx, sys, status, project);
+      if (refusal) throw refusal;
       progress(`busy-cli app install --addr ${address}`);
       const install = await runTool(ctx, sys, { tool: "node", args: [script, "app", "install", "--addr", address], cwd: project.dir });
       if (install.code !== 0) throw toolFailed(ctx, "busy-cli app install", install, `The built package did not install. Fix what busy-cli says (build again if the package is at fault: ${build}), then run ${rerun} again.`);
@@ -122,6 +145,11 @@ export default {
     progress(`busy-cli app run --addr ${address}`);
     const run = await runTool(ctx, sys, { tool: "node", args: [script, "app", "run", "--addr", address], cwd: project.dir });
     if (run.code !== 0) {
+      // The app on the BUSY Bar is for a newer API than its firmware (no package here to install over it).
+      if (project.id && MISMATCH.test(run.output ?? "")) {
+        const refusal = await refusalFor(ctx, sys, status, { id: project.id, name: project.id, api: await apiOnTheBar(sys, port, project.id), manifest: manifestOf(project.dir) });
+        if (refusal) throw refusal;
+      }
       const missing = /HTTP 404/.test(run.output);
       throw toolFailed(ctx, "busy-cli app run", run, missing ? `The app is not on the BUSY Bar. Build it: ${build}; then run ${rerun} again (it installs the built package).` : `Fix what busy-cli says, then run ${rerun} again.`);
     }

@@ -75,7 +75,9 @@ test("Help, Report a Bug… opens the dialog; its text is scrubbed; Open on GitH
   const text = await shownText();
   assertClean(text, "the dialog's text");
   assert.match(text, /^### What I did\nOpened <home>/);
-  assert.match(text, /- Firmware: 1\.3\.1, API \d+\.\d+\.\d+/);
+  // The emulated BUSY Bar runs the default firmware of packages/engine/firmware.json.
+  const firmware = JSON.parse(readFileSync(new URL("../../../engine/firmware.json", import.meta.url), "utf8")).default;
+  assert.match(text, new RegExp(`- Firmware: ${firmware.replaceAll(".", "\\.")}, API \\d+\\.\\d+\\.\\d+`));
   assert.match(text, /GH_TOKEN=<(token|hidden)>/);
   assert.match(text, /"ssid":"<wifi>","serial_number":"<serial>","wifi_mac":"<mac>"/);
   // The bar's screenshot was taken when the dialog opened; ticked, it goes on the clipboard.

@@ -235,6 +235,22 @@ test("build fails on an invalid settings file with the field at fault, before an
   assert.equal((await call(["build"], ctx, sys)).json.settings, "none");
 });
 
+test("build checks the settings file by the rules of the firmware the running BUSY Bar reports, the newest without one", async (t) => {
+  const { root, ctx } = setup(t);
+  // A range that is no multiple of the step: firmware 1.3.1 refuses it, 1.4.1 takes it (0a11d1f9).
+  const dir = project(root, ctx, "clock", { settings: { format_version: 1, version: 1, fields: { count: { type: "integer", label: "Count", default: 0, min: 0, max: 10, step: 3 } } } });
+  let api = "27.14.0";
+  const sys = fakeSystem(dir, { bar: (method, pathname) => (pathname === "/api/version" ? { status: 200, body: JSON.stringify({ api_semver: api }) } : { status: 200, body: '{"result":"OK"}' }) });
+  const refused = await call(["build"], ctx, sys);
+  assert.equal(refused.json.code, "settings_invalid", JSON.stringify(refused.json));
+  assert.equal(refused.json.problem, "'max' - 'min' must be evenly divisible by 'step'");
+  assert.deepEqual(sys.tools, [], "busy-cli did not run");
+  // The same project when the BUSY Bar was switched to 1.4.1, and with no emulator running.
+  api = "27.15.0";
+  assert.equal((await call(["build"], ctx, sys)).json.settings, "valid");
+  assert.equal((await call(["build"], ctx, fakeSystem(dir, { running: false }))).json.settings, "valid");
+});
+
 test("run fails on an invalid settings file before anything is installed", async (t) => {
   const { root, ctx } = setup(t);
   const dir = project(root, ctx, "clock", { settings: { format_version: 1, version: 1, fields: [] } });
@@ -243,7 +259,8 @@ test("run fails on an invalid settings file before anything is installed", async
   assert.equal(refused.code, 1);
   assert.equal(refused.json.code, "settings_invalid");
   assert.match(refused.json.hint, /"fields" is a map keyed by each field's id.*not a list/);
-  assert.deepEqual([sys.tools, sys.sent], [[], []]);
+  // Only the BUSY Bar's API version was asked, for the rules of its firmware (requireValidSettings).
+  assert.deepEqual([sys.tools, sys.sent], [[], [["GET", "/api/version"]]]);
 });
 
 test("run: a launch the BUSY Bar answers with OK while it refuses the package's settings file is a failure, in the firmware's words", async (t) => {

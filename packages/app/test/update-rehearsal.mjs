@@ -9,8 +9,8 @@
 //
 // Both versions are test variants built by tools/dist.mjs (--kind test): they read BUSY_EMULATOR_DATA and
 // BUSY_EMULATOR_USER_HOME, so nothing of the person's own (the data folder, ~/.busy-emulator, Applications) is touched.
-// beta.1 must hold the updater; beta.2 is expected to be the fake of 12.11 (version 0.1.0-beta.2 and a step from
-// format 1 to 2 that writes notes/format-2.txt). Hidden windows; ports 18870 (the bar) and 18875 (the stand-in).
+// beta.1 must hold the updater and make a data folder of format 1; beta.2 is expected to be version 0.1.0-beta.2 with
+// the step from format 1 to 2 of EMU-318 (one BUSY Bar, bar/ext); change the version checks for a real pair. Hidden windows; ports 18870 (the bar) and 18875 (the stand-in).
 // On Windows run it in the desktop session (tools/gate/desktop-task.mjs). Not part of any suite.
 //
 //   node test/update-rehearsal.mjs <beta.1: .app or setup.exe> <beta.2: its zip or setup.exe> <work folder>
@@ -108,6 +108,14 @@ function cliAsync(...args) {
   );
 }
 const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
+/**
+ * The apps on the emulated BUSY Bar, as the data folder of either version keeps them: format 1 has a BUSY Bar for each
+ * firmware (bar/1.3.1/ext, the default of every release of that format), format 2 one BUSY Bar (bar/ext, EMU-318).
+ */
+function appsOnTheBar() {
+  const format = Number(readFileSync(path.join(data, "format"), "utf8").split("\n")[0]);
+  return readdirSync(path.join(data, "bar", ...(format === 1 ? ["1.3.1"] : []), "ext", "user_assets")).sort();
+}
 const hashOf = (dir) => createHash("sha256").update(readdirSync(dir).sort().map((n) => n + readFileSync(path.join(dir, n), "utf8")).join("|")).digest("hex");
 const greetingShown = (app) => app.page(`(() => { const box = document.querySelector("#welcome"); return Boolean(box && !box.hidden); })()`);
 const shown = (app, selector) => app.page(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); return Boolean(el && !el.hidden && el.closest("[hidden]") === null); })()`);
@@ -123,7 +131,7 @@ function snapshot() {
     settings: cli("settings", "get", path.join(projects, "focus")).data.settings,
     trust: readJson(path.join(data, "projects", "trusted.json")).projects.map((p) => [p.path, p.how]),
     install: readJson(path.join(data, "install.json")),
-    apps: readdirSync(path.join(data, "bar", "1.3.1", "ext", "user_assets")).sort(),
+    apps: appsOnTheBar(),
   };
 }
 
@@ -201,8 +209,8 @@ try {
   await until(() => app.run((_shell, electron) => electron.app.getVersion()).then((v) => v === "0.1.0-beta.2").catch(() => false), "the test entry reaches beta.2", 60_000, 500);
   await ready(app);
   assert.equal(readFileSync(path.join(data, "format"), "utf8"), "2\n");
-  assert.equal(readFileSync(path.join(data, "notes", "format-2.txt"), "utf8"), "moved\n");
-  ok("data folder moved from format 1 to 2 by beta.2's step");
+  assert.ok(existsSync(path.join(data, "bar", "ext", "user_assets")) && !existsSync(path.join(data, "bar", "1.3.1")), "one BUSY Bar, bar/ext");
+  ok("data folder moved from format 1 to 2 by beta.2's step: one BUSY Bar");
   const after = snapshot();
   console.log("after:", JSON.stringify(after));
   assert.deepEqual(after.projects, before.projects);

@@ -408,6 +408,23 @@ test("agents.md names only error codes the emulator raises", () => {
   assert.ok(seen >= 5, `only ${seen} error codes found in agents.md: is the pattern still right?`);
 });
 
+test("no page names a release as the current one: such a line goes stale with the next release", () => {
+  // "This is the first trial release, 0.1.0-beta.1." stayed on the public pages through beta.5. A version is named
+  // only as a bound ("releases before 0.1.0-beta.4"), in the changelog, or in a release's own notes.
+  // The public README is README.public.md here and README.md in the exported tree (tools/export/export.json).
+  const readme = existsSync(join(root, "README.public.md")) ? join(root, "README.public.md") : join(root, "README.md");
+  const files = [...pages.filter((p) => p.public).map((p) => p.file), readme];
+  const current = /\b(?:this|it) is (?:the|a|an)\b[^.\n]*\brelease\b[^.\n]*\d+\.\d+\.\d+|\b(?:the )?(?:current|latest) release is \d+\.\d+\.\d+/i;
+  for (const file of files) {
+    readFileSync(file, "utf8").split(/\r?\n/).forEach((text, i) => {
+      assert.doesNotMatch(text, current, `${relative(root, file)}:${i + 1}: names a release as the current one; say it without the version`);
+    });
+  }
+  assert.match("This is the first trial release, 0.1.0-beta.1.", current, "the pattern still finds the line it was written for");
+  assert.match("This is a beta release, 0.1.0-beta.1. Get it", current);
+  assert.doesNotMatch("Releases before 0.1.0-beta.4 are not notarized.", current);
+});
+
 test("release addresses name files a release has; the pages link to pages and headings that are there", (t) => {
   const release = /https:\/\/github\.com\/busy-app\/busybar-emulator\/releases\/latest\/download\/([^\s)>\]"'`;]+)/g;
   const raw = /https:\/\/raw\.githubusercontent\.com\/busy-app\/busybar-emulator\/main\/public-docs\/([^\s)>\]"'`;]+)/g;

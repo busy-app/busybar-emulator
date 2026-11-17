@@ -1,34 +1,41 @@
 // Golden frames: the same scenes on a bar and in the emulator, compared pixel by pixel. A scene is either a
-// display/draw request or a walk through the system screens (the apps menu, an app's card, the launcher's errors).
+// display/draw request or a walk through the system screens (the apps menu, an app's card, SETUP, the launcher's
+// errors).
 //
 //   node emulator/test/golden.mjs --record [--bar 10.0.4.20]   play each scene on the bar, save its frames as goldens
-//   node emulator/test/golden.mjs [--firmware dev]             play each scene in an emulator of its own, compare with goldens
+//   node emulator/test/golden.mjs [--firmware 1.3.1]             play each scene in an emulator of its own, compare with goldens
 //   node emulator/test/golden.mjs --emu 127.0.0.1:8640         the same in an emulator that is already running
 //   ... [--only <scene>]                                        one scene
 //   ... [--images]                                              write the comparison image for matching scenes too
 //
 // The system scenes need the apps the goldens' bar had. An emulator of its own gets them from test/apps (set.json says
-// which and in what order); one at --emu must have them installed, in that order. They install a broken probe app for
-// the error screen and remove it afterwards.
+// which and in what order, for each firmware); one at --emu must have them installed, in that order; a bar that is
+// recorded must list them (its debug apps aside). They install a broken probe app for the error screen and remove it
+// afterwards. A scene that came with a firmware (SINCE: the SETUP screen of 1.4.1) is played on it and later ones.
 //
-// Goldens live in emulator/test/golden/<scene>.json: the bar they came from and its front and back frames, as
-// GET /api/screen returns them. On a mismatch the tool writes bar | emulator | difference to <scene>.png in a folder of
-// the system's temporary folder (EMU_TEST_OUT when the gate runs it) and prints its path.
+// Goldens live in emulator/test/golden/<firmware>/<scene>.json, a folder for each firmware (the one the bar or the
+// emulator reports): the bar they came from and its front and back frames, as GET /api/screen returns them. On a
+// mismatch the tool writes bar | emulator | difference to <scene>.png in a folder of the system's temporary folder
+// (EMU_TEST_OUT when the gate runs it) and prints its path.
+//
+// One scene is not compared whole: the SETUP hint names the bar's USB address, http://10.0.4.20, and the emulator the
+// address it answers on (patches.mjs). The address is left out (golden-compare.mjs, SCENE_MASKS); "Set up via", the
+// icon, the arrow and the rest are compared pixel for pixel.
 //
 // The back display's right 12 columns are the firmware's status bar (BACK_STATUS_BAR_WIDTH in gui_i.h): Wi-Fi, BLE,
-// sound, USB and battery. The emulator shows the state the goldens' bar had (packages/engine/native/emu_status.c), so the whole
-// back display is compared.
+// sound, USB and battery. The emulator shows Wi-Fi connected, BLE not shown, sound on, USB in and the battery at 100 %
+// (packages/engine/native/emu_status.c), as the 1.3.1 goldens' bar did. The 1.4.1 goldens were taken on battery over
+// Wi-Fi: in them the USB icon and the battery are not compared (golden-compare.mjs, POWER_MASKED). Everything else of
+// both displays is.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { crc32, deflateSync } from "node:zlib";
 
 import { commandLine } from "../packages/server/arguments.mjs";
-import { emulatorFor, outputDir, totals } from "./own-emulator.mjs";
+import { appSetOf, emulatorFor, firmwareAt, outputDir, recordingsDir, totals } from "./own-emulator.mjs";
+import { compare, diffImage, maskOf, SCENE_MASKS } from "./golden-compare.mjs";
 import { targz } from "./package.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const goldenDir = join(here, "golden");
 
 const args = process.argv.slice(2);
 await commandLine(process.argv, { values: ["--bar", "--emu", "--only", "--firmware"], flags: ["--record", "--images"], emulator: "--emu" });
@@ -37,11 +44,10 @@ const option = (name, fallback) => {
   return i >= 0 ? args[i + 1] : fallback;
 };
 const record = args.includes("--record");
+const appsDir = join(dirname(fileURLToPath(import.meta.url)), "apps");
 const only = option("--only", null);
 
 const APP = "golden";
-const FRONT = { width: 72, height: 16 };
-const BACK = { width: 160, height: 80 };
 
 const xpm = (rows, colors) =>
   ["! XPM2", `${rows[0].length} ${rows.length} ${Object.keys(colors).length} 1`, ...Object.entries(colors).map(([k, v]) => `${k} c ${v}`), ...rows].join("\n");
@@ -147,7 +153,43 @@ export const flows = {
     await call("POST", `apps/launch?app_id=${PROBE}`);
     await sleep(2500);
   },
+  // SETUP of 1.4.1 (0a11d1f9), of the second app in the list (Weather): its settings, the wheel moved to a switch, and
+  // the hint OK opens on its first setting, a place, which the bar cannot edit. Not the first app's (Clock): the front
+  // display scrolls a label that does not fit ("Time Format"), and its frame depends on the moment it is taken.
+  "system-setup": async () => {
+    await toSetup(1);
+  },
+  "system-setup-scrolled": async () => {
+    await toSetup(1);
+    await keys("up", "up");
+  },
+  "system-setup-hint": async () => {
+    await toSetup(1);
+    await keys("ok");
+    await sleep(1000);
+  },
 };
+
+// The firmware a scene came with: it is played on that firmware and later ones (a bar on 1.3.1 has another SETUP).
+const SINCE = {
+  "system-setup": "1.4.1",
+  "system-setup-scrolled": "1.4.1",
+  "system-setup-hint": "1.4.1",
+};
+const later = (a, b) => {
+  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return true;
+};
+
+/** From the apps list to SETUP of the app `index` places down the list. */
+async function toSetup(index = 0) {
+  await toAppsList();
+  await keys(...Array(index).fill("up"), "ok");
+  await sleep(1000);
+  await keys("up", "ok");
+  await sleep(1000);
+}
 
 // After the error screen: back to the list, the probe uninstalled.
 async function removeProbe() {
@@ -191,90 +233,18 @@ async function capture(elements) {
   return { front: await frame(0), back: await frame(1) };
 }
 
-// ---------------------------------------------------------------- comparing
-
-const decode = (b64) => Buffer.from(b64, "base64");
-const frontPixel = (f, x, y) => {
-  const i = (y * FRONT.width + x) * 3;
-  return [f[i + 2], f[i + 1], f[i]];
-};
-const backPixel = (f, x, y) => {
-  const i = y * BACK.width + x;
-  const v = ((f[i >> 1] >> ((i & 1) * 4)) & 0xf) * 17;
-  return [v, v, v];
-};
-
-function compare(golden, actual) {
-  const result = { front: 0, back: 0 };
-  const gf = decode(golden.front), af = decode(actual.front);
-  for (let y = 0; y < FRONT.height; y++)
-    for (let x = 0; x < FRONT.width; x++) if (frontPixel(gf, x, y).join() !== frontPixel(af, x, y).join()) result.front++;
-  const gb = decode(golden.back), ab = decode(actual.back);
-  for (let y = 0; y < BACK.height; y++)
-    for (let x = 0; x < BACK.width; x++) if (backPixel(gb, x, y).join() !== backPixel(ab, x, y).join()) result.back++;
-  return result;
-}
-
-// bar | emulator | difference (red where they differ), front above back, each scaled up.
-function diffImage(golden, actual) {
-  const scale = 4;
-  const gap = 4;
-  const panels = [
-    { w: FRONT.width * 3 * 2, h: FRONT.height * 2, frames: [golden.front, actual.front], px: frontPixel, s: 2, dw: FRONT.width, dh: FRONT.height },
-    { w: BACK.width, h: BACK.height, frames: [golden.back, actual.back], px: backPixel, s: 1, dw: BACK.width, dh: BACK.height },
-  ];
-  const width = (BACK.width * 3 + gap * 2) * scale;
-  const height = (FRONT.height * 2 + gap + BACK.height) * scale;
-  const rgb = Buffer.alloc(width * height * 3, 40);
-  let top = 0;
-  for (const p of panels) {
-    const [g, a] = p.frames.map(decode);
-    for (let y = 0; y < p.dh; y++) {
-      for (let x = 0; x < p.dw; x++) {
-        const gp = p.px(g, x, y), ap = p.px(a, x, y);
-        const same = gp.join() === ap.join();
-        const cells = [gp, ap, same ? [0, 0, 0] : [255, 0, 0]];
-        cells.forEach((c, k) => {
-          for (let dy = 0; dy < p.s * scale; dy++) {
-            for (let dx = 0; dx < p.s * scale; dx++) {
-              const X = k * (BACK.width + gap) * scale + x * p.s * scale + dx;
-              const Y = top + y * p.s * scale + dy;
-              rgb.set(c, (Y * width + X) * 3);
-            }
-          }
-        });
-      }
-    }
-    top += (p.dh * p.s + gap) * scale;
-  }
-  return png(width, height, rgb);
-}
-
-function png(width, height, rgb) {
-  const raw = Buffer.alloc((width * 3 + 1) * height);
-  for (let y = 0; y < height; y++) rgb.copy(raw, y * (width * 3 + 1) + 1, y * width * 3, (y + 1) * width * 3);
-  const chunk = (type, data) => {
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const out = Buffer.alloc(body.length + 8);
-    out.writeUInt32BE(data.length, 0);
-    body.copy(out, 4);
-    out.writeUInt32BE(crc32(body), body.length + 4);
-    return out;
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header.set([8, 2, 0, 0, 0], 8);
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
-}
-
 // ---------------------------------------------------------------- main
 
-const names = [...Object.keys(scenes), ...Object.keys(flows)].filter((n) => !only || n === only);
-if (!names.length) throw new Error(`no scene ${only}: ${[...Object.keys(scenes), ...Object.keys(flows)].join(", ")}`);
+const all = [...Object.keys(scenes), ...Object.keys(flows)];
+if (only && !all.includes(only)) throw new Error(`no scene ${only}: ${all.join(", ")}`);
 // The bar, or the emulator: one at --emu, else one of this test's own (with the apps of test/apps for the system scenes).
-const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : await emulatorFor(args, { apps: names.some((n) => flows[n]), name: "golden" });
+const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : await emulatorFor(args, { apps: !only || Boolean(flows[only]), name: "golden" });
 const addr = target.addr;
+// The firmware the bar or the emulator runs: its goldens, and its scenes.
+const firmware = target.firmware ?? (await firmwareAt(addr));
+const goldenDir = recordingsDir("golden", firmware);
+const names = all.filter((n) => (!only || n === only) && (!SINCE[n] || later(firmware, SINCE[n])));
+if (!names.length) throw new Error(`the scene ${only} came with firmware ${SINCE[only]}; this is ${firmware}`);
 
 /** Plays a scene and takes its frames; a system scene cleans up after itself. */
 async function play(name) {
@@ -286,15 +256,21 @@ async function play(name) {
   if (name.startsWith("system-error")) await removeProbe();
   return frames;
 }
-if (record) mkdirSync(goldenDir, { recursive: true });
-
 if (record) {
-  const firmware = JSON.parse((await call("GET", "status/firmware")).text);
-  console.log(`recording from the bar at ${target.addr}, firmware ${firmware.version} ${firmware.commit_hash}`);
+  const info = JSON.parse((await call("GET", "status/firmware")).text);
+  console.log(`recording from the bar at ${target.addr}, firmware ${info.version} ${info.commit_hash}, into ${goldenDir}`);
+  // The system scenes show the bar's apps by name and icon: the bar must list the names of the set the emulator installs
+  // for this firmware, in its order (a stand-in may have another id).
+  if (names.some((n) => flows[n])) {
+    const listed = JSON.parse((await call("GET", "apps/list")).text).apps.filter((a) => !a.is_debug).map((a) => a.name);
+    const set = appSetOf(firmware).map((id) => JSON.parse(readFileSync(join(appsDir, id, "appmeta", "manifest.json"), "utf8")).name);
+    if (listed.join() !== set.join()) throw new Error(`the bar lists ${listed.join(", ")}; test/apps/set.json has ${set.join(", ")} for ${firmware}`);
+  }
+  mkdirSync(goldenDir, { recursive: true });
   for (const name of names) {
     const frames = await play(name);
     // The bar is named by its model only: the recordings are published, and a serial number is the owner's (EMU-163).
-    const source = { bar: "BUSY Bar", firmware: firmware.commit_hash, recorded: new Date().toISOString() };
+    const source = { bar: "BUSY Bar", firmware: info.commit_hash, recorded: new Date().toISOString() };
     const what = scenes[name] ? { elements: scenes[name] } : { flow: name };
     writeFileSync(join(goldenDir, `${name}.json`), JSON.stringify({ source, ...what, ...frames }, null, 2) + "\n");
     console.log(`  ${name}`);
@@ -307,20 +283,22 @@ if (record) {
     if (!existsSync(file)) {
       // A scene that cannot be compared is not a scene that agrees.
       failed++;
-      console.log(`  FAIL ${name}: no golden (node emulator/test/golden.mjs --record --only ${name} with a bar)`);
+      console.log(`  FAIL ${name}: no golden of ${firmware} (node emulator/test/golden.mjs --record --only ${name} with a bar on ${firmware})`);
       continue;
     }
     const golden = JSON.parse(readFileSync(file, "utf8"));
     const actual = await play(name);
-    const d = compare(golden, actual);
+    const mask = maskOf(name, firmware);
+    const d = compare(golden, actual, mask);
     const ok = d.front === 0 && d.back === 0;
     if (!ok) failed++;
     const image = !ok || args.includes("--images") ? join(outputDir("golden"), `${name}.png`) : null;
-    if (image) writeFileSync(image, diffImage(golden, actual));
-    console.log(`  ${ok ? "ok  " : "DIFF"} ${name}${ok ? "" : `: front ${d.front} px, back ${d.back} px differ (${image})`}`);
+    if (image) writeFileSync(image, diffImage(golden, actual, mask));
+    const left = SCENE_MASKS[name] ? " (the address not compared)" : "";
+    console.log(`  ${ok ? "ok  " : "DIFF"} ${name}${ok ? left : `: front ${d.front} px, back ${d.back} px differ${left} (${image})`}`);
   }
   await call("DELETE", `display/draw?application_name=${APP}`);
-  console.log(failed ? `${failed} of ${names.length} scenes differ from the bar` : `all ${names.length} scenes match the bar`);
+  console.log(failed ? `${failed} of ${names.length} scenes differ from the bar on ${firmware}` : `all ${names.length} scenes match the bar on ${firmware}`);
   if (args.includes("--images")) console.log(`images: ${outputDir("golden")}`);
   await target.stop();
   totals({ pass: names.length - failed, fail: failed });

@@ -242,7 +242,7 @@
   const edit = make("span");
   edit.append("Edit ", make("code", "", MAIN_FILE), " in your editor.");
   // Show in Finder/Explorer: the desktop app opens the project's folder itself, its files in view.
-  const show = button("btn soft", "", () => {
+  const show = button("btn soft small", "", () => {
     actions()
       .reveal(stepsFolder)
       .catch(() => {});

@@ -42,7 +42,8 @@ A release reads one variable, which can only make it do less: `BUSY_EMULATOR_NO_
 for a new version off (below).
 
 The data folder is the server's `--data` (EMU-005): it holds the server's `format`, `run/server.lock` and
-`bar/<firmware>/ext` (the emulated BUSY Bar's storage, one BUSY Bar for each firmware), and the shell's `logs/shell.log` (the
+`bar/ext` (the emulated BUSY Bar's storage, one BUSY Bar whatever the firmware) with `bar/chosen-firmware.json` (the
+firmware the BUSY Bar was last switched to, which the next start runs), and the shell's `logs/shell.log` (the
 shell's events and everything the server prints; past 1 MB, while the app runs as well as at its start, it is put
 aside as `shell.log.1` and begun anew, and what pages are refused is written at most 20 times a minute of each kind),
 `shell/` (Chromium's own files), `app-settings.json` (the app's own settings: the update check), `install.json` (the pointer file,

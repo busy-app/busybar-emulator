@@ -1,53 +1,197 @@
 {
-  "source": {
-    "bar": "BUSY Bar, firmware 1.3.1",
-    "firmware": "8edd2da4",
-    "recorded": "2026-11-09T22:49:35.198Z"
-  },
-  "stepMs": 127.9375,
-  "xpmMs": 102.86666666666666,
-  "drawFullBytes": 1753,
-  "drawTextBytes": 150,
-  "drawTextMs": 30.8,
-  "drawFullMs": 45.3,
-  "loopFps": 3.462204270051933,
-  "network": {
-    "note": "Requests to the internet from an app on the bar above, 2026-11-09, fetch() to the body's text: https to apps-api.busy.app and example.com took 1.28-1.70 s, http to example.com 0.09 s. tlsMs is the difference, the TLS handshake on the bar's processor; the emulator makes an https answer wait at least that long.",
-    "httpMs": 92,
-    "httpsMs": [
-      1277,
-      1500,
-      1508,
-      1531,
-      1602,
-      1656,
-      1703
-    ],
-    "tlsMs": 1400
-  },
-  "model": {
-    "note": "The bar's time for an app's work, fitted by emulator/test/speed.mjs to the times above: JS takes opMs per byte-code instruction plus allocByteMs per heap byte allocated; the bar's API answers a request in apiMs plus apiByteMs per byte of its body. work: instructions and heap bytes of the probe's pieces, counted in the runtime of `firmware`.",
-    "opMs": 0.003302525616439196,
-    "allocByteMs": 0.0008810026375500905,
-    "apiMs": 27.17849115891663,
-    "apiByteMs": 0.009077608086922285,
-    "firmware": "1.3.1",
-    "work": {
-      "step": {
-        "ops": 38739.12,
-        "allocBytes": 0.64
+  "$comment": "The BUSY Bar's speed probe (emulator/test/speed.mjs --record) and the model fitted to it, for each firmware the emulator has: an app runs at the speed of the firmware the emulated bar runs at that moment (bar-speed.mjs). The bar of each is named by model and firmware, never by serial number: the file is in every release and in the public repository.",
+  "firmwares": {
+    "1.3.1": {
+      "source": {
+        "bar": "BUSY Bar, firmware 1.3.1",
+        "firmware": "8edd2da4",
+        "recorded": "2026-11-09T22:49:35.198Z"
       },
-      "xpm": {
-        "ops": 14056.8,
-        "allocBytes": 64067.6
+      "stepMs": 127.9375,
+      "xpmMs": 102.86666666666666,
+      "drawFullBytes": 1753,
+      "drawTextBytes": 150,
+      "drawTextMs": 30.8,
+      "drawFullMs": 45.3,
+      "loopFps": 3.462204270051933,
+      "network": {
+        "note": "Requests to the internet from an app on the bar above, 2026-11-09, fetch() to the body's text: https to apps-api.busy.app and example.com took 1.28-1.70 s, http to example.com 0.09 s. tlsMs is the difference, the TLS handshake on the bar's processor; the emulator makes an https answer wait at least that long.",
+        "httpMs": 92,
+        "httpsMs": [
+          1277,
+          1500,
+          1508,
+          1531,
+          1602,
+          1656,
+          1703
+        ],
+        "tlsMs": 1400
       },
-      "drawText": {
-        "ops": 29.4,
-        "allocBytes": 2454.9
+      "model": {
+        "note": "The bar's time for an app's work, fitted by emulator/test/speed.mjs to the times above: JS takes opMs per byte-code instruction plus allocByteMs per heap byte allocated; the bar's API answers a request in apiMs plus apiByteMs per byte of its body. After a draw's answer the app's JS before its next request counts twice, until it has taken redrawMs more: the cost of a frame of the probe's loop that its JS and its draw do not explain. Its likely cause is the GUI redrawing the display on the same processor at a higher priority than the app's JS (gui.c sets the GUI thread to FuriThreadPriorityHigh); it is not measured apart from the loop. work: instructions and heap bytes of the probe's pieces, counted in the runtime of `firmware` (afterDraw: the part that runs after a draw's answer, before the next request).",
+        "opMs": 0.0033025256395294543,
+        "allocByteMs": 0.00087960498706438,
+        "apiMs": 25.610999720874634,
+        "apiByteMs": 0.008906851996499343,
+        "redrawMs": 12.475593559476053,
+        "firmware": "1.3.1",
+        "work": {
+          "step": {
+            "ops": 38739.12,
+            "allocBytes": 0.64,
+            "afterDraw": {
+              "ops": 0,
+              "allocBytes": 0
+            }
+          },
+          "xpm": {
+            "ops": 14056.8,
+            "allocBytes": 64169.4,
+            "afterDraw": {
+              "ops": 0,
+              "allocBytes": 0
+            }
+          },
+          "drawText": {
+            "ops": 29.7,
+            "allocBytes": 2451.7,
+            "afterDraw": {
+              "ops": 12.9,
+              "allocBytes": 1768.7
+            }
+          },
+          "drawFull": {
+            "ops": 28.8,
+            "allocBytes": 2402,
+            "afterDraw": {
+              "ops": 23.8,
+              "allocBytes": 2033.6
+            }
+          },
+          "loop": {
+            "ops": 53061.6,
+            "allocBytes": 68093.9,
+            "afterDraw": {
+              "ops": 53056.6,
+              "allocBytes": 67732.7
+            }
+          }
+        }
+      }
+    },
+    "1.4.1": {
+      "source": {
+        "bar": "BUSY Bar, firmware 1.4.1",
+        "firmware": "28c175b3",
+        "recorded": "2026-11-16T23:43:26.149Z"
       },
-      "drawFull": {
-        "ops": 28.8,
-        "allocBytes": 2398.8
+      "stepMs": 126,
+      "xpmMs": 102.86666666666666,
+      "drawFullBytes": 1753,
+      "drawTextBytes": 150,
+      "drawTextMs": 30.8,
+      "drawFullMs": 39.5,
+      "loopFps": 3.403289846851957,
+      "network": {
+        "note": "Requests to the internet from an app on the bar above, 2026-11-09, fetch() to the body's text: https to apps-api.busy.app and example.com took 1.28-1.70 s, http to example.com 0.09 s. tlsMs is the difference, the TLS handshake on the bar's processor; the emulator makes an https answer wait at least that long. Measured on firmware 1.3.1 and taken for 1.4.1 unchanged: not measured on 1.4.1.",
+        "httpMs": 92,
+        "httpsMs": [
+          1277,
+          1500,
+          1508,
+          1531,
+          1602,
+          1656,
+          1703
+        ],
+        "tlsMs": 1400
+      },
+      "runs": {
+        "note": "The fit takes the run on USB above, made as 1.3.1's was (on USB, 09.11). Three more runs on the same bar on 17.11, on Wi-Fi off USB, are kept here and not fitted: they differ from it by how the bar was connected, not by its firmware (the USB run matches 1.3.1's step, XPM and short draw).",
+        "wifi": {
+          "stepMs": [
+            125.5,
+            125.75,
+            125.5
+          ],
+          "xpmMs": [
+            95.938,
+            95.938,
+            97.938
+          ],
+          "drawTextMs": [
+            30.8,
+            31.3,
+            30.8
+          ],
+          "drawFullMs": [
+            44.5,
+            41.4,
+            44.5
+          ],
+          "loopFps": [
+            3.499,
+            3.504,
+            3.509
+          ],
+          "recorded": [
+            "2026-11-17T01:29:22.727Z",
+            "2026-11-17T01:29:35.895Z",
+            "2026-11-17T01:29:48.971Z"
+          ]
+        }
+      },
+      "model": {
+        "note": "The bar's time for an app's work, fitted by emulator/test/speed.mjs to the times above: JS takes opMs per byte-code instruction plus allocByteMs per heap byte allocated; the bar's API answers a request in apiMs plus apiByteMs per byte of its body. After a draw's answer the app's JS before its next request counts twice, until it has taken redrawMs more: the cost of a frame of the probe's loop that its JS and its draw do not explain. Its likely cause is the GUI redrawing the display on the same processor at a higher priority than the app's JS (gui.c sets the GUI thread to FuriThreadPriorityHigh); it is not measured apart from the loop. work: instructions and heap bytes of the probe's pieces, counted in the runtime of `firmware` (afterDraw: the part that runs after a draw's answer, before the next request).",
+        "opMs": 0.0032525114909013075,
+        "allocByteMs": 0.0008860196802297916,
+        "apiMs": 26.153527617409715,
+        "apiByteMs": 0.005293835342844623,
+        "redrawMs": 25.035121366608394,
+        "firmware": "1.4.1",
+        "work": {
+          "step": {
+            "ops": 38739.12,
+            "allocBytes": 0.64,
+            "afterDraw": {
+              "ops": 0,
+              "allocBytes": 0
+            }
+          },
+          "xpm": {
+            "ops": 14056.8,
+            "allocBytes": 64498.3,
+            "afterDraw": {
+              "ops": 0,
+              "allocBytes": 0
+            }
+          },
+          "drawText": {
+            "ops": 29.7,
+            "allocBytes": 2437.3,
+            "afterDraw": {
+              "ops": 12.9,
+              "allocBytes": 1754.3
+            }
+          },
+          "drawFull": {
+            "ops": 28.8,
+            "allocBytes": 2382.4,
+            "afterDraw": {
+              "ops": 23.8,
+              "allocBytes": 2014
+            }
+          },
+          "loop": {
+            "ops": 53061.6,
+            "allocBytes": 68600.2,
+            "afterDraw": {
+              "ops": 53056.6,
+              "allocBytes": 68239
+            }
+          }
+        }
       }
     }
   }

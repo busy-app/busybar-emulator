@@ -1,17 +1,28 @@
 {
-  "$comment": "The apps installed for the system scenes of golden.mjs (the apps menu, an app's card), in the order the menu lists them: a bar lists apps in the order they were installed, and the emulator in the order their folders were made. The goldens in golden/system-*.json were taken from a bar that had Clock, Weather and CPU Monitor, in that order. Only what those screens show is here: each app's name, its two icons and a settings form (an app with one shows Setup on its card); the script is a stand-in that keeps running. own-emulator.mjs copies these folders into a test's data folder. Clock and Weather are Flipper FZCO's apps from github.com/busy-app at the commits named below; their icons may go into the public repository's tests (the owner's decision, EMU-006).",
+  "$comment": "The apps installed for the system scenes of golden.mjs (the apps menu, an app's card, SETUP), by the firmware of the recordings they are compared with: `firmwares` lists, for each, the apps the bar had when its goldens were taken, in the order the menu lists them (a bar lists apps in the order they were installed, and the emulator in the order their folders were made; a bar that is recorded must list apps of the same names, its debug apps aside). golden/1.3.1/system-* were taken on 26.10 from a bar with Clock, Weather and CPU Monitor; golden/1.4.1/system-* from the stock bar with Clock, Weather and Host Load (its JS App Example is a debug app, which APPS does not list on a bar without the debug flag). Only what those screens show is here: each app's name, its two icons and its settings form (an app with one shows Setup on its card; SETUP lists the fields); the script is a stand-in that keeps running. own-emulator.mjs copies these folders into a test's data folder. Clock and Weather are Flipper FZCO's apps from github.com/busy-app; their icons may go into the public repository's tests (the owner's decision, EMU-006).",
   "apps": [
     {
       "id": "app.busy.clock",
-      "icons": "src/appmeta/icon_back_11x11.png and icon_front_8x8.png of https://github.com/busy-app/clock-app at dd3727d408318a58018212d64c1f276e24912539, byte for byte (the official Clock 0.6.1; the repository has no license file)"
+      "icons": "src/appmeta/icon_back_11x11.png and icon_front_8x8.png of https://github.com/busy-app/clock-app at dd3727d408318a58018212d64c1f276e24912539, byte for byte (the official Clock 0.6.1; the repository has no license file); the same bytes as Clock 0.6.1 on the stock bar on 1.4.1 (16.11)",
+      "settings": "settings.json as Clock 0.6.1 installed on the stock bar has it (16.11)"
     },
     {
       "id": "app.busy.weather",
-      "icons": "src/appmeta/icon_back_11x11.png and icon_front_8x8.png of https://github.com/busy-app/weather-app at 26ee739aac4c523b20878aba9257c208b86957c9, byte for byte (the official Weather 0.6.2; the repository has no license file)"
+      "icons": "src/appmeta/icon_back_11x11.png and icon_front_8x8.png of https://github.com/busy-app/weather-app at 26ee739aac4c523b20878aba9257c208b86957c9, byte for byte (the official Weather 0.6.2; the repository has no license file); the same bytes as Weather 0.7.1 on the stock bar on 1.4.1 (16.11)",
+      "settings": "settings.json as Weather 0.7.1 installed on the stock bar has it (16.11)"
     },
     {
       "id": "app.busy.cpu_monitor",
       "icons": "apps/cpu-monitor/src/appmeta of this repository, byte for byte: an opaque gray icon, which the menu draws as a solid square, as it did on the bar the goldens were taken from"
+    },
+    {
+      "id": "app.test.host_load",
+      "icons": "appmeta/icon_back_11x11.png and icon_front_8x8.png of Host Load 0.1.0 (the owner's app) as installed on the stock bar, byte for byte. The stand-in has an id of its own; the screens show the app's name and icons, not its id",
+      "settings": "the fields of Host Load 0.1.0's settings.json as installed on the stock bar (16.11), the descriptions shortened; the values set on the bar are not here"
     }
-  ]
+  ],
+  "firmwares": {
+    "1.3.1": ["app.busy.clock", "app.busy.weather", "app.busy.cpu_monitor"],
+    "1.4.1": ["app.busy.clock", "app.busy.weather", "app.test.host_load"]
+  }
 }

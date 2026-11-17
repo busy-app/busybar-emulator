@@ -105,7 +105,7 @@ async function tickUntil(c, done, ticks) {
   return done() ? ticks : -1;
 }
 
-for (const name of ["1.3.1", "dev"]) {
+for (const name of ["1.4.1", "1.3.1"]) {
   const firmware = loadFirmware(name);
 
   test(`${name}: the bar is up only once its GUI has drawn, and a drawing sent at once is on both displays`, async (t) => {

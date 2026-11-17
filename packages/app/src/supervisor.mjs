@@ -11,6 +11,9 @@
 // error, errorCode } as the last word. The server's log and errors go to the standard output and error, which the
 // shell writes to its log.
 //
+// When the BUSY Bar switches firmware (startServer's onFirmware) the shell hears { type: "firmware", event }: the window's
+// local web is the firmware's own and is loaded again. A switch is no end of the server: the process goes on.
+//
 // One thing goes the other way: a question only the person may answer (whether they trust a project folder, ADR-0012
 // section 4). The server gets `askPerson` from here; the supervisor sends { type: "ask", id, question } and the shell,
 // which shows the question in a dialog of its own, answers { type: "answer", id, answer }. { type: "ask-cancel", id }
@@ -80,6 +83,16 @@ function askPerson(question, signal) {
       settle({ answer: "unavailable", reason: "the question did not reach the app" });
     }
   });
+}
+
+/** startServer's `onFirmware`: the switch goes to the shell as it happens. */
+function tellFirmware(event) {
+  if (!process.connected) return;
+  try {
+    process.send({ type: "firmware", event }, () => {});
+  } catch {
+    // The shell is gone.
+  }
 }
 
 const time = () => new Date().toTimeString().slice(0, 8);
@@ -170,7 +183,7 @@ async function start(options) {
     const { startServer } = await import(pathToFileURL(serverModule).href);
     if (typeof startServer !== "function") throw new Error(`${serverModule} has no startServer`);
     if (quit.signal.aborted) return finish(stopped());
-    emulator = await startServer({ ...options, signal: quit.signal, log: say, onError: (e) => console.error(e?.stack ?? e), askPerson });
+    emulator = await startServer({ ...options, signal: quit.signal, log: say, onError: (e) => console.error(e?.stack ?? e), askPerson, onFirmware: tellFirmware });
   } catch (e) {
     // A start called off by the shell did not fail.
     if (quit.signal.aborted) return finish(stopped());

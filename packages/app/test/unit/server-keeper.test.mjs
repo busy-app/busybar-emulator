@@ -113,7 +113,7 @@ test("the real server is started in the supervisor's process with the port and t
   assert.equal(JSON.parse(readFileSync(path.join(folder, "run", "server.lock"), "utf8")).pid, keeper.pids().supervisor);
   assert.ok(lines.some((line) => line.startsWith("[server] BUSY Bar emulator: ")));
   // The server has the whole data folder, laid out as architecture.md section 4 says (EMU-005).
-  for (const entry of ["format", path.join("run", "server.lock"), path.join("bar", "1.3.1", "ext", "user_assets")]) {
+  for (const entry of ["format", path.join("run", "server.lock"), path.join("bar", "ext", "user_assets")]) {
     assert.ok(existsSync(path.join(folder, entry)), `${entry} in the data folder`);
   }
   assert.ok(!existsSync(path.join(folder, "bar", "bar")) && !existsSync(path.join(folder, "bar", "format")), "not a data folder inside bar/");

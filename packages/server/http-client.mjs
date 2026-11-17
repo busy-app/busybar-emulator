@@ -32,7 +32,7 @@ export const INACTIVITY_TIMEOUT_MS = 5000; // FETCH_INACTIVITY_TIMEOUT_MS
 /**
  * The certificate authorities the bar trusts: the firmware's assets/shared/ca/cacert.pem (ca_storage.c reads it,
  * mongoose_tls.c gives it to mbedTLS), Mozilla's roots as curl extracts them, as of 20 Oct 2026; the same file (git
- * blob c5818b24) in 1.3.1 and dev. Copied byte for byte; a newer firmware with another list needs a new copy.
+ * blob c5818b24) in 1.3.1 and 1.4.1. Copied byte for byte; a newer firmware with another list needs a new copy.
  */
 export const BAR_CA_FILE = new URL("./bar-ca-certificates.txt", import.meta.url);
 let barCa = null;

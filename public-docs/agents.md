@@ -115,6 +115,10 @@ user asked for. The emulator runs apps at a BUSY Bar's speed: what is slow here 
 project where `create` made it. When you are done, `<cli> stop` stops the app; leave the emulator running for the
 user.
 
+The emulated BUSY Bar starts on the firmware it last ran, the latest unless someone switched it; `<cli> status --json` names it.
+An app for other people should run on the previous firmware too: `<cli> firmware use previous`, `<cli> dev --once`, a few seconds later `<cli> logs --since-run`, then `<cli> firmware use latest`.
+Tell the user that you switched the firmware.
+
 Trusting a folder, signing in to GitHub, the license, how AI was used, the push, the pull request and the catalog's
 checklist are the user's: ask, and never choose, confirm or tick for them. `refused` or `trust_refused` means they
 chose Cancel: do not ask again. Sending the app to the catalog: `<cli> help publish`.

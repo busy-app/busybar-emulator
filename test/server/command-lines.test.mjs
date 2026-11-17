@@ -36,6 +36,7 @@ const CHECKED = [
   "test/timed.mjs",
   "test/archives/make.mjs",
   "test/state/make.mjs",
+  "test/state/record.mjs",
   "test/gate.mjs",
   "tools/gate/win.mjs",
   "tools/export/export.mjs",
@@ -131,6 +132,7 @@ async function safeArguments(script, dir) {
       "test/mirror-apps.mjs": ["--bar", nobody, "--data", own],
       "test/convert-data-folder.mjs": [own],
       "test/state/make.mjs": [join(own, "compare"), join(own, "night")],
+      "test/state/record.mjs": ["--bar", nobody],
       // Were the call taken: one quick suite; a ref that does not exist, which ends gate:win before it reaches Windows.
       "test/gate.mjs": ["--only", "board"],
       "tools/gate/win.mjs": ["--ref", "refs/heads/no-such-branch-of-this-test"],

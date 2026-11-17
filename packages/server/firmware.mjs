@@ -4,7 +4,7 @@
 // checkout around. Which one a server runs is said by whoever starts it (startServer's `firmware` in server.mjs);
 // nothing here reads the command line or the environment, and nothing is kept between calls.
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { filesIn } from "../engine/checks.mjs";
@@ -42,8 +42,8 @@ export function loadFirmware(name, engine = core) {
   }
   const info = JSON.parse(readFileSync(join(dir, "build-info.json"), "utf8"));
   const { commit, summary } = config.versions[name];
-  if (!info.commit || !info.buildDate || !info.api || !info.web) {
-    throw new FirmwareError("old-build", `The build of firmware "${name}" in ${dir} was made by an older build script: its build-info.json does not record the firmware commit and its date, the API version and the local web.`, rebuild);
+  if (!info.commit || !info.buildDate || !info.api || !info.appAllowlist || !info.web) {
+    throw new FirmwareError("old-build", `The build of firmware "${name}" in ${dir} was made by an older build script: its build-info.json does not record the firmware commit and its date, the API version, what apps may reach and the local web.`, rebuild);
   }
   if (info.commit !== commit) {
     throw new FirmwareError("other-commit", `The build of firmware "${name}" in ${dir} was made from firmware commit ${info.commit}, and firmware.json names ${commit}.`, rebuild);
@@ -62,6 +62,8 @@ export function loadFirmware(name, engine = core) {
   return {
     name,
     commit,
+    /** The files of /ext/apps_assets this firmware does not have (appsAssetFile). */
+    assetsAfter: assetsAfter(name, engine),
     /** What this firmware is, for the person using the emulator: the tooltip of the device window's firmware badge. */
     summary,
     dir,
@@ -78,5 +80,70 @@ export function loadFirmware(name, engine = core) {
   };
 }
 
+/**
+ * The firmwares of firmware.json as the person chooses among them (EMU-320). A released firmware has a version of
+ * numbers and dots; `latest` is the default of firmware.json, `previous` the newest released one below it. Others
+ * (dev) are chosen by their name only. However many there are, the list is newest first by version, the others after.
+ * Reads firmware.json once, when called; resolve() throws a FirmwareError "unknown-firmware" for a name or alias
+ * without a firmware behind it.
+ * @returns {{ versions: string[], latest: string, previous: string | null, aliasOf: (name: string) => "latest" |
+ *   "previous" | null, summaryOf: (name: string) => string | null, newsOf: (name: string) => string | null, resolve:
+ *   (wanted: string) => string }}  newsOf: what the firmware brings an app's author, in one line (the window's list)
+ */
+export function firmwareChoices(engine = core) {
+  const config = JSON.parse(readFileSync(join(engine, "firmware.json"), "utf8"));
+  const released = (name) => /^\d+(\.\d+)*$/.test(name);
+  const parts = (name) => name.split(".").map(Number);
+  const newer = (a, b) => {
+    const [x, y] = [parts(a), parts(b)];
+    for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0);
+    return 0;
+  };
+  const names = Object.keys(config.versions);
+  const versions = [...names.filter(released).sort(newer), ...names.filter((name) => !released(name))];
+  const latest = config.default;
+  const previous = released(latest) ? (versions.find((name) => released(name) && newer(name, latest) > 0) ?? null) : null;
+  const aliasOf = (name) => (name === latest ? "latest" : name === previous ? "previous" : null);
+  const resolve = (wanted) => {
+    const name = wanted === "latest" ? latest : wanted === "previous" ? previous : wanted;
+    if (name && config.versions[name]) return name;
+    const have = versions.map((v) => (aliasOf(v) ? `${v} (${aliasOf(v)})` : v)).join(", ");
+    const why = wanted === "previous" ? "This emulator has no released firmware older than the latest." : `This emulator has no firmware ${JSON.stringify(String(wanted))}.`;
+    throw new FirmwareError("unknown-firmware", why, `It has: ${have}.`);
+  };
+  return { versions, latest, previous, aliasOf, summaryOf: (name) => config.versions[name]?.summary ?? null, newsOf: (name) => config.versions[name]?.news ?? null, resolve };
+}
+
 /** /ext/apps_assets, the same for all versions: shared fonts, images and animations, and the system apps' own. */
 export const appsAssets = join(core, "build", "apps-assets");
+
+/**
+ * The files of /ext/apps_assets (paths in build/apps-assets) that a later release than `name` added: apps-assets.json
+ * says since which release ("since"). A firmware whose name is not a release number (a build of its own) has them all.
+ */
+function assetsAfter(name, engine) {
+  const file = join(engine, "apps-assets.json");
+  const release = (version) => /^(\d+)\.(\d+)\.(\d+)$/.exec(version)?.slice(1).map(Number) ?? null;
+  const own = release(name);
+  if (!own || !existsSync(file)) return new Set();
+  const older = (a, b) => {
+    const i = a.findIndex((n, k) => n !== b[k]);
+    return i >= 0 && a[i] < b[i];
+  };
+  const files = JSON.parse(readFileSync(file, "utf8")).files;
+  return new Set(Object.keys(files).filter((path) => files[path].since && release(files[path].since) && older(own, release(files[path].since))));
+}
+
+/**
+ * The file in build/apps-assets that /ext/apps_assets/`path` names on the BUSY Bar running `firmware`, or null: a path
+ * outside the folder, or a file that firmware does not have (it came with a later release). `firmware` is read when
+ * this is called, so a BUSY Bar switched to another firmware sees that firmware's files.
+ */
+export function appsAssetFile(firmware, path) {
+  const file = resolve(appsAssets, path);
+  if (file !== appsAssets && !file.startsWith(appsAssets + sep)) return null;
+  // In any letter case: on macOS and Windows the file system finds the file whatever the case of the name, and a BUSY
+  // Bar with a firmware before the file's release has it in none.
+  const named = relative(appsAssets, file).split(sep).join("/").toLowerCase();
+  return [...(firmware.assetsAfter ?? [])].some((later) => later.toLowerCase() === named) ? null : file;
+}

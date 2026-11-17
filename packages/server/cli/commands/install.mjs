@@ -19,6 +19,7 @@ import path from "node:path";
 import { insideRoots, realOrNull } from "../../path-boundary.mjs";
 import { checkAppPackage, MAX_PACKAGE_BYTES, PackageProblem } from "../../projects/app-package.mjs";
 import { isTrusted } from "../../projects/trust.mjs";
+import { refusalFor } from "../firmware.mjs";
 import { blockedNetwork, emulatorStatus, ready } from "../lifecycle.mjs";
 import { CliError } from "../output.mjs";
 import { again, appCommand, shellWord } from "../project.mjs";
@@ -79,14 +80,19 @@ async function installPackage(ctx, sys, given, progress, { check = false } = {})
   const status = await emulatorStatus(ctx, sys);
   if (!ready(status)) throw new CliError("not_running", status.running ? `The emulator is running, but its BUSY Bar is not ready (${status.state}).` : "The emulator is not running, so there is no BUSY Bar to install the app on.", `Start it with ${again(ctx, "start")}, then run this again.`);
   const address = `127.0.0.1:${status.port}`;
+  // A package for a newer API than the firmware's: the BUSY Bar would refuse it (api_mismatch); said here with the way out.
+  const refusal = await refusalFor(ctx, sys, status, { id: facts.id, name: facts.name ?? facts.id, api: facts.api_version, manifest: "its project's manifest" });
+  if (refusal) throw refusal;
   progress(`Uploading ${path.basename(file)} to the emulated BUSY Bar at ${address}`);
   const staged = await sys.barSend(status.port, "POST", "/api/apps/stage", bytes, 120_000);
   if (staged.blocked) throw blockedNetwork(status.port, staged.blocked);
   const stage = parsed(staged);
-  if (staged.status !== 200 || typeof stage?.install_key !== "string") {
+  // The BUSY Bar's key is a number (api_apps.c; bar-stage-1.3.1.json); a string is taken as well.
+  const key = stage?.install_key;
+  if (staged.status !== 200 || !((typeof key === "number" && Number.isSafeInteger(key)) || (typeof key === "string" && key))) {
     throw new CliError("install_failed", `The emulated BUSY Bar did not take ${path.basename(file)}: ${stage?.error ?? staged.failed ?? `HTTP ${staged.status}`}.`, "Check that it is an app package, as busy-cli build makes it.", { file, ...(stage?.error_code ? { bar_code: stage.error_code } : {}) });
   }
-  const done = await sys.barSend(status.port, "POST", `/api/apps/install?install_key=${encodeURIComponent(stage.install_key)}`, null, 120_000);
+  const done = await sys.barSend(status.port, "POST", `/api/apps/install?install_key=${encodeURIComponent(String(key))}`, null, 120_000);
   if (done.blocked) throw blockedNetwork(status.port, done.blocked);
   if (done.status !== 200) throw new CliError("install_failed", `The emulated BUSY Bar did not install ${path.basename(file)}: ${parsed(done)?.error ?? done.failed ?? `HTTP ${done.status}`}.`, "Check that it is an app package, as busy-cli build makes it.", { file });
   const id = stage.staged?.id ?? null;

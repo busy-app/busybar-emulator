@@ -11,10 +11,12 @@ import { OVERLAY_COLORS, titleBarOptions, usesTitleBar } from "./title-bar.mjs";
 export const MESSAGE_PAGE = `${originOfHost("shell")}/message.html`;
 /**
  * The device window's smallest size, the whole window's (on macOS its title bar takes 28 of the height, on Windows the
- * window's own bar 36). Below it the window would scroll sideways; the participants' smallest laptops (1366×768,
- * a taskbar) still have room for it.
+ * window's own bar 36). Its width is the BUSY Bar's card's: the card holds its one row from 744 up (window.css, "the
+ * bar's card"), and it is as wide as the page less the side column (340 up to a 1133 wide page, 30 % of the page
+ * above) and the stage's padding (48): 744 + 340 + 48 = 1132, rounded up to 1140, where the card is 750. The
+ * participants' smallest laptops (1366×768, a taskbar) still have room for it.
  */
-export const DEVICE_MIN_SIZE = Object.freeze({ minWidth: 880, minHeight: 600 });
+export const DEVICE_MIN_SIZE = Object.freeze({ minWidth: 1140, minHeight: 600 });
 
 /**
  * A window's size no larger than the screen it opens on (the work area: without the taskbar and the Dock). Electron

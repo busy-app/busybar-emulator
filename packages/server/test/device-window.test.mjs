@@ -13,6 +13,7 @@ import vm from "node:vm";
 import { attachDeviceWindow } from "../device-window.mjs";
 import { Device } from "../device.mjs";
 import { loadFirmware } from "../firmware.mjs";
+import * as statusLights from "../legacy-window/status-lights.mjs";
 
 const here = join(dirname(fileURLToPath(import.meta.url)), ".."); // packages/server
 const firmwareJson = JSON.parse(readFileSync(join(here, "../engine/firmware.json"), "utf8"));
@@ -181,9 +182,10 @@ function audioContextClass({ initial, turnsOn = false, resumes = true }) {
  * its window.emulatorStage3D; left out, the page has none, as in a browser. `now` is the page's clock, milliseconds.
  * Returns the page's elements, its window listeners, the event stream to drive it and the requests it made.
  */
-function openWindow({ AudioContext = audioContextClass({ initial: "suspended" }), apps = () => [], hash = "", settings = {}, actions, stage3d, now = () => Date.now(), filters = [], scripts = [], kept = null, record = true } = {}) {
+function openWindow({ AudioContext = audioContextClass({ initial: "suspended" }), apps = () => [], hash = "", settings = {}, actions, stage3d, now = () => Date.now(), filters = [], scripts = [], kept = null, record = true, lessMotion = false } = {}) {
   const elements = new Map();
   const windowListeners = {};
+  const documentListeners = {};
   const requests = [];
   let stream = null;
   // The controls the page finds by what they are: the positions of the mode switch, the keys, the wheel's buttons.
@@ -211,6 +213,10 @@ function openWindow({ AudioContext = audioContextClass({ initial: "suspended" })
     get activeElement() {
       return null;
     },
+    // Whether the page is out of sight, and what hears it change (fireDocument).
+    hidden: false,
+    addEventListener: (type, fn) => (documentListeners[type] ??= []).push(fn),
+    removeEventListener: (type, fn) => (documentListeners[type] = (documentListeners[type] ?? []).filter((one) => one !== fn)),
   };
   class EventSource {
     constructor(url) {
@@ -260,7 +266,10 @@ function openWindow({ AudioContext = audioContextClass({ initial: "suspended" })
     },
     getComputedStyle: () => ({}),
     addEventListener: (type, fn) => (windowListeners[type] ??= []).push(fn),
+    removeEventListener: (type, fn) => (windowListeners[type] = (windowListeners[type] ?? []).filter((one) => one !== fn)),
     performance: { now },
+    // What the person asked of motion (lessMotion: prefers-reduced-motion is "reduce").
+    matchMedia: (query) => ({ matches: lessMotion && query === "(prefers-reduced-motion: reduce)", addEventListener() {} }),
     location: { host: "127.0.0.1:8861", origin: "http://127.0.0.1:8861", hash },
     ...(actions ? { emulatorActions: actions } : {}),
     // The publishing flow (publish.js) is a script of its own, with tests of its own: here it notes that it was opened.
@@ -289,13 +298,21 @@ function openWindow({ AudioContext = audioContextClass({ initial: "suspended" })
   // The page's other scripts that come before it (welcome.js), as index.html loads them.
   for (const name of scripts) vm.runInContext(readFileSync(join(here, "legacy-window", name), "utf8"), sandbox, { filename: name });
   // The Record button is shown (RECORD_BUTTON); `record: false` turns it off, as the flag would.
-  const source = readFileSync(join(here, "legacy-window/window.js"), "utf8");
+  // window.js is a module, run here as a script of the sandbox: its one import, the status lights' module, is given
+  // to it as the page would get it.
+  const module = readFileSync(join(here, "legacy-window/window.js"), "utf8");
+  const imports = [...module.matchAll(/^import \{([^}]+)\} from "\.\/status-lights\.mjs";$/gm)];
+  assert.equal(imports.length, 1);
+  assert.equal(module.match(/^import /gm).length, 1, "window.js imports nothing else");
+  sandbox.statusLights = statusLights;
+  const source = module.replace(imports[0][0], `const {${imports[0][1]}} = statusLights;`);
   assert.match(source, /^const RECORD_BUTTON = true;$/m);
   vm.runInContext(record ? source : source.replace(/^const RECORD_BUTTON = true;$/m, "const RECORD_BUTTON = false;"), sandbox, { filename: "window.js" });
   const fire = (type, event = {}) => (windowListeners[type] ?? []).forEach((fn) => fn({ preventDefault() {}, target: element(), key: "", ...event }));
   /** The requests the page has made since the last look, as "METHOD address". */
   const sent = () => requests.splice(0).map(({ method, url }) => `${method} ${url}`);
-  return { $: (s) => document.querySelector(s), all: (s) => document.querySelectorAll(s), stream, fire, location: sandbox.location, requests, sent, global: sandbox };
+  const fireDocument = (type) => (documentListeners[type] ?? []).forEach((fn) => fn({ type }));
+  return { $: (s) => document.querySelector(s), all: (s) => document.querySelectorAll(s), stream, fire, fireDocument, document, location: sandbox.location, requests, sent, global: sandbox };
 }
 
 const settle = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -317,11 +334,12 @@ test("each firmware has a summary for the person using the emulator, without the
     assert.match(version.summary, /^[A-Z]/, `${name}: the summary starts with a capital letter`);
     for (const pattern of INTERNAL) assert.doesNotMatch(version.summary, pattern, `${name}: "${version.summary}"`);
   }
-  // What an app author needs to know about the two builds.
+  // What an app author needs to know about the two firmwares.
   assert.match(firmwareJson.versions["1.3.1"].summary, /console\.warn/);
   assert.match(firmwareJson.versions["1.3.1"].summary, /Back/);
-  assert.match(firmwareJson.versions.dev.summary, /console\.warn exists/);
-  assert.match(firmwareJson.versions.dev.summary, /Back/);
+  assert.match(firmwareJson.versions["1.4.1"].summary, /console\.warn exists/);
+  assert.match(firmwareJson.versions["1.4.1"].summary, /Back/);
+  assert.match(firmwareJson.versions["1.4.1"].summary, /\/api\/storage/);
 });
 
 // A test that hangs fails after this long. One that leaves something running (the window's frame timer, a bar) would
@@ -363,7 +381,9 @@ test("the window's hello carries the firmware's summary and not its internal not
   const { firmware } = JSON.parse(data[1]);
   const expected = firmwareJson.versions[firmware.name];
   assert.equal(firmware.summary, expected.summary);
-  assert.deepEqual(Object.keys(firmware).sort(), ["commit", "name", "summary"], "the window gets what it shows and nothing else");
+  // The name, its version and API and alias as GET /_emu/firmware names them (EMU-320), the summary and the commit.
+  assert.deepEqual(Object.keys(firmware).sort(), ["alias", "api", "commit", "name", "summary", "version"], "the window gets what it shows and nothing else");
+  assert.equal(firmware.api, "27.10.0");
 });
 
 test("each file of the window is served with its own type, the picture of the BUSY Bar as image/png, the font as font/ttf", () => {
@@ -390,12 +410,26 @@ test("each file of the window is served with its own type, the picture of the BU
   for (const [name, type] of Object.entries(served)) assert.notEqual(type, "application/octet-stream", `${name} has a type of its own`);
 });
 
-test("the firmware's tooltip is the summary and the build's commit", () => {
+test("the firmware's label names the firmware and has no tooltip: the list it opens says the rest (EMU-322)", () => {
   const page = openWindow();
   page.stream.emit("hello", hello);
-  assert.equal(page.$("#firmware").title, "The summary.\nCommit 8edd2da4");
-  assert.equal(page.$("#firmware").textContent, "Firmware 1.3.1");
+  assert.equal(page.$("#firmware").title ?? "", "");
+  assert.equal(page.$("#firmware .fw-label").textContent, "Firmware 1.3.1");
   assert.equal(page.$("#api").textContent, "API 27.10.0");
+});
+
+test("a switch that failed: the window says the server's error as a sentence, then its hint, the BUSY Bar on or off (EMU-322)", () => {
+  const page = openWindow();
+  page.stream.emit("hello", hello);
+  const failed = (more) => page.stream.emit("firmware", { state: "failed", firmware: { version: "1.3.1", api: "27.10.0" }, to: { version: "1.4.1" }, code: "firmware_start_failed", pending: null, ...more });
+  failed({ error: 'Firmware 1.4.1 cannot start: the local web of firmware "1.4.1" is not whole: 3 of 4 files', hint: "The BUSY Bar runs firmware 1.3.1 as before." });
+  assert.equal(page.$("#fw-toast").hidden, false);
+  assert.equal(page.$("#fw-toast-said").textContent, 'Firmware 1.4.1 cannot start: the local web of firmware "1.4.1" is not whole: 3 of 4 files. The BUSY Bar runs firmware 1.3.1 as before.');
+  failed({ error: "Firmware 1.4.1 cannot start: no first frame.", hint: "The BUSY Bar is off; press one of its buttons to turn it on." });
+  assert.equal(page.$("#fw-toast-said").textContent, "Firmware 1.4.1 cannot start: no first frame. The BUSY Bar is off; press one of its buttons to turn it on.");
+  // An older server's event, without the hint.
+  failed({ error: "Firmware 1.4.1 cannot start: no first frame", hint: undefined });
+  assert.equal(page.$("#fw-toast-said").textContent, "Firmware 1.4.1 cannot start: no first frame. The BUSY Bar runs firmware 1.3.1 as before.");
 });
 
 // ---------------------------------------------------------------- the page's own files (the window's look)
@@ -791,7 +825,33 @@ test("Restart BUSY Bar waits for the restart, turns meanwhile and says how long 
   assert.equal(button.querySelector(".label").textContent, "Back up in 1.2 s");
   assert.ok(button.classList.contains("done"));
   const html = readFileSync(join(here, "legacy-window/index.html"), "utf8");
-  assert.match(html, /id="power-restart" title="Restart BUSY Bar, as holding Back and Start does on a real BUSY Bar\. Apps and their settings are kept" aria-label="Restart BUSY Bar"><svg class="bi"[^>]*><use href="\/emulator\/icons\/busy-sprite\.svg#bi-restart"\/><\/svg><span class="label">Restart BUSY Bar<\/span>/);
+  // Its words in two lengths, the card's width chooses (window.css); its name for a screen reader either way, and no
+  // tooltip: a button with words has none.
+  assert.match(html, /id="power-restart" aria-label="Restart BUSY Bar"><svg class="bi"[^>]*><use href="\/emulator\/icons\/busy-sprite\.svg#bi-restart"\/><\/svg><span class="label">Restart BUSY Bar<\/span><span class="label-short" aria-hidden="true">Restart<\/span><\/button>/);
+  assert.equal(button.querySelector(".label-short").textContent, "Back up in 1.2 s");
+  assert.ok(button.classList.contains("said"), "what it says takes the uptime's room on a narrow card");
+});
+
+// The firmware is drawn again whenever the server speaks of it (its hello after the restart, its events); the words
+// Restart says after a restart are the button's own for their three seconds (EMU-325: "Back up in…" and its live
+// region went at the next drawing). A firmware switch says "Restarting" while it lasts and gives the words back.
+test("Restart BUSY Bar keeps saying how long it took while the firmware is drawn again; a switch says Restarting while it lasts", async () => {
+  const page = await openBar();
+  const button = page.$("#power-restart");
+  const said = () => [button.querySelector(".label").textContent, page.$("#restart-said").textContent, button.ariaBusy];
+  button.fire("click");
+  await settle();
+  assert.deepEqual(said(), ["Back up in 1.2 s", "Back up in 1.2 s", "false"]);
+  page.stream.emit("hello", hello);
+  page.stream.emit("firmware", { state: "ready", firmware: { version: "1.3.1", api: "27.10.0" }, pending: null });
+  await settle();
+  assert.deepEqual(said(), ["Back up in 1.2 s", "Back up in 1.2 s", "false"], "the firmware drawn again leaves the restart's words");
+  page.stream.emit("firmware", { state: "switching", to: { version: "1.4.1" } });
+  await settle();
+  assert.deepEqual(said(), ["Restarting", "Restarting", "true"]);
+  page.stream.emit("firmware", { state: "ready", firmware: { version: "1.4.1", api: "27.15.0" }, pending: null });
+  await settle();
+  assert.deepEqual(said(), ["Restart BUSY Bar", "", "false"], "the switch over, the button's own name again");
 });
 
 // ---------------------------------------------------------------- the controls: the top of the bar (EMU-258)
@@ -952,35 +1012,34 @@ test("the names of the positions are buttons: a click turns the switch there; th
   assert.deepEqual(keysSent(page), ["apps", "custom"]);
 });
 
-test("the RGB LEDs beside Start / Pause are off until the emulator says otherwise, then show its color, lit as the eye sees an LED, and its preset", async () => {
+test("the RGB LEDs beside Start / Pause are off until the emulator says otherwise, then show its color, lit as the eye sees an LED", async () => {
   const page = await openBar();
   const leds = [page.$("#led-left"), page.$("#led-right")];
-  const look = () => leds.map((led) => ({ lit: led.classList.contains("lit"), hue: led.style["--led-hue"], color: led.style["--led"], blink: led.classList.contains("blink"), notification: led.classList.contains("notification") }));
+  const look = () => leds.map((led) => ({ lit: led.classList.contains("lit"), hue: led.style["--led-hue"], color: led.style["--led"] }));
   const glow = () => leds[0].style["--led-filter"];
-  const dark = { lit: false, hue: "transparent", color: "transparent", blink: false, notification: false };
+  const dark = { lit: false, hue: "transparent", color: "transparent" };
   const radius = (filter) => Number(/drop-shadow\(0 0 [\d.]+px [^)]+\) drop-shadow\(0 0 ([\d.]+)px/.exec(filter)?.[1]);
   assert.deepEqual(look(), Array(2).fill(dark), "off at first");
   assert.equal(glow(), "none");
   // The BUSY timer's red (150, 0, 0) at the default brightness: the PWM duty is 15 %, a real LED looks plainly lit, so
   // the hue at full strength, the core a touch hot, with a halo.
   page.stream.emit("lights", { preset: "static", color: "#960000", brightness: 0.48 });
-  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#ff0000", color: "color-mix(in srgb, #ff0000 90%, #fff)", blink: false, notification: false }));
+  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#ff0000", color: "color-mix(in srgb, #ff0000 90%, #fff)" }));
   const halo48 = radius(glow());
   // At the bar's full brightness the halo spreads farther.
   page.stream.emit("lights", { preset: "static", color: "#960000", brightness: 0.9 });
   assert.ok(radius(glow()) > halo48 && halo48 > 0, `${halo48} then ${glow()}`);
   // At the lowest brightness (5 %) still clearly lit: about half way from the dark LED to the hue.
   page.stream.emit("lights", { preset: "static", color: "#960000", brightness: 0.05 });
-  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#ff0000", color: "color-mix(in srgb, #ff0000 67%, #262626)", blink: false, notification: false }));
-  // An app's notification (POST /api/display/draw with led_notification_color): three blinks at full brightness.
+  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#ff0000", color: "color-mix(in srgb, #ff0000 67%, #262626)" }));
+  // An app's notification (POST /api/display/draw with led_notification_color): on at once, at full brightness.
   page.stream.emit("lights", { preset: "notification", color: "#2B7FFF", brightness: 0.2 });
-  assert.deepEqual(look().map(({ hue, notification }) => ({ hue, notification })), Array(2).fill({ hue: "#2b7fff", notification: true }));
+  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#2b7fff", color: "color-mix(in srgb, #2b7fff 82%, #fff)" }));
   page.stream.emit("lights", { preset: "blink", color: "#00ff00", brightness: 0.5 });
-  assert.deepEqual(look().map(({ lit, hue, blink }) => ({ lit, hue, blink })), Array(2).fill({ lit: true, hue: "#00ff00", blink: true }));
-  // The rainbow turns from red, dimmer than the timer as the firmware runs it (HSV value 16 of 255), yet visible.
+  assert.deepEqual(look().map(({ lit, hue }) => ({ lit, hue })), Array(2).fill({ lit: true, hue: "#00ff00" }));
+  // The rainbow starts red, dimmer than the timer as the firmware runs it (HSV value 16 of 255), yet visible.
   page.stream.emit("lights", { preset: "rainbow", color: "#000000", brightness: 0.48 });
-  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#ff0000", color: "color-mix(in srgb, #ff0000 80%, #262626)", blink: false, notification: false }));
-  assert.ok(leds.every((led) => led.classList.contains("rainbow")));
+  assert.deepEqual(look(), Array(2).fill({ lit: true, hue: "#ff0000", color: "color-mix(in srgb, #ff0000 80%, #262626)" }));
   assert.ok(radius(glow()) < halo48, "a smaller halo than the timer's");
   // Off, black, or what is not a state: dark.
   for (const lights of [{ preset: "off", color: "#ff0000" }, { preset: "static", color: "#000000" }, { preset: "lava", color: "#ff0000" }, { preset: "static", color: "red" }, { preset: "static", color: "#ff0000", brightness: 0 }]) {
@@ -988,6 +1047,96 @@ test("the RGB LEDs beside Start / Pause are off until the emulator says otherwis
     assert.deepEqual(look(), Array(2).fill(dark), JSON.stringify(lights));
     assert.equal(glow(), "none");
   }
+});
+
+test("the RGB LEDs run the firmware's timeline from the moment the event names: a notification blinks three times, and then nothing of it is left lit", async () => {
+  const page = await openBar();
+  const leds = [page.$("#led-left"), page.$("#led-right")];
+  // Lit: the class and the glow on the outer box, both LEDs alike.
+  const shown = () => {
+    const each = leds.map((led) => ({ lit: led.classList.contains("lit"), glows: led.style["--led-filter"] !== "none", hue: led.style["--led-hue"] }));
+    assert.deepEqual(each[1], each[0]);
+    return each[0];
+  };
+  const at = (lights, elapsed) => {
+    page.stream.emit("lights", { ...lights, elapsed });
+    return shown();
+  };
+  const green = { preset: "notification", color: "#00ff00", brightness: 0.48 };
+  const off = { lit: false, glows: false, hue: "transparent" };
+  const on = { lit: true, glows: true, hue: "#00ff00" };
+  // presets/blink.c with six runs of 500 ms: on, off, on, off, on, and dark from 2500 ms.
+  for (const [elapsed, want] of [[0, on], [499, on], [500, off], [999, off], [1000, on], [1700, off], [2200, on], [2499, on], [2500, off], [60000, off]]) assert.deepEqual(at(green, elapsed), want, `${elapsed} ms into the notification`);
+  // The bug of 17.11: the notification's last blink ends, and the LED is fully dark, its glow gone.
+  at(green, 2450);
+  assert.deepEqual(shown(), on);
+  await settle(120);
+  assert.deepEqual(shown(), off, "dark 2.5 s after it started");
+  assert.equal(leds[0].style["--led"], "transparent");
+  // A blink goes on without end, at the brightness setting's level; an event in the middle of it keeps its phase.
+  const blink = { preset: "blink", color: "#00ff00", brightness: 0.48 };
+  assert.deepEqual(at(blink, 60_250), on);
+  assert.deepEqual(at(blink, 60_750), off);
+  // The fade (presets/fade.c): 256 runs of 10 ms; a channel is color / 128 in integers, times the run's brightness:
+  // white at its brightest at 1.27 s, dark at its last run; a color with no channel of 128 or more stays dark.
+  const fade = { preset: "fade", color: "#ffffff", brightness: 0.9 };
+  assert.deepEqual(at(fade, 1275), { lit: true, glows: true, hue: "#ffffff" });
+  assert.deepEqual(at(fade, 2555), off);
+  assert.deepEqual(at({ ...fade, color: "#2b7f7f" }, 1275), off);
+  // The rainbow (presets/rainbow_gradient.c): a third of its 4.096 s round in, green.
+  assert.deepEqual(at({ preset: "rainbow", color: "#000000", brightness: 0.48 }, 1376), { lit: true, glows: true, hue: "#00ff00" });
+});
+
+test("a page back in sight draws the LEDs' step at once: its timers were late while it was hidden", async () => {
+  let clock = 0;
+  const page = await openBar({ now: () => clock });
+  const lit = () => page.$("#led-left").classList.contains("lit");
+  page.stream.emit("lights", { preset: "notification", color: "#00ff00", brightness: 1, elapsed: 0 });
+  assert.equal(lit(), true);
+  // Hidden, the page's timer did not come: 1.7 s on, the second blink is over.
+  page.document.hidden = true;
+  page.fireDocument("visibilitychange");
+  clock = 1700;
+  assert.equal(lit(), true, "nothing drawn while hidden");
+  page.document.hidden = false;
+  page.fireDocument("visibilitychange");
+  assert.equal(lit(), false, "dark at 1.7 s");
+  clock = 2100;
+  page.fireDocument("visibilitychange");
+  assert.equal(lit(), true, "the third blink");
+  clock = 2600;
+  page.fireDocument("visibilitychange");
+  assert.equal(lit(), false, "over");
+});
+
+test("a brightness set during a notification dims that blink in the flat view until the next one", async () => {
+  const page = await openBar();
+  const led = page.$("#led-left");
+  page.stream.emit("lights", { preset: "notification", color: "#00ff00", brightness: 1, elapsed: 1200 });
+  const full = led.style["--led-filter"];
+  page.stream.emit("lights", { preset: "notification", color: "#00ff00", brightness: 0.05, elapsed: 1200, set: 1200 });
+  assert.equal(led.classList.contains("lit"), true);
+  assert.notEqual(led.style["--led-filter"], full, "a smaller glow at 5 %");
+  // The third blink is at full again.
+  page.stream.emit("lights", { preset: "notification", color: "#00ff00", brightness: 0.05, elapsed: 2100, set: 1200 });
+  assert.equal(led.style["--led-filter"], full);
+});
+
+test("asked for less motion, the fade and the rainbow hold one step of theirs; the blinks go on", async () => {
+  const page = await openBar({ lessMotion: true });
+  const led = page.$("#led-left");
+  const hue = () => (led.classList.contains("lit") ? led.style["--led-hue"] : "dark");
+  // The fade at its brightest, whatever the moment; the rainbow at its first color, red.
+  page.stream.emit("lights", { preset: "fade", color: "#ffffff", brightness: 0.9, elapsed: 2555 });
+  assert.equal(hue(), "#ffffff");
+  page.stream.emit("lights", { preset: "rainbow", color: "#000000", brightness: 0.48, elapsed: 1376 });
+  assert.equal(hue(), "#ff0000");
+  await settle(100);
+  assert.equal(hue(), "#ff0000", "and stays there");
+  page.stream.emit("lights", { preset: "notification", color: "#00ff00", brightness: 1, elapsed: 600 });
+  assert.equal(hue(), "dark");
+  page.stream.emit("lights", { preset: "notification", color: "#00ff00", brightness: 1, elapsed: 1100 });
+  assert.equal(hue(), "#00ff00");
 });
 
 test("Start / Pause and Back are held as long as the pointer or the key holds them", async () => {
@@ -1289,6 +1438,8 @@ test("a project whose dependencies did not come says why and has Retry; the sect
   const page = await openShell(shell, { apps: [] });
   assert.deepEqual(listed(page).map(({ name, note, buttons }) => [name, note, buttons]), [["Focus Timer", "Dependencies not installed: no network", ["Install its dependencies again"]]]);
   assert.ok(page.$("#apps").children[0].querySelector(".app-note").classList.contains("trouble"));
+  // Retry is the last of the row's buttons, at its end: the others show before it under the pointer (window.css).
+  assert.equal(page.$("#apps").children[0].querySelector(".row-actions").children.at(-1).className, "btn row-retry");
   const box = inApp(page).find((el) => el.className === "job deps");
   assert.ok(box, "the section says it");
   assert.deepEqual(box.children.map((el) => el.textContent), ["Dependencies not installed: no network", "", "Check the connection and press Retry. The emulator also tries again by itself when the network is back.", NO_DEPS.message]);
@@ -1353,13 +1504,18 @@ test("rows of the same name say their folders; the pop-up is told of the apps th
   assert.deepEqual(listed(page).filter((row) => row.chosen).map(({ note }) => note), ["focus-timer-2, Dependencies not installed: no network"]);
 });
 
+/** The folder's path as the field shows it: its two parts, the folders before the project's own and that one (pathLine). */
+const pathShown = (field) => field.children.map((part) => part.textContent).join("");
+
 test("the chosen project's folder is a read-only field with Copy and Open in Finder in it", async () => {
   const shell = shellActions({ projects: [{ ...PROJECT, shownFolder: "~/Projects/experiments/one" }] });
   const page = await openShell(shell);
   const [path, copy, show] = part(page, "folder").children;
-  assert.equal(path.tagName, "INPUT");
-  assert.equal(path.readOnly, true);
-  assert.equal(path.value, "~/Projects/experiments/one");
+  // The path in two parts, so that the project's own folder stays whole at its end (window.css, .path): the field's
+  // start gives way, not its end, at any width; a read-only field for the keyboard and a screen reader.
+  assert.deepEqual(path.children.map((one) => [one.className, one.textContent]), [["head", "~/Projects/experiments"], ["tail", "/one"]]);
+  assert.equal(path.className, "path ac-path");
+  assert.deepEqual([path.getAttribute("role"), path.getAttribute("aria-readonly"), path.tabIndex, path.title], ["textbox", "true", 0, ""]);
   assert.deepEqual([path.dataset.tip, path.dataset.tipDetail], ["The project's folder", PROJECT.folder]);
   copy.fire("click");
   show.fire("click");
@@ -1677,7 +1833,7 @@ test("Create app opens its pop-up with the examples and the ids in use; what it 
   assert.deepEqual(await shell.popUp.create(request), made);
   assert.deepEqual(plain(shell.calls.at(-1)), ["create", request]);
   assert.deepEqual(listed(page).map(({ name, chosen }) => [name, chosen]), [["One", false], ["Made", true]]);
-  assert.equal(part(page, "folder").children[0].value, "/p/made");
+  assert.equal(pathShown(part(page, "folder").children[0]), "/p/made");
 });
 
 test("Create app ends with the app running: the Refresh that followed is the Refresh button's, said by the state alone", async () => {
@@ -1833,7 +1989,7 @@ test("the names of a project, its folder, a job's lines and a check's words go t
   // It is all there, as text.
   assert.equal(titleOf(page), hostile);
   assert.equal(listed(page)[0].name, hostile);
-  assert.equal(part(page, "folder").children[0].value, `/p/${hostile}`);
+  assert.equal(pathShown(part(page, "folder").children[0]), `/p/${hostile}`);
   // And in no markup the script wrote, anywhere on the page.
   const markup = (el) => (typeof el === "string" ? [] : [el._html, ...el.children.flatMap(markup)]);
   for (const id of ["#apps", "#app-status", "#app-folder", "#app-body", "#app-title", "#app-facts", "#app-actions", "#console"]) {
@@ -1901,7 +2057,7 @@ test("the app's settings are our own form, from its settings file, each field dr
   assert.deepEqual(minutes.slice(1).map((b) => [b.tagName, b.ariaLabel, b.tabIndex, b.disabled]), [["BUTTON", "Decrement", -1, false], ["BUTTON", "Increment", -1, false]]);
   assert.deepEqual([at[0].type, at[0].value], ["time", "09:30"]);
   // A color: the color field, and the round button that shows its swatch and its value with the alpha.
-  assert.deepEqual([tint[0].type, tint[0].value, tint[1].className, tint[1].children[1].textContent], ["color", "#FF8800", "color-pill", "#FF8800CC"]);
+  assert.deepEqual([tint[0].type, tint[0].value, tint[1].className, tint[1].children[1].textContent], ["color", "#FF8800", "btn color-pill", "#FF8800CC"]);
   assert.deepEqual(place.map((el) => [el.value, el.hidden]), [["", false], ["Here", false], ["", true], ["", true]]);
   assert.equal(place[0].checked, true, "an auto place has Auto-detect on");
   assert.equal(rows[6].fixed.hidden, true);

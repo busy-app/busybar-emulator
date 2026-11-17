@@ -74,10 +74,10 @@ test("an id taken by another project or an app on the bar gets _2, _3, cut to fi
   assert.equal(freeId(full, new Map([[full, { by: "bar" }]])).id, "app.jane.ochen_dlinnoe_nazvani_2");
 });
 
-test("taken ids: the apps on every firmware's bar in the data folder and the projects in its list, but not the project being made", () => {
+test("taken ids: the apps on the BUSY Bar in the data folder and the projects in its list, but not the project being made", () => {
   const data = path.join(root, "taken-data");
-  mkdirSync(path.join(data, "bar", "1.3.1", "ext", "user_assets", "app.jane.on_bar"), { recursive: true });
-  mkdirSync(path.join(data, "bar", "1.4.0", "ext", "user_assets", "app.jane.newer"), { recursive: true });
+  mkdirSync(path.join(data, "bar", "ext", "user_assets", "app.jane.on_bar"), { recursive: true });
+  mkdirSync(path.join(data, "bar", "ext", "user_assets", "app.jane.newer"), { recursive: true });
   const projectDir = (name, id) => {
     const dir = path.join(root, name);
     mkdirSync(path.join(dir, "src", "appmeta"), { recursive: true });

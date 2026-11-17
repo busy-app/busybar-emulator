@@ -341,6 +341,39 @@ static AnimFileBuffer* anim_file_img_step_disperse(`,
     ],
   ],
 
+  // Since 1.4.1 (0a11d1f9): the SETUP hint for a setting the BUSY Bar cannot edit itself (a string, a color, a time)
+  // sends the author to the same USB address. The same change as on the empty APPS screen above; the front drops the
+  // scheme, as there.
+  "applications/system/js_app_launcher/scenes/js_app_launcher_scene_web_setup.c": [
+    [`#include <gui/modules/image.h>`, `#include <gui/modules/image.h>
+#include <host.h>
+#include <stdlib.h>
+#include <string.h>`],
+    [
+      `        status_view_set_primary_text(front_status, "Set up via\\nhttp://10.0.4.20");`,
+      `        char* emu_address = host_bar_address();
+        FuriString* emu_text = furi_string_alloc();
+        if(emu_address) {
+            const char* emu_host = strncmp(emu_address, "http://", 7) == 0 ? emu_address + 7 : emu_address;
+            furi_string_printf(emu_text, "Set up via\\n%s", emu_host);
+        } else {
+            furi_string_set(emu_text, "Set up via\\nhttp://10.0.4.20");
+        }
+        status_view_set_primary_text(front_status, furi_string_get_cstr(emu_text));`,
+    ],
+    [
+      `        status_view_set_primary_text(data->back_status, "Set up via\\nhttp://10.0.4.20");`,
+      `        if(emu_address) {
+            furi_string_printf(emu_text, "Set up via\\n%s", emu_address);
+        } else {
+            furi_string_set(emu_text, "Set up via\\nhttp://10.0.4.20");
+        }
+        status_view_set_primary_text(data->back_status, furi_string_get_cstr(emu_text));
+        furi_string_free(emu_text);
+        free(emu_address);`,
+    ],
+  ],
+
   "applications/main/busy/busy.c": [
     [`#include "busy_presets.h"`, `#include "busy_presets.h"
 #include <shim.h>`],

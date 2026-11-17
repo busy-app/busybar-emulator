@@ -6,7 +6,7 @@
 // Then Import from GitHub against a stand-in for GitHub on 127.0.0.1 (never github.com): an address of another host
 // refused, a repository found, downloaded through the stand-in for GitHub CLI and opened through the trust dialog.
 //
-// CREATE_APP_SHOTS=<folder> also saves a picture of every tab at 1200×800 and 900×650.
+// CREATE_APP_SHOTS=<folder> also saves a picture of every tab at 1200×800 and 1140×650.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -45,16 +45,38 @@ async function clickOn(find, what) {
     contents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
   }, at);
 }
-const part = (name) => clickOn(`document.querySelector(${q(`.create-app [data-part='${name}']`)})`, `the ${name} button`);
-const way = (id) => clickOn(`document.querySelector(${q(`.create-app-way[data-way='${id}']`)})`, `the way ${id}`);
 const isOpen = () => app.page(`!(document.querySelector(".create-app-scrim")?.hidden ?? true)`);
+/** The clicks that did not take at first, for the test's diagnostics. */
+const again = [];
+/**
+ * A click that is seen to take: clicked again, as a person would, when `took` does not say so in `waitMs`. The click goes
+ * in as an input event and is handled after the point was found; meanwhile the pop-up can be drawn anew (it is, on
+ * every change, and again when an answer from the desktop app comes, such as the place of the new app) and change its
+ * height. It is in the middle of the window, so its tabs and buttons then move away from the point, or the button
+ * pressed is replaced before it is released, and the click is lost. On a busy machine the answers come later and
+ * that happens more often.
+ */
+async function clickUntil(find, what, took, waitMs = 2_000) {
+  for (let i = 0; i < 5 && !(await took()); i++) {
+    if (i) again.push(`${what}: clicked ${i + 1} times`);
+    await clickOn(find, what);
+    await until(took, `${what} to take`, waitMs, 50).catch(() => {});
+  }
+  assert.ok(await took(), `${what} took`);
+}
+const part = (name) => clickOn(`document.querySelector(${q(`.create-app [data-part='${name}']`)})`, `the ${name} button`);
+const way = (id) => clickUntil(`document.querySelector(${q(`.create-app-way[data-way='${id}']`)})`, `the way ${id}`, () => app.page(`document.querySelector(${q(`.create-app-way[data-way='${id}']`)})?.getAttribute("aria-selected") === "true"`));
+/** Create app, in the window's top bar or in the empty list, just after the window was given its size: the pop-up
+    opens. It may first read the examples, so the click is given 10 s before a second one (that would land on the
+    pop-up's backdrop and close it). */
+const openCreateApp = () => clickUntil(`[document.querySelector("#create-app"), document.querySelector("#apps .empty button")].find((b) => b && b.offsetParent !== null)`, "a Create app button", isOpen, 10_000);
 const result = () => app.page(`(() => { const r = document.querySelector(".create-app-result"); return r ? { kind: r.classList.contains("found") ? "found" : "none", text: r.innerText } : null; })()`);
 async function shot(name) {
   if (!SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });
   for (const [w, h] of [
     [1200, 800],
-    [900, 650],
+    [1140, 650],
   ]) {
     // A hidden window paints again when its size changes: one pixel less first.
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1] - 1), [w, h]);
@@ -67,7 +89,7 @@ async function shot(name) {
   await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [1200, 800]);
 }
 
-test("Open existing: a file deep in a stranger's project finds it; Open asks the trust dialog, then the project is listed and chosen; a folder of nothing is said", { skip, timeout: 600_000 }, async () => {
+test("Open existing: a file deep in a stranger's project finds it; Open asks the trust dialog, then the project is listed and chosen; a folder of nothing is said", { skip, timeout: 600_000 }, async (t) => {
   work = realpathSync(temporaryFolder());
   const project = path.join(work, "cloned", "pomodoro");
   for (const dir of ["src/appmeta", "src/scripts", "src/assets"]) mkdirSync(path.join(project, dir), { recursive: true });
@@ -83,8 +105,7 @@ test("Open existing: a file deep in a stranger's project finds it; Open asks the
   await app.waitWindow("device");
   await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [1200, 800]);
   await until(() => app.page(`document.querySelector("#create-app")?.ariaDisabled === "false"`), "Create app to be there to press");
-  await clickOn(`[document.querySelector("#create-app"), document.querySelector("#apps .empty button")].find((b) => b && b.offsetParent !== null)`, "a Create app button");
-  await until(isOpen, "the pop-up");
+  await openCreateApp();
 
   // The dialog sits in the middle of the window, not over all of it; the tabs are one row at its top.
   const layout = await app.page(`(() => {
@@ -96,14 +117,14 @@ test("Open existing: a file deep in a stranger's project finds it; Open asks the
   assert.deepEqual([layout.rows, layout.names], [1, ["Templates", "Empty app", "Open existing", "Import from GitHub", "Install a package"]]);
   await until(() => app.page(`document.querySelectorAll(".create-app-card").length >= 1`), "the template cards");
   await shot("1-templates");
-  await clickOn(`[...document.querySelectorAll(".create-app-card")].at(-1)`, "a template card");
+  await clickUntil(`[...document.querySelectorAll(".create-app-card")].at(-1)`, "the last template card", () => app.page(`[...document.querySelectorAll(".create-app-card")].at(-1)?.getAttribute("aria-checked") === "true"`));
   await shot("2-template-chosen");
   await way("empty");
   await until(() => app.page(`Boolean(document.querySelector(".create-app [data-part=upload-front]"))`), "the empty app's form");
-  // The icon block's Uploads: a button each with the upload icon and its words, the Local Web's 36 px; 44 px inputs.
-  assert.deepEqual(await app.page(`(() => { const b = document.querySelector(".create-app [data-part=upload-front]"); return [b.innerText.trim(), Boolean(b.querySelector("use[href$='#bi-upload']")), b.getBoundingClientRect().height, document.querySelector(".create-app [data-part=name]").getBoundingClientRect().height]; })()`).then(([words, icon, button, height]) => [words, icon, Math.round(button), Math.round(height)]), ["Upload", true, 36, 44]); // rounded: display scaling gives a fraction over
+  // The icon block's Uploads: a button each with the upload icon and its words; the window's 40 px buttons and fields.
+  assert.deepEqual(await app.page(`(() => { const b = document.querySelector(".create-app [data-part=upload-front]"); return [b.innerText.trim(), Boolean(b.querySelector("use[href$='#bi-upload']")), b.getBoundingClientRect().height, document.querySelector(".create-app [data-part=name]").getBoundingClientRect().height]; })()`).then(([words, icon, button, height]) => [words, icon, Math.round(button), Math.round(height)]), ["Upload", true, 40, 40]); // rounded: display scaling gives a fraction over
   await shot("3-empty");
-  await clickOn(`[...document.querySelectorAll(".create-app button")].find((b) => b.textContent.trim() === "Advanced")`, "Advanced");
+  await clickUntil(`document.querySelector(".create-app-advanced")`, "Advanced", () => app.page(`document.querySelector(".create-app-advanced")?.getAttribute("aria-expanded") === "true"`));
   await shot("4-empty-advanced");
   await way("github");
   await shot("5-github");
@@ -141,9 +162,10 @@ test("Open existing: a file deep in a stranger's project finds it; Open asks the
   const listed = await app.page(`window.emulatorActions.projects.list().then((list) => list.map((p) => [p.folder, p.id, p.trusted]))`);
   assert.deepEqual(listed, [[project, "app.stranger.pomodoro", true]]);
   await until(() => app.page(`document.querySelector("#app-title")?.textContent === "Pomodoro"`), "the project chosen in Apps");
+  if (again.length) t.diagnostic(again.splice(0).join("; "));
 });
 
-test("Import from GitHub: another host's address refused; a repository downloaded through GitHub CLI as the account chosen, then opened through the trust dialog (catalog-update)", { skip, timeout: 600_000 }, async () => {
+test("Import from GitHub: another host's address refused; a repository downloaded through GitHub CLI as the account chosen, then opened through the trust dialog (catalog-update)", { skip, timeout: 600_000 }, async (t) => {
   await app?.close();
   const github = await startGithubStub({ port: PORTS.unit });
   try {
@@ -155,8 +177,7 @@ test("Import from GitHub: another host's address refused; a repository downloade
     await app.waitWindow("device");
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [1200, 800]);
     await until(() => app.page(`document.querySelector("#create-app")?.ariaDisabled === "false"`), "Create app to be there to press");
-    await clickOn(`[document.querySelector("#create-app"), document.querySelector("#apps .empty button")].find((b) => b && b.offsetParent !== null)`, "a Create app button");
-    await until(isOpen, "the pop-up");
+    await openCreateApp();
     await way("github");
     const pane = () => app.page(`document.querySelector(".create-app-pane")?.innerText ?? ""`);
     const importOff = () => app.page(`document.querySelector(".create-app [data-part=import]")?.title ?? null`);
@@ -186,6 +207,7 @@ test("Import from GitHub: another host's address refused; a repository downloade
     const record = JSON.parse(readFileSync(path.join(app.folder, "github", "published.json"), "utf8"));
     assert.deepEqual(record[folder].imported, { owner: github.login, name: "pomodoro-timer", commit: github.headOf(`${github.login}/pomodoro-timer`, "main") });
     for (const r of github.requests) assert.equal(r.path.includes(github.token), false, "the token is never in an address");
+    if (again.length) t.diagnostic(again.splice(0).join("; "));
   } finally {
     await github.close();
   }

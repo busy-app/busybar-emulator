@@ -104,6 +104,8 @@ const HELPERS = {
   "gate-lib.mjs": "what this command reads out of a suite's output, and the allowed reasons to skip a test (gate-lib.test.mjs checks it)",
   "gate-reporter.mjs": "the reporter beside TAP that counts the tests each file registered and finished",
   "own-emulator.mjs": "the comparison suites' own emulator",
+  "app-storage.mjs": "the probe of an app's own files through /api/storage, which api.mjs runs",
+  "golden-compare.mjs": "what golden.mjs compares of two frames (golden-compare.test.mjs checks it)",
   "package.mjs": "app archives for the suites",
   "mirror-apps.mjs": "copies a bar's apps (by hand, with a bar)",
   "convert-data-folder.mjs": "converts a data folder of the old layout (by hand; tested in test/server)",
@@ -427,24 +429,30 @@ function counts(s, text) {
 }
 
 /**
- * The processes whose command line holds one of `markers` (a suite's temporary folder, the shell's node_modules):
- * what a suite started and left, also outside its process group (an app a test starts in a group of its own, as
- * busy-emulator start does). Ended by their PIDs; never by a program's name. Returns how many.
+ * The processes whose command line holds one of `markers` (a suite's temporary folder, the shell's node_modules) and
+ * that started at `since` (ms) or later: what a suite started and left, also outside its process group (an app a test
+ * starts in a group of its own, as busy-emulator start does). A process that was running before the suite started is
+ * someone else's (a window the person opened from the same checkout) and is left alone. Ended by their PIDs; never by
+ * a program's name. Returns what it ended: [{ pid, command }].
  */
-function endStrays(markers) {
+function endStrays(markers, since = 0) {
   let listed = "";
   try {
+    // The start time with the command line: on Windows the process's CreationDate, elsewhere ps's lstart (C locale).
     listed = win
-      ? execProgram(join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", "$ProgressPreference='SilentlyContinue'; Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
-      : execProgram("ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+      ? execProgram(join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", "$ProgressPreference='SilentlyContinue'; Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId)`t$(if ($_.CreationDate) { $_.CreationDate.ToString('o') })`t$($_.CommandLine)\" }"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+      : execProgram("ps", ["-axww", "-o", "pid=,lstart=,command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C" }, maxBuffer: 64 * 1024 * 1024 });
   } catch {
-    return 0;
+    return [];
   }
-  let ended = 0;
+  const ended = [];
   for (const row of listed.split(/\r?\n/)) {
-    const m = row.match(win ? /^(\d+)\t(.*)$/ : /^\s*(\d+)\s+(.*)$/);
-    if (!m || Number(m[1]) === process.pid || !markers.some((marker) => m[2].includes(marker))) continue;
-    ended++;
+    const m = row.match(win ? /^(\d+)\t([^\t]*)\t(.*)$/ : /^\s*(\d+)\s+(\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4})\s+(.*)$/);
+    if (!m || Number(m[1]) === process.pid || !markers.some((marker) => m[3].includes(marker))) continue;
+    // ps gives whole seconds: a process of the suite's first second counts as the suite's.
+    const startedAt = Date.parse(m[2]);
+    if (Number.isFinite(startedAt) && startedAt < since - 1000) continue;
+    ended.push({ pid: Number(m[1]), command: m[3] });
     if (win) {
       try {
         execProgram(join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe"), ["/PID", m[1], "/T", "/F"], { stdio: "ignore", windowsHide: true });
@@ -579,7 +587,7 @@ async function runHeld(s) {
   clearTimeout(timer);
   // What it started and left behind: its group (a test runner's children), then whatever names its folders.
   killTree(child, "SIGKILL");
-  const strays = endStrays([tmp + sep, ...(s.strays ?? [])]);
+  const strays = endStrays([tmp + sep, ...(s.strays ?? [])], t0);
   running.delete(s.id);
   closeSync(log);
   // What the runtime keeps there by itself is no test's leftover: Node's compile cache, which npm turns on and which
@@ -619,7 +627,7 @@ async function runHeld(s) {
   // Tests leave nothing behind (quality.md): not after a run that ended by itself.
   const leftovers = [];
   if (!timedOut && !interrupted && left.length) leftovers.push(`left in its temporary folder: ${left.slice(0, 5).join(", ")}${left.length > 5 ? ` and ${left.length - 5} more` : ""}`);
-  if (!timedOut && !interrupted && strays) leftovers.push(`left ${strays} processes running (ended by PID)`);
+  if (!timedOut && !interrupted && strays.length) leftovers.push(`left ${strays.length} processes running (ended by PID, listed under it)`);
   if (leftovers.length) {
     state = "fail";
     note = [note, ...leftovers].filter(Boolean).join("; ");
@@ -627,6 +635,7 @@ async function runHeld(s) {
   const result = { state, ...c, ms, note, load, code, ports, images: s.images && existsSync(env.EMU_TEST_OUT) ? env.EMU_TEST_OUT : null };
   results.set(s.id, result);
   console.log(line(s, result));
+  if (!timedOut && !interrupted) for (const one of strays) console.log(`        ended ${one.pid}: ${one.command.length > 300 ? `${one.command.slice(0, 300)}…` : one.command}`);
   if (load) console.log(`        load: ${loadText(load)}`);
   for (const p of c.problems ?? []) console.log(`        ${p}`);
   if (state === "fail") console.log(`        log: ${logOf(s)}`);
@@ -763,7 +772,7 @@ for (const { s, r } of loads) console.log(`  ${s.id.padEnd(16)} ${loadText(r.loa
 const pictures = all.filter(({ r }) => r.images);
 if (pictures.length) console.log(`\npictures and the emulators' logs: ${runDir} (a folder per suite${process.env.EMU_GATE_REMOTE ? "; gate:win copies it back and removes it here" : ""})`);
 // The suites' temporary folders: whatever a stopped suite left, with the processes that name them.
-endStrays([tmpRoot + sep]);
+endStrays([tmpRoot + sep], started);
 removeFolder(tmpRoot);
 const verdict = verdictOf({ interrupted, failed: failed.map(({ s }) => s.id), partial, machine: machineText, skippedSuites: counted.map(({ s }) => s.id), unexpectedTests });
 console.log(`\ntotal ${secs(Date.now() - started)}: ${all.filter(({ r }) => r.state === "pass").length} passed, ${failed.length} failed, ${skippedSuites.length} skipped — ${verdict.text} (exit code ${verdict.code})`);

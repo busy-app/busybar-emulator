@@ -111,7 +111,7 @@ test("the server is killed: it is started again and the window works, with nobod
   assert.equal(alive(first), false);
   // The second server took the data folder the killed one held: one data folder, laid out as architecture.md section
   // 4 says (EMU-005), its lock now the second server's.
-  for (const entry of ["format", path.join("bar", "1.3.1", "ext", "user_assets")]) assert.ok(existsSync(path.join(app.folder, entry)), entry);
+  for (const entry of ["format", path.join("bar", "ext", "user_assets")]) assert.ok(existsSync(path.join(app.folder, entry)), entry);
   assert.ok(!existsSync(path.join(app.folder, "bar", "bar")), "not a data folder inside bar/");
   const second = (await app.run((shell) => shell.keeper.pids())).server;
   assert.equal(JSON.parse(readFileSync(path.join(app.folder, "run", "server.lock"), "utf8")).pid, second);

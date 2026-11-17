@@ -1,7 +1,7 @@
 // The bar's HTTP API outside the apps' part of it: Wi-Fi, Bluetooth, time, name, files, tokens, updates, account,
 // smart home.
 //
-//   node emulator/test/api.mjs [--firmware dev]            the requests that change nothing (HARMLESS) against a
+//   node emulator/test/api.mjs [--firmware 1.3.1]            the requests that change nothing (HARMLESS) against a
 //                                                           bar's recorded answers (test/api/bar-<firmware>.json),
 //                                                           then the emulator alone: its answers as the firmware's
 //                                                           handlers say, with changes to its state (put back after)
@@ -15,7 +15,9 @@
 //
 // Every form starts an emulator of its own (own-emulator.mjs); --addr 127.0.0.1:8640 names one that is already
 // running instead. The first form changes the emulator's state (and puts it back); it refuses to run against a bar.
-// The others only read the bar, and send requests that it refuses: a bar is left as it was.
+// The others only read the bar and send requests that it refuses; on a firmware that opens /api/storage to apps (1.4.1)
+// they also install a probe app, which works in its own folder (test/app-storage.mjs), and remove it and its folder
+// after: a bar is left as it was.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -23,6 +25,7 @@ import { fileURLToPath } from "node:url";
 
 import { commandLine } from "../packages/server/arguments.mjs";
 import { probeSource } from "../packages/server/bar-speed.mjs";
+import { compareAppStorage, probeAppStorage } from "./app-storage.mjs";
 import { emulatorFor, totals } from "./own-emulator.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -138,14 +141,23 @@ async function compareWithBar() {
     answers[name] = b;
     check(name, ...agree(name, b, e));
   }
+  // An app's own files (app-storage.mjs), from 1.4.1 (API 27.15.0) on.
+  let appStorage;
+  if (opensStorageToApps((await call(bar, "GET", "version")).json?.api_semver)) {
+    appStorage = await probeAppStorage(bar);
+    for (const line of compareAppStorage(appStorage, await probeAppStorage(addr))) check(...line);
+  }
   console.log(failed ? `${failed} requests are answered differently` : "the bar and the emulator answer alike");
   if (record) {
     mkdirSync(recordDir, { recursive: true });
     const file = join(recordDir, `bar-${firmware.version}.json`);
-    writeFileSync(file, JSON.stringify({ source, answers }, null, 1) + "\n");
+    writeFileSync(file, JSON.stringify({ source, answers, ...(appStorage ? { appStorage } : {}) }, null, 1) + "\n");
     console.log(`recorded: ${file}`);
   }
 }
+
+// Why the comparison with a recording was skipped (gate-lib.mjs ALLOWED_SKIPS knows it).
+const NO_RECORDING = "no recording of a BUSY Bar's API answers in test/api/ (node emulator/test/api.mjs --bar --record)";
 
 /** HARMLESS in the emulator against a bar's recorded answers: the recording of the emulator's firmware, else the newest. */
 async function compareWithRecording() {
@@ -154,9 +166,9 @@ async function compareWithRecording() {
   const file = files.includes(`bar-${version}.json`) ? `bar-${version}.json` : files.at(-1);
   if (!file) {
     console.log("API against a bar's recorded answers: no recording (node emulator/test/api.mjs --bar --record)");
-    return { skip: 1 };
+    return { skip: 1, reasons: { [NO_RECORDING]: 1 } };
   }
-  const { source, answers } = JSON.parse(readFileSync(join(recordDir, file), "utf8"));
+  const { source, answers, appStorage } = JSON.parse(readFileSync(join(recordDir, file), "utf8"));
   console.log(`API: emulator ${addr} (firmware ${version}) against the answers of ${source.bar}, recorded ${source.recorded.slice(0, 10)} (test/api/${file})`);
   for (const request of HARMLESS) {
     const name = nameOf(request);
@@ -166,7 +178,17 @@ async function compareWithRecording() {
     }
     check(name, ...agree(name, answers[name], answerOf(await call(addr, ...request))));
   }
-  return { skip: 0 };
+  // An app's own files: only against the recording of the emulator's own firmware, which opens /api/storage to apps.
+  if (appStorage && file === `bar-${version}.json`) {
+    for (const line of compareAppStorage(appStorage, await probeAppStorage(addr))) check(...line);
+  }
+  return { skip: 0, reasons: {} };
+}
+
+/** Whether a firmware of this API version opens /api/storage to apps (2fe36de1, API 27.15.0). */
+function opensStorageToApps(semver) {
+  const [major, minor] = String(semver ?? "").split(".").map(Number);
+  return major > 27 || (major === 27 && minor >= 15);
 }
 
 // ---------------------------------------------------------------- the emulator alone
@@ -316,6 +338,7 @@ async function emulatorAlone() {
 }
 
 let skip = 0;
+let reasons = {};
 if (bar) await compareWithBar();
 else {
   const state = await fetch(`http://${addr}/_emu/state`).then((r) => r.json()).catch(() => null);
@@ -324,9 +347,9 @@ else {
     process.exit(1);
   }
   // On the emulator as it starts, before the checks below change its state.
-  ({ skip } = await compareWithRecording());
+  ({ skip, reasons } = await compareWithRecording());
   await emulatorAlone();
 }
 await target.stop();
-totals({ pass: passed, fail: failed, skip });
+totals({ pass: passed, fail: failed, skip, reasons });
 process.exit(process.exitCode);

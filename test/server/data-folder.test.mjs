@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ const posixRights = !windows;
 const CHILD = fileURLToPath(new URL("./data-folder.child.mjs", import.meta.url));
 const entry = serverModule("index.mjs");
 const modeOf = (file) => statSync(file).mode & 0o777;
-const open = (root, options = {}) => openDataFolder(root, { firmware: "1.3.1", record: { port: 1 }, ...options });
+const open = (root, options = {}) => openDataFolder(root, { record: { port: 1 }, ...options });
 
 /** Every entry under `dir`, with what a write would change: kind, size, time of change, rights, a link's target. */
 function snapshot(dir) {
@@ -104,12 +104,12 @@ const deadPid = async (t) => {
 };
 
 for (const [where, folder] of volumes) {
-  test(`a new data folder, on ${where}: the format number, the lock, a BUSY Bar for the firmware`, async (t) => {
+  test(`a new data folder, on ${where}: the format number, the lock, one BUSY Bar`, async (t) => {
     const root = join(folder(t), "data");
     const opened = await open(root);
     assert.equal(opened.created, true);
     assert.equal(opened.format, FORMAT);
-    assert.equal(opened.barDir, join(root, "bar", "1.3.1"));
+    assert.equal(opened.barDir, join(root, "bar"));
     assert.equal(readFileSync(join(root, "format"), "utf8"), `${FORMAT}\n`);
     assert.deepEqual(names(root), ["bar", "format", "run"]);
     assert.deepEqual(names(join(root, "run")), ["server.lock"]);
@@ -132,11 +132,25 @@ for (const [where, folder] of volumes) {
     opened.release();
     // Opened again: the same folder, not a new one, and the record is not written again.
     const before = statSync(join(root, "format")).mtimeMs;
-    const again = await open(root, { firmware: "dev" });
+    const again = await open(root);
     assert.equal(again.created, false);
     assert.equal(statSync(join(root, "format")).mtimeMs, before);
-    assert.deepEqual(names(join(root, "bar")), ["1.3.1", "dev"]);
+    assert.deepEqual(names(join(root, "bar")), ["ext"]);
+    // No firmware chosen yet; one chosen is read back, and what the lock says follows the server.
+    assert.deepEqual(again.chosenFirmware(), { version: null, problem: null });
+    again.chooseFirmware("1.4.1");
+    assert.deepEqual(again.chosenFirmware(), { version: "1.4.1", problem: null });
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "bar", "chosen-firmware.json"), "utf8")), { version: "1.4.1" });
+    const nonce = JSON.parse(readFileSync(again.lockFile, "utf8")).nonce;
+    again.updateRecord({ firmware: "1.4.1", apiVersion: "27.14.0" });
+    const rewritten = JSON.parse(readFileSync(again.lockFile, "utf8"));
+    assert.deepEqual([rewritten.firmware, rewritten.apiVersion, rewritten.nonce, rewritten.pid, rewritten.port], ["1.4.1", "27.14.0", nonce, process.pid, 1]);
     again.release();
+    assert.ok(!existsSync(again.lockFile), "the lock is let go of after it was written again");
+    writeFileSync(join(root, "bar", "chosen-firmware.json"), "{not json");
+    const third = await open(root);
+    assert.deepEqual(third.chosenFirmware(), { version: null, problem: `${join(root, "bar", "chosen-firmware.json")} does not name a firmware` });
+    third.release();
   });
 
   test(`one server at a time, on ${where}: a second process is refused while the first runs, and gets the folder once the first is killed`, async (t) => {
@@ -165,13 +179,13 @@ for (const [where, folder] of volumes) {
 
 test("a folder of a newer format is left exactly as it is, and the error says why", async (t) => {
   const root = tempDir(t);
-  writeFileSync(join(root, "format"), "2\nwhat format 2 adds\n");
-  mkdirSync(join(root, "bar", "1.3.1", "ext"), { recursive: true });
-  writeFileSync(join(root, "bar", "1.3.1", "ext", "kept.txt"), "kept");
+  writeFileSync(join(root, "format"), `${FORMAT + 1}\nwhat format ${FORMAT + 1} adds\n`);
+  mkdirSync(join(root, "bar", "ext"), { recursive: true });
+  writeFileSync(join(root, "bar", "ext", "kept.txt"), "kept");
   const before = snapshot(root);
   await assert.rejects(open(root), {
     code: "EMU_DATA_FORMAT",
-    message: `The data folder ${root} is of format 2: a newer emulator made it, and this one knows format ${FORMAT} at most. It is left as it is. Use the newer emulator with it, or name another data folder.`,
+    message: `The data folder ${root} is of format ${FORMAT + 1}: a newer emulator made it, and this one knows format ${FORMAT} at most. It is left as it is. Use the newer emulator with it, or name another data folder.`,
   });
   assert.deepEqual(snapshot(root), before);
   // The server refuses it before anything of the bar starts, and leaves nothing running.
@@ -237,8 +251,8 @@ test("a folder of an older format is moved one step at a time, under the lock; w
   const migrations = {
     1: {
       what: "the first step",
-      async run({ root: at, firmware }) {
-        seen.push([1, readFileSync(join(at, "format"), "utf8"), firmware]);
+      async run({ root: at }) {
+        seen.push([1, readFileSync(join(at, "format"), "utf8")]);
         // Nobody else gets the folder while it is being moved.
         await assert.rejects(open(at, { format: 3, migrations }), { code: "EMU_DATA_IN_USE" });
         writeFileSync(join(at, "bar", "1.3.1", "moved-once"), "");
@@ -247,7 +261,7 @@ test("a folder of an older format is moved one step at a time, under the lock; w
     2: { what: "the second step", run: ({ root: at }) => seen.push([2, readFileSync(join(at, "format"), "utf8")]) },
   };
   const opened = await open(root, { format: 3, migrations });
-  assert.deepEqual(seen, [[1, "1\n", "1.3.1"], [2, "2\n"]], "each step finds the record of the format it moves");
+  assert.deepEqual(seen, [[1, "1\n"], [2, "2\n"]], "each step finds the record of the format it moves");
   assert.deepEqual(opened.migrated, { from: 1, to: 3, setAside: null });
   assert.equal(opened.created, false);
   assert.equal(opened.format, 3);
@@ -280,7 +294,7 @@ test("a folder that cannot be moved (no step, or a step fails) is set aside, not
     assert.equal(readFileSync(join(aside, "format"), "utf8"), "1\n", what);
     // The folder starts anew: of this format, an empty bar, no projects; the app's settings, the pointer and the lock stay.
     assert.equal(readFileSync(join(root, "format"), "utf8"), "2\n", what);
-    assert.deepEqual(names(join(root, "bar", "1.3.1", "ext", "user_assets")), [], what);
+    assert.deepEqual(names(join(root, "bar", "ext", "user_assets")), [], what);
     assert.equal(existsSync(join(root, "projects")), false, what);
     assert.equal(readFileSync(join(root, "app-settings.json"), "utf8"), `{"welcomed":true}`, what);
     assert.ok(existsSync(join(root, "install.json")), what);
@@ -292,16 +306,135 @@ test("a folder that cannot be moved (no step, or a step fails) is set aside, not
   }
 });
 
+test("a folder of format 1, a BUSY Bar for each firmware, opens with one BUSY Bar: the apps of 1.3.1 in place, the other bars set aside and named", async (t) => {
+  const root = join(tempDir(t), "data");
+  mkdirSync(root);
+  // As 0.1.0-beta.5 leaves it: an app with its settings on 1.3.1, another app on dev.
+  earlierFolder(root, 1);
+  mkdirSync(join(root, "bar", "dev", "ext", "user_assets", "app.on.dev"), { recursive: true });
+  writeFileSync(join(root, "bar", "dev", "ext", "user_assets", "app.on.dev", "main.js"), "dev");
+  const lines = [];
+  const emulator = await startServer({ port: port(0), dataDir: root, barSpeed: false, log: (line) => lines.push(line) });
+  try {
+    assert.equal(emulator.dataFolder.format, 2);
+    assert.equal(emulator.barDir, join(root, "bar"));
+    assert.equal(readFileSync(join(root, "format"), "utf8"), "2\n");
+    // The apps of 1.3.1, their settings with them, are the BUSY Bar's now.
+    assert.equal(readFileSync(join(root, "bar", "ext", "user_assets", "app.kept", "main.js"), "utf8"), "kept");
+    assert.equal(readFileSync(join(root, "bar", "ext", "apps_data", "app.kept", "settings.json"), "utf8"), `{"city":"Dubai"}`);
+    assert.deepEqual(names(join(root, "bar")), ["ext"]);
+    // dev's BUSY Bar is set aside, untouched; the person is told in one line what and where.
+    const asides = names(join(root, "set-aside"));
+    assert.equal(asides.length, 1);
+    assert.match(asides[0], /^format-1-bars-/);
+    const aside = join(root, "set-aside", asides[0]);
+    assert.equal(readFileSync(join(aside, "dev", "ext", "user_assets", "app.on.dev", "main.js"), "utf8"), "dev");
+    const told = lines.filter((line) => line.includes("set aside"));
+    assert.deepEqual(told, [
+      `The data folder, made by an earlier emulator, is moved from format 1 to 2: the emulated BUSY Bar is one for every firmware now, bar/ext: the apps of firmware 1.3.1 are its apps; the BUSY Bar of firmware dev is set aside, untouched, in ${aside}.`,
+    ]);
+    // What else the folder held stays where it was.
+    assert.ok(existsSync(join(root, "projects", "registry.json")));
+    assert.equal(readFileSync(join(root, "app-settings.json"), "utf8"), `{"welcomed":true}`);
+  } finally {
+    await emulator.stop();
+  }
+  // Opened again: nothing more to move, nothing more said.
+  const again = await open(root);
+  assert.equal(again.migrated, null);
+  assert.deepEqual(again.notices, []);
+  again.release();
+});
+
+test("the step from format 1 is safe to run again on a folder it half moved", async (t) => {
+  const root = join(tempDir(t), "data");
+  mkdirSync(root);
+  earlierFolder(root, 1);
+  // It stopped after the BUSY Bar of 1.3.1 was moved, before the rest.
+  mkdirSync(join(root, "bar", "dev", "ext"), { recursive: true });
+  renameSync(join(root, "bar", "1.3.1", "ext"), join(root, "bar", "ext"));
+  const said = MIGRATIONS[1].run({ root });
+  assert.match(said, /: the BUSY Bar of firmware dev is set aside, untouched, in /);
+  assert.doesNotMatch(said, /apps of firmware 1\.3\.1|no BUSY Bar of firmware/, "what was moved before is not said again");
+  assert.deepEqual(names(join(root, "bar")), ["ext"]);
+  assert.equal(readFileSync(join(root, "bar", "ext", "user_assets", "app.kept", "main.js"), "utf8"), "kept");
+  // And once more: nothing is left to move, and nothing is said but the change itself.
+  assert.equal(MIGRATIONS[1].run({ root }), "the emulated BUSY Bar is one for every firmware now, bar/ext");
+});
+
+/** The one-bar step on a folder of format 1 that `make` lays out: what it said, and the set-aside folder it made. */
+function oneBarOn(t, make, options = {}) {
+  const root = join(tempDir(t), "data");
+  mkdirSync(root);
+  writeFileSync(join(root, "format"), "1\n");
+  make(root);
+  const said = MIGRATIONS[1].run({ root, ...options });
+  const asides = existsSync(join(root, "set-aside")) ? names(join(root, "set-aside")) : [];
+  return { root, said, aside: asides.length ? join(root, "set-aside", asides[0]) : null, asides };
+}
+const anApp = (ext, id, text) => {
+  mkdirSync(join(ext, "user_assets", id), { recursive: true });
+  writeFileSync(join(ext, "user_assets", id, "main.js"), text);
+};
+
+test("an older bar/ext beside the BUSY Bar of 1.3.1 (left by a release that opened a folder from before EMU-005) is set aside; 1.3.1's is the BUSY Bar", (t) => {
+  const { root, said, aside } = oneBarOn(t, (at) => {
+    anApp(join(at, "bar", "ext"), "app.stale", "stale");
+    anApp(join(at, "bar", "1.3.1", "ext"), "app.live", "live");
+  });
+  assert.deepEqual(names(join(root, "bar", "ext", "user_assets")), ["app.live"]);
+  assert.equal(readFileSync(join(aside, "ext-before-format-1", "user_assets", "app.stale", "main.js"), "utf8"), "stale");
+  assert.equal(said, `the emulated BUSY Bar is one for every firmware now, bar/ext: the apps of firmware 1.3.1 are its apps; an older bar/ext from before format 1 is set aside, untouched, in ${aside}`);
+});
+
+test("the line of the step from format 1 says what it did: only dev's BUSY Bar there; a stray file beside 1.3.1's ext", (t) => {
+  const onlyDev = oneBarOn(t, (at) => anApp(join(at, "bar", "dev", "ext"), "app.on.dev", "dev"));
+  assert.equal(onlyDev.said, `the emulated BUSY Bar is one for every firmware now, bar/ext: there was no BUSY Bar of firmware 1.3.1, so it starts without apps; the BUSY Bar of firmware dev is set aside, untouched, in ${onlyDev.aside}`);
+  const stray = oneBarOn(t, (at) => {
+    anApp(join(at, "bar", "1.3.1", "ext"), "app.live", "live");
+    writeFileSync(join(at, "bar", "1.3.1", "notes.txt"), "a note");
+  });
+  assert.equal(stray.said, `the emulated BUSY Bar is one for every firmware now, bar/ext: the apps of firmware 1.3.1 are its apps; bar/1.3.1 is set aside, untouched, in ${stray.aside}`);
+  assert.equal(readFileSync(join(stray.aside, "1.3.1", "notes.txt"), "utf8"), "a note");
+  assert.deepEqual(names(join(stray.root, "bar", "ext", "user_assets")), ["app.live"]);
+  // Only the BUSY Bar of 1.3.1: nothing set aside, no set-aside folder.
+  const alone = oneBarOn(t, (at) => anApp(join(at, "bar", "1.3.1", "ext"), "app.live", "live"));
+  assert.equal(alone.said, "the emulated BUSY Bar is one for every firmware now, bar/ext: the apps of firmware 1.3.1 are its apps");
+  assert.deepEqual(alone.asides, []);
+});
+
+test("a BUSY Bar of another firmware that cannot be moved stays where it is, said; the step does not fail and nothing else is set aside", (t) => {
+  const tries = [];
+  // The rename of dev's bar fails as a Windows file held open does after renameWhole's tries; the others go through.
+  const rename = (from, to) => {
+    tries.push(from);
+    if (from.endsWith(join("bar", "dev"))) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    return renameSync(from, to);
+  };
+  const { root, said } = oneBarOn(t, (at) => {
+    anApp(join(at, "bar", "1.3.1", "ext"), "app.live", "live");
+    anApp(join(at, "bar", "dev", "ext"), "app.on.dev", "dev");
+  }, { rename });
+  assert.equal(said, "the emulated BUSY Bar is one for every firmware now, bar/ext: the apps of firmware 1.3.1 are its apps; the BUSY Bar of firmware dev could not be moved (EBUSY) and stays where it is, unread");
+  assert.deepEqual(names(join(root, "bar")), ["dev", "ext"]);
+  assert.deepEqual(names(join(root, "bar", "ext", "user_assets")), ["app.live"]);
+  assert.ok(tries.some((from) => from.endsWith(join("bar", "1.3.1", "ext"))), "the kept BUSY Bar went through the step's rename");
+});
+
+test("the step from format 1 moves through renameWhole, which waits for a file held a moment on Windows", () => {
+  assert.match(readFileSync(new URL("../../packages/server/data-folder.mjs", import.meta.url), "utf8"), /function oneBar\(\{ root, rename = renameWhole \}\)/);
+});
+
 test("the layout from before the format number (the BUSY Bar's ext at the top) is refused and left as it is", async (t) => {
   const root = tempDir(t);
   mkdirSync(join(root, "ext", "user_assets", "app.old"), { recursive: true });
   writeFileSync(join(root, "ext", "user_assets", "app.old", "main.js"), "old");
   const before = snapshot(root);
-  await assert.rejects(open(root, { firmware: "dev" }), {
+  await assert.rejects(open(root), {
     code: "EMU_DATA_FORMAT",
     message:
       `The data folder ${root} has the layout of an earlier emulator, without a format record: the BUSY Bar's storage, ext, is at its top. ` +
-      `This emulator does not move it, and leaves it as it is. Move ${join(root, "ext")} to ${join(root, "bar", "dev", "ext")}, or name another folder.`,
+      `This emulator does not move it, and leaves it as it is. Move ${join(root, "ext")} to ${join(root, "bar", "ext")}, or name another folder.`,
   });
   assert.deepEqual(snapshot(root), before);
 });
@@ -507,8 +640,7 @@ test("nothing is made through a link that stands where a folder or the lock shou
   const cases = [
     ["run", (root, outside) => linkFolder(outside, join(root, "run")), /run is a link, and the emulator makes its folders itself rather than follow one/],
     ["bar", (root, outside) => linkFolder(outside, join(root, "bar")), /bar is a link/],
-    ["bar/1.3.1", (root, outside) => (mkdirSync(join(root, "bar")), linkFolder(outside, join(root, "bar", "1.3.1"))), /1\.3\.1 is a link/],
-    ["bar/1.3.1/ext", (root, outside) => (mkdirSync(join(root, "bar", "1.3.1"), { recursive: true }), linkFolder(outside, join(root, "bar", "1.3.1", "ext"))), /ext is a link/],
+    ["bar/ext", (root, outside) => (mkdirSync(join(root, "bar")), linkFolder(outside, join(root, "bar", "ext"))), /ext is a link/],
   ];
   if (!windows) {
     cases.push(["run/server.lock", (root, outside) => (mkdirSync(join(root, "run")), symlinkSync(join(outside, "victim"), join(root, "run", "server.lock"))), /server\.lock is not a file the emulator made/]);
@@ -545,7 +677,7 @@ test("what the server makes in the data folder is for the user alone; a folder t
   const root = join(tempDir(t), "data");
   const opened = await open(root);
   assert.equal(modeOf(root), 0o700);
-  for (const folder of ["run", "bar", join("bar", "1.3.1"), join("bar", "1.3.1", "ext")]) assert.equal(modeOf(join(root, folder)), 0o700, folder);
+  for (const folder of ["run", "bar", join("bar", "ext")]) assert.equal(modeOf(join(root, folder)), 0o700, folder);
   assert.equal(modeOf(join(root, "format")), 0o600);
   assert.equal(modeOf(opened.lockFile), 0o600);
   assert.equal(opened.rightsKept, true);
@@ -565,7 +697,7 @@ test("a data folder reached through a link is used where it lies", async (t) => 
   symlinkSync(join(base, "real"), join(base, "link"), "junction");
   const opened = await open(join(base, "link"));
   assert.ok(existsSync(join(base, "real", "format")));
-  assert.ok(existsSync(join(base, "real", "bar", "1.3.1", "ext", "user_assets")));
+  assert.ok(existsSync(join(base, "real", "bar", "ext", "user_assets")));
   await assert.rejects(open(join(base, "real")), { code: "EMU_DATA_IN_USE" });
   opened.release();
 });
@@ -578,14 +710,14 @@ test("a second server on the same data folder, in the same process: refused, not
   t.after(() => first.stop());
   assert.ok(existsSync(first.dataFolder.lockFile));
   const resources = await activeResourcesAtRest();
-  await assert.rejects(startServer({ port: port(1), dataDir, firmware: "dev" }), { code: "EMU_DATA_IN_USE" });
+  await assert.rejects(startServer({ port: port(1), dataDir, firmware: "1.4.1" }), { code: "EMU_DATA_IN_USE" });
   assert.deepEqual(await activeResourcesSettled(resources), resources);
   assert.equal((await get(`${first.url}/api/version`)).status, 200);
   assert.equal(JSON.parse(readFileSync(first.dataFolder.lockFile, "utf8")).port, first.port);
   await first.stop();
   assert.ok(!existsSync(first.dataFolder.lockFile), "stop() lets go of the folder");
   const lines = [];
-  const second = await startServer({ port: port(1), dataDir, firmware: "dev", log: (line) => lines.push(line) });
+  const second = await startServer({ port: port(1), dataDir, firmware: "1.4.1", log: (line) => lines.push(line) });
   t.after(() => second.stop());
   assert.ok(!lines.some((line) => line.includes("lock")), "nothing was left to clear");
 });

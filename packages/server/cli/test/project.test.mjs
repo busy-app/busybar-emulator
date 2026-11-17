@@ -459,7 +459,7 @@ test("create: two folders named in Cyrillic get two ids in Latin letters, and th
 test("create: an id another project or an app on the BUSY Bar has gets _2, and the answer says what has it", async (t) => {
   const { root, ctx } = setup(t);
   const sys = generatorSystem(root);
-  mkdirSync(path.join(ctx.dataDir, "bar", "1.3.1", "ext", "user_assets", "app.jane.privet_mir"), { recursive: true });
+  mkdirSync(path.join(ctx.dataDir, "bar", "ext", "user_assets", "app.jane.privet_mir"), { recursive: true });
   const made = await call(["create", "Привет мир", "--author", "jane"], ctx, sys);
   assert.equal(made.json.id, "app.jane.privet_mir_2");
   assert.equal(made.json.name, "Privet mir 2");

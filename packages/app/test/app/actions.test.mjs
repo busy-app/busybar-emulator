@@ -162,7 +162,7 @@ test("a folder the page names is only looked up among the emulator's projects: a
 test("Open App Folder: a project made elsewhere goes through the trust dialog once, is listed with its folder, and then builds, runs and stops", { skip }, async () => {
   const dir = strangerProject("app.stranger.opened");
   const opened = await open(app, dir);
-  assert.deepEqual(opened.value, { id: "app.stranger.opened", name: "Stranger", folder: dir, exists: true, unavailable: false, trusted: true, built: false, installed: false, running: false, dependencies: { state: "installed", reason: null, message: null, retry: false }, shownFolder: dir, stale: false, job: null });
+  assert.deepEqual(opened.value, { id: "app.stranger.opened", name: "Stranger", folder: dir, exists: true, unavailable: false, trusted: true, built: false, installed: false, running: false, dependencies: { state: "installed", reason: null, message: null, retry: false }, shownFolder: dir, stale: false, manifest: path.join(dir, "src", "appmeta", "manifest.json"), api_version: null, job: null });
   assert.deepEqual(trustedFolders(app), [dir]);
   assert.equal(app.log().split("answered by the test's stand-in (trust)").length - 1, 1, "the person was asked once");
   // Again: trusted already, nobody is asked.

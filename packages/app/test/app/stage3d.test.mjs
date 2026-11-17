@@ -220,6 +220,46 @@ test("the RGB LEDs at the ends of Start follow the state the page gives: the hue
   assert.deepEqual(await inputs(), off, "then off for half a second");
   await sleep(2700);
   assert.deepEqual(await inputs(), off, "and dark after the third blink");
+  // Told with its age (the window's side does that when the view comes up in the middle of one), a notification shows
+  // the step it is at, and one that is over shows nothing.
+  await tell({ preset: "notification", color: "#00ff00", brightness: 1, elapsed: 1100 });
+  await sleep(100);
+  assert.deepEqual(await inputs(), both([0, 1, 0], 1), "1.1 s in: the second blink");
+  await tell({ preset: "notification", color: "#00ff00", brightness: 1, elapsed: 2600 });
+  await sleep(100);
+  assert.deepEqual(await inputs(), off, "2.6 s in: over");
+  // The rainbow a third of its round in is green; asked for less motion (prefers-reduced-motion, emulated for the
+  // window and its frames), it holds its first color, red, as the flat view does.
+  const rainbow = { preset: "rainbow", color: "#000000", brightness: 0.48, elapsed: 1376 };
+  await tell(rainbow);
+  await sleep(100);
+  const turning = (await inputs()).led_left;
+  assert.ok(turning[0] === 0 && turning[1] === 1, `green, on its way to blue: ${turning}`);
+  // The frame is sandboxed, so in a process of its own: the emulation is sent to its own target.
+  const media = (features) =>
+    app.run(
+      async (shell, _electron, features) => {
+        const { debugger: dbg } = shell.windows.current.win.webContents;
+        if (!dbg.isAttached()) dbg.attach("1.3");
+        const { targetInfos } = await dbg.sendCommand("Target.getTargets");
+        const frame = targetInfos.find((info) => info.type === "iframe" && new URL(info.url).pathname === "/emulator/stage3d/frame/stage.html");
+        if (!frame) throw new Error(`no target for the 3D view's frame: ${JSON.stringify(targetInfos.map((info) => [info.type, info.url]))}`);
+        const { sessionId } = await dbg.sendCommand("Target.attachToTarget", { targetId: frame.targetId, flatten: true });
+        await dbg.sendCommand("Emulation.setEmulatedMedia", { features }, sessionId);
+      },
+      features,
+    );
+  await media([{ name: "prefers-reduced-motion", value: "reduce" }]);
+  try {
+    await tell(rainbow);
+    await sleep(100);
+    assert.deepEqual((await inputs()).led_left, [1, 0, 0], "held at red");
+    await sleep(300);
+    assert.deepEqual((await inputs()).led_left, [1, 0, 0], "and still there");
+  } finally {
+    await media([]);
+    await detachMouse();
+  }
   // Black, off, or what is not a state: dark.
   for (const lights of [{ preset: "static", color: "#000000" }, { preset: "off", color: "#ff0000" }, { preset: "lava", color: "#ff0000" }]) {
     await tell(lights);
@@ -398,7 +438,7 @@ test("in the window's 3D view the bar turns by hand round its middle, within lim
   await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [1200, 800]);
   await app.page(`document.querySelector("#view-3d").click()`);
   await until(() => app.page("window.emulatorStage3D.mounted && window.emulatorStage3D.ask({ type: 'probe' }).then((p) => p.ready, () => false)"), "the 3D view in the window", 40_000);
-  const lit = () => app.page(`[...document.querySelectorAll("#camera-views button.on")].map((b) => b.dataset.camera)`);
+  const lit = () => app.page(`[...document.querySelectorAll('#camera-views button[aria-pressed="true"]')].map((b) => b.dataset.camera)`);
   const settled = async (view) => {
     await until(async () => (await probe()).view === view, `the camera at ${view}`);
     await sleep(300);
@@ -463,8 +503,8 @@ test("in the window's 3D view the bar turns by hand round its middle, within lim
   assert.equal(await app.page("window.emulatorStage3D.mounted"), false);
 });
 
-test("the camera's views stand under the row of the top tools, at 1200×800 and at 900×650: the 2D / 3D switch covers none of them", { skip: skipAll }, async () => {
-  for (const [w, h] of [[1200, 800], [900, 650]]) {
+test("the camera's views stand under the row of the top tools, at 1200×800 and at 1140×650: the 2D / 3D switch covers none of them", { skip: skipAll }, async () => {
+  for (const [w, h] of [[1200, 800], [1140, 650]]) {
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);
     await new Promise((resolve) => setTimeout(resolve, 300));
     const box = await app.page(`(() => {
@@ -480,7 +520,7 @@ test("the camera's views stand under the row of the top tools, at 1200×800 and 
   }
 });
 
-test("the controls stand centred under the bar, at 1200×800 and at 900×650, in 2D and in 3D; around them a drag still turns the bar", { skip: skipAll }, async () => {
+test("the controls stand centred under the bar, at 1200×800 and at 1140×650, in 2D and in 3D; around them a drag still turns the bar", { skip: skipAll }, async () => {
   const rects = () =>
     app.page(`(() => {
       const rect = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, middle: (r.left + r.right) / 2 }; };
@@ -488,7 +528,7 @@ test("the controls stand centred under the bar, at 1200×800 and at 900×650, in
     })()`);
   if (await app.page("window.emulatorStage3D.mounted")) await app.page(`document.querySelector("#view-2d").click()`);
   await until(async () => (await app.page("window.emulatorStage3D.mounted")) === false, "the flat view");
-  for (const [w, h] of [[1200, 800], [900, 650]]) {
+  for (const [w, h] of [[1200, 800], [1140, 650]]) {
     const at = `${w}×${h}`;
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);
     await sleep(300);

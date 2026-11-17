@@ -126,10 +126,42 @@ after(async () => {
   for (const fn of leftovers) fn();
 });
 
+test("firmware_get and firmware_use: the firmware the BUSY Bar runs, and a switch there and back (EMU-321)", async () => {
+  // A server of its own whose data folder is the command line's: the switch goes to its management address, whose
+  // lock and key are there (this file's other server keeps its data apart from the command line's).
+  const own = join(folder, "firmware");
+  const server = await startServer({ port: port(0) ? port(1) : 0, dataDir: own, barSpeed: false, log: () => {} });
+  const started = Math.round(Date.now() - process.uptime() * 1000);
+  writeFileSync(join(own, "run", "emulator.json"), JSON.stringify({ pid: process.pid, started, port: server.port, url: server.url, state: "ready", detail: null, since: Date.now() }));
+  const client = await initialized(later, environment({ BUSY_EMULATOR_DATA: own, BUSY_EMULATOR_PORT: String(server.port) }));
+  try {
+    await firmwareTools(client);
+  } finally {
+    await client.close().catch(() => {});
+    await server.stop();
+  }
+});
+
+async function firmwareTools(client) {
+  const got = await client.call("firmware_get", {});
+  assert.equal(got.isError, false, JSON.stringify(got));
+  assert.deepEqual(got.structuredContent.firmware, { version: "1.4.1", api: "27.15.0", alias: "latest" });
+  assert.deepEqual(got.structuredContent.firmwares.map((one) => [one.version, one.alias]), [["1.4.1", "latest"], ["1.3.1", "previous"]]);
+  const there = await client.call("firmware_use", { version: "previous" });
+  assert.equal(there.isError, false, JSON.stringify(there));
+  assert.deepEqual([there.structuredContent.from.version, there.structuredContent.firmware.version, there.structuredContent.changed], ["1.4.1", "1.3.1", true]);
+  const back = await client.call("firmware_use", { version: "latest" });
+  assert.equal(back.isError, false, JSON.stringify(back));
+  assert.equal(back.structuredContent.firmware.version, "1.4.1");
+  const wrong = await client.call("firmware_use", { version: "9.9.9" });
+  assert.equal(wrong.isError, true);
+  assert.equal(wrong.structuredContent.code, "firmware_unknown");
+}
+
 test("tools/list: every tool with a description and an object schema; status says the emulator runs", async () => {
   const listed = await client.request("tools/list");
   const names = listed.result.tools.map((tool) => tool.name);
-  for (const name of ["status", "start", "create_app", "list_examples", "projects", "build", "run", "refresh", "stop", "logs", "screenshot", "press", "settings_get", "settings_set", "check", "submit"]) {
+  for (const name of ["status", "start", "create_app", "list_examples", "projects", "build", "run", "refresh", "stop", "logs", "screenshot", "press", "settings_get", "settings_set", "check", "submit", "firmware_get", "firmware_use"]) {
     assert.ok(names.includes(name), `${name} in ${names.join(", ")}`);
   }
   assert.ok(!names.some((name) => /trust/.test(name)), "no tool trusts");

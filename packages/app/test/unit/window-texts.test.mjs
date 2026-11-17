@@ -29,6 +29,13 @@ test("a hint names the button to press; a command without one is marked as a ter
     ["Take one: busy-emulator screenshot --back makes one.", "Take one: busy-emulator screenshot --back (a terminal command) makes one."],
     ["Start it with busy-emulator start, then run busy-emulator dev . again.", "Start it with busy-emulator start (a terminal command), then press Watch the folder again."],
     ["Run the same busy-emulator command again outside the sandbox.", "Run the same busy-emulator command again outside the sandbox."],
+    ["Back to it: busy-emulator firmware use latest.", "Back to it: busy-emulator firmware use latest (a terminal command)."],
+    ["Or run busy-emulator firmware use 1.4.1, then run it.", "Or run busy-emulator firmware use 1.4.1 (a terminal command), then run it."],
+    ["See busy-emulator firmware for the list.", "See busy-emulator firmware (a terminal command) for the list."],
+    ["Or run busy-emulator firmware use 1.4.1-rc1.", "Or run busy-emulator firmware use 1.4.1-rc1 (a terminal command)."],
+    ["Or switch:\n  busy-emulator firmware use previous", "Or switch:\n  busy-emulator firmware use previous (a terminal command)"],
+    // "use" belongs to firmware alone: another command keeps its own words and button.
+    ["Then busy-emulator check use 1.2 now.", "Then press Publish use 1.2 now."],
     // Windows: PowerShell's form, a quoted folder.
     [`Fix it, then run & 'busy-emulator' dev "C:\\Users\\you\\clock" --once again.`, "Fix it, then press Refresh again."],
   ];

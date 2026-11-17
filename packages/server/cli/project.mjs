@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { dependencyState, noteDependencies, noteInstalled, readProjects, rememberProject } from "../projects/registry.mjs";
 import { isTrusted, trustedElsewhere } from "../projects/trust.mjs";
 import { commandLine, emulatorStatus, ready } from "./lifecycle.mjs";
+import { packageRefusal } from "./firmware.mjs";
 import { CliError, posixWord } from "./output.mjs";
 import { SANDBOX_CODES } from "./system.mjs";
 
@@ -144,12 +145,29 @@ export function settingsInvalid(ctx, project, file, check, { onTheBar = false } 
 }
 
 /**
+ * The API version of the emulated BUSY Bar that runs now (GET /api/version), or null when none answers: the settings
+ * file is checked by the rules of its firmware (requireValidSettings).
+ */
+export async function barApiVersion(ctx, sys) {
+  try {
+    const status = await emulatorStatus(ctx, sys);
+    if (!ready(status)) return null;
+    const answer = await sys.barGet(status.port, "/api/version");
+    return answer.status === 200 ? (JSON.parse(answer.body).api_semver ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The project's settings file, checked as the firmware checks it (projects/settings-schema.mjs): a file the bar would
  * refuse is a failure here, with the field at fault — the bar itself says only "Settings file is invalid." and the
  * launch still answers "launched" (the field test). A project without the file has no settings: nothing to check.
+ * `api`: the API version of the BUSY Bar the app is for (barApiVersion), whose firmware's rules apply; with none, the
+ * rules of the newest firmware.
  * @returns {"none" | "valid"}
  */
-export function requireValidSettings(ctx, project) {
+export function requireValidSettings(ctx, project, api = null) {
   const file = settingsFile(project.dir);
   if (!file) return "none";
   let text;
@@ -158,7 +176,7 @@ export function requireValidSettings(ctx, project) {
   } catch (e) {
     throw new CliError("settings_invalid", `The app's settings file ${file} cannot be read (${e?.code ?? e?.message ?? e}).`, `Make the file readable, then run ${commandFor(ctx, project, "build")} again.`, { folder: project.dir, file });
   }
-  const check = checkSettingsSchema(text);
+  const check = checkSettingsSchema(text, { api });
   if (!check.ok) throw settingsInvalid(ctx, project, file, check);
   return "valid";
 }
@@ -510,6 +528,11 @@ export function appCommand({ name, summary, done }) {
       remember(ctx, project);
       const script = busyCli(ctx, project);
       const address = await barAddress(ctx, sys, project, name);
+      // A package for a newer API than the firmware's: refused here, in the firmware's and the author's terms.
+      if (name === "install") {
+        const refusal = await packageRefusal(ctx, sys, await emulatorStatus(ctx, sys), project);
+        if (refusal) throw refusal;
+      }
       progress(`busy-cli app ${name} --addr ${address}`);
       const run = await runTool(ctx, sys, { tool: "node", args: [script, "app", name, "--addr", address], cwd: project.dir });
       // stop with no app running: busy-cli fails on the bar's 409 ("No app is running."), but what was asked for is

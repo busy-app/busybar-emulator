@@ -2,7 +2,7 @@
 // emulator's client (packages/server/http-client.mjs) repeats — HTTP/1.0, the firmware's headers, no redirects, the body as it
 // comes, "Inactivity timeout" after 5 s without body data, "Incomplete response body".
 //
-//   node emulator/test/fetch.mjs [--firmware dev]    in the emulator's runtime (the firmware's own, as for the server)
+//   node emulator/test/fetch.mjs [--firmware 1.3.1]  in the emulator's runtime (the firmware's own, as for the server)
 //   node emulator/test/fetch.mjs --bar [10.0.4.20]   the same app on a bar, which must reach this computer
 //   node emulator/test/fetch.mjs --bar --record      the same, and the bar's answers to the odd URLs saved to
 //                                                     test/fetch/bar-<firmware>.json
@@ -13,7 +13,10 @@
 // bar with --bar; a gate run has no bar. The odd URLs (a space, Cyrillic, `..`, a fragment, a quote, a query with no
 // path) are compared with the bar's recorded answers, test/fetch/bar-<firmware>.json, when there is one: what the
 // server received (the request line and the Host header) or the error, byte for byte. Without a recording they are
-// checked against what the firmware's source says (FIRMWARE_URLS below), and the line says so.
+// checked against what the firmware's source says (FIRMWARE_URLS below, written by the source of 1.3.1), and the line
+// says so. Every firmware the emulator has must have a recording: 1.4.1 (495af1db, FW-1243) percent-encodes the URL,
+// cuts the fragment off, sends "/?x=1" for a URL without a path, refuses user:password@ and sends a name in small
+// letters, none of which FIRMWARE_URLS says.
 //
 // On a bar the app is installed, run and removed; its results come back through its localStorage, and the server
 // listens on this computer's address on the bar's network. In the emulator the server listens on the loopback only
@@ -92,7 +95,8 @@ const server = net.createServer((socket) => {
     seen[`${text.split(" ")[0]} ${path}`] = text;
     const reply = (head, body = "") => socket.write(`HTTP/1.1 ${head}\r\n\r\n${body}`);
     // The odd URLs: what came, the request line and the Host header, as the body (latin1 both ways: bytes as sent).
-    if (path.startsWith("/u/") || path === "/") {
+    // "/" and "/?...": a URL without a path goes out as "/" (1.3.1) or "/?x=1" (1.4.1).
+    if (path.startsWith("/u/") || path === "/" || path.startsWith("/?")) {
       const echo = Buffer.from(text.split("\r\n").slice(0, 2).join("\n"), "latin1");
       return socket.end(Buffer.concat([Buffer.from(`HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${echo.length}\r\n\r\n`), echo]));
     }
@@ -296,7 +300,7 @@ check("slow", r.slow?.value?.error !== undefined && r.slow.ms >= 4900 && r.slow.
 check("stream", r.stream?.value?.pieces >= 6 && r.stream.value.lastMs - r.stream.value.firstMs > 4500 && r.stream.value.text.endsWith("piece6;"), "a streamed body comes piece by piece, past 5 s in all");
 check("refused", r.refused?.value?.error !== undefined, "a closed port is an error");
 // The odd URLs: against the bar's recording for this firmware if there is one, else against the firmware's source.
-const recordFile = join(here, "fetch", `bar-${firmware.version}.json`);
+const recordFile = join(here, "fetch", `bar-${firmware.name}.json`);
 const recording = !bar && existsSync(recordFile) ? JSON.parse(readFileSync(recordFile, "utf8")) : null;
 const want = recording?.urls ?? FIRMWARE_URLS;
 const against = bar ? "the firmware's source, on the bar" : recording ? `the bar's recorded answer (${recording.source.bar})` : "the firmware's source (no recording of a bar for this firmware)";

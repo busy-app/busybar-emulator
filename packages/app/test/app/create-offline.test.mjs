@@ -107,6 +107,22 @@ test("Create app without the network: the row says why and has Retry; Retry and 
   assert.ok(existsSync(path.join(dir, "package.json")), "the project is there");
   await until(async () => (await rows()).some((row) => row.note === "Dependencies not installed: no network"), "the row to say why", 30_000);
   assert.deepEqual(await rows(), [{ name: "Focus Timer", note: "Dependencies not installed: no network", buttons: ["Retry"] }]);
+  // The reason has the row's room up to Retry: the row's other buttons (More) are out of its flow until they show, with
+  // the focus in the row (or under the pointer).
+  await allApps();
+  const rowEnd = () => app.page(`(() => {
+    const li = document.querySelector("#apps li.app");
+    const width = (el) => Math.round(el.getBoundingClientRect().width);
+    return { actions: width(li.querySelector(".row-actions")), retry: width(li.querySelector(".row-retry")), note: width(li.querySelector(".app-note")) };
+  })()`);
+  await app.page(`(document.activeElement?.blur(), true)`);
+  const idle = await rowEnd();
+  assert.equal(idle.actions, idle.retry, `nothing but Retry at the row's end: ${JSON.stringify(idle)}`);
+  await app.page(`(document.querySelector("#apps li.app .row-retry").focus(), true)`);
+  const focused = await rowEnd();
+  assert.ok(focused.actions > focused.retry && focused.note < idle.note, `More in the row with the focus in it: ${JSON.stringify(focused)}`);
+  await app.page(`(document.activeElement?.blur(), document.querySelector("#apps li.app").click(), true)`);
+  await until(() => app.page(`document.querySelector("#side").dataset.mode === "app"`), "the app opened again");
   assert.equal(await app.page(`document.querySelector("#app-title").textContent`), "Focus Timer", "the new app is chosen");
   assert.equal(await app.page(`document.querySelector("#app-status .job.deps .job-line").textContent`), "Dependencies not installed: no network");
   // The console says what happened, as it went.

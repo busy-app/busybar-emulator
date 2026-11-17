@@ -55,30 +55,56 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 }
 
 /**
- * Copies the apps of test/apps/set.json into a bar's /ext/user_assets, one after another: the apps menu lists apps
- * in the order their folders were made (packages/server/device.mjs, listDir), and the volume must tell them apart.
+ * The folder of a comparison suite's recordings of a BUSY Bar on `firmware`: test/<suite>/<firmware> (golden, settings,
+ * timed). A firmware draws its own screens, so each is compared with the recordings of a bar on it.
  */
-async function installAppSet(barDir) {
+export function recordingsDir(suite, firmware) {
+  return join(here, suite, firmware);
+}
+
+/** The firmware version the device at `addr` reports (GET /api/status/firmware): a bar's, or an emulator's. */
+export async function firmwareAt(addr) {
+  const r = await fetch(`http://${addr}/api/status/firmware`, { signal: AbortSignal.timeout(8000) });
+  const version = r.ok ? (await r.json()).version : undefined;
+  if (!version) throw new Error(`no firmware version from ${addr}: ${r.status}`);
+  return version;
+}
+
+/** The apps of test/apps/set.json for the recordings of `firmware`, in the order the bar listed them. */
+export function appSetOf(firmware) {
   const set = JSON.parse(readFileSync(join(here, "apps", "set.json"), "utf8"));
+  const ids = set.firmwares[firmware];
+  if (!ids) throw new Error(`test/apps/set.json names no apps for firmware ${firmware}: the bar's apps when its goldens were taken`);
+  return ids;
+}
+
+/**
+ * Copies the apps of test/apps/set.json for `firmware` into a bar's /ext/user_assets, one after another: the apps menu
+ * lists apps in the order their folders were made (packages/server/device.mjs, listDir), and the volume must tell
+ * them apart.
+ */
+async function installAppSet(barDir, firmware) {
+  const ids = appSetOf(firmware);
   const target = join(barDir, "ext", "user_assets");
   mkdirSync(target, { recursive: true, mode: 0o700 });
-  for (const [i, { id }] of set.apps.entries()) {
+  for (const [i, id] of ids.entries()) {
     // Apart in time: exFAT keeps a folder's time in steps of 10 ms, NTFS in 0.5–15.6 ms.
     if (i) await sleep(30);
     cpSync(join(here, "apps", id), join(target, id), { recursive: true });
   }
-  return set.apps.map((a) => a.id);
+  return ids;
 }
 
 /**
- * An emulator of the suite's own. `apps`: install the apps of test/apps/ first (the system scenes need them).
+ * An emulator of the suite's own. `apps`: install the apps of test/apps/ first, the set for its firmware (the system
+ * scenes need them).
  * Returns { addr, url, firmware, dataDir, apps, stop() }; stop() is also called when the process ends.
  */
 export async function ownEmulator({ firmware, barSpeed = true, apps = false, name = "suite" } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), `${FOLDER}${process.pid}-`));
   const own = { dataDir, stop: async () => {} };
   owned.add(own);
-  const installed = apps ? await installAppSet(join(dataDir, "bar", loadFirmware(firmware).name)) : [];
+  const installed = apps ? await installAppSet(join(dataDir, "bar"), loadFirmware(firmware).name) : [];
   // The bar's log goes where the suite's pictures go when a gate runs it, and nowhere otherwise.
   const logFile = process.env.EMU_TEST_OUT ? join(outputDir(name), `server-${loadFirmware(firmware).name}.log`) : null;
   const log = logFile ? (line) => appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`) : () => {};
@@ -95,7 +121,7 @@ export async function ownEmulator({ firmware, barSpeed = true, apps = false, nam
     const listed = (await (await fetch(`http://${addr}/api/apps/list`)).json()).apps.map((a) => a.id);
     if (listed.join() !== installed.join()) {
       await own.stop();
-      throw new Error(`the apps of test/apps/set.json are listed as ${listed.join(", ")}, not in the order of the set: ${installed.join(", ")}`);
+      throw new Error(`the apps of test/apps/set.json for ${loadFirmware(firmware).name} are listed as ${listed.join(", ")}, not in the order of the set: ${installed.join(", ")}`);
     }
   }
   return { addr, url: emulator.url, firmware: emulator.firmware.name, dataDir, apps: installed, stop: own.stop };
@@ -131,10 +157,13 @@ export function outputDir(suite) {
 }
 
 /**
- * The suite's last line, read by the gate (test/gate.mjs): how many checks passed, failed and were skipped. Sets the
- * exit code: 1 when anything failed or nothing was checked.
+ * The suite's last line, read by the gate (test/gate.mjs, gate-lib.mjs tallyTotals): how many checks passed, failed
+ * and were skipped. `reasons`: { reason → count } of the skips, each a line "# skip <count> <reason>" first, which the
+ * gate sorts against its allowed reasons; a skip without one counts against the verdict. Sets the exit code: 1 when
+ * anything failed or nothing was checked.
  */
-export function totals({ pass, fail, skip = 0 }) {
+export function totals({ pass, fail, skip = 0, reasons = {} }) {
+  for (const [reason, count] of Object.entries(reasons)) console.log(`# skip ${count} ${reason}`);
   console.log(`# totals pass=${pass} fail=${fail} skip=${skip}`);
   process.exitCode = fail || pass + fail === 0 ? 1 : 0;
 }

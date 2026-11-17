@@ -1,0 +1,57 @@
+{
+  "source": {
+    "bar": "BUSY Bar, firmware 1.4.1",
+    "firmware": "28c175b3",
+    "recorded": "2026-11-16T14:32:23.015Z"
+  },
+  "urls": {
+    "url-space": {
+      "status": 200,
+      "text": "GET /u/a%20b HTTP/1.0\nHost: {host}"
+    },
+    "url-cyrillic-path": {
+      "status": 200,
+      "text": "GET /u/%D0%BF%D1%83%D1%82%D1%8C HTTP/1.0\nHost: {host}"
+    },
+    "url-cyrillic-query": {
+      "status": 200,
+      "text": "GET /u/q?city=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0 HTTP/1.0\nHost: {host}"
+    },
+    "url-encoded": {
+      "status": 200,
+      "text": "GET /u/%D0%BF?city=%D0%9C&x=a%20b HTTP/1.0\nHost: {host}"
+    },
+    "url-dots": {
+      "status": 200,
+      "text": "GET /u/a/../b/./c HTTP/1.0\nHost: {host}"
+    },
+    "url-dots-encoded": {
+      "status": 200,
+      "text": "GET /u/a/%2e%2e/b HTTP/1.0\nHost: {host}"
+    },
+    "url-fragment": {
+      "status": 200,
+      "text": "GET /u/f?x=1 HTTP/1.0\nHost: {host}"
+    },
+    "url-quote": {
+      "status": 200,
+      "text": "GET /u/q?name='x' HTTP/1.0\nHost: {host}"
+    },
+    "url-no-path": {
+      "status": 200,
+      "text": "GET /?x=1 HTTP/1.0\nHost: {host}"
+    },
+    "url-userinfo": {
+      "error": "Invalid URL"
+    },
+    "url-scheme-capitals": {
+      "status": 200,
+      "text": "GET /u/scheme HTTP/1.0\nHost: {host}"
+    },
+    "url-name-capitals": {
+      "status": 200,
+      "host": "httpbin.org",
+      "url": "http://httpbin.org/anything/name-in-capitals"
+    }
+  }
+}

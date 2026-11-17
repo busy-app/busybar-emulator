@@ -133,7 +133,7 @@ async function main() {
   const until = Date.now() + WAIT_FOR_EXIT_MS;
   while (alive(plan.pid) && Date.now() < until) await sleep(200);
   if (alive(plan.pid)) {
-    result({ ok: false, code: "still_running", message: "the emulator did not quit", hint: "Quit it and open it again, then press Update." });
+    result({ ok: false, code: "still_running", message: "the emulator did not quit", hint: "Quit it and open it again, then try the update again." });
     return;
   }
   log("the app has quit");
@@ -166,12 +166,12 @@ async function waitStarted(plan, child) {
 
 async function swapMac(plan, log, result) {
   if (!existsSync(plan.bundle) || !statSync(plan.bundle).isDirectory()) {
-    result({ ok: false, code: "bad_plan", message: "the new version was not where the app left it", hint: "Press Update again." });
+    result({ ok: false, code: "bad_plan", message: "the new version was not where the app left it", hint: "Try the update again." });
     launch(plan.exe, log).unref();
     return;
   }
   if (!(await stillTheUpdate(plan))) {
-    result({ ok: false, code: "bad_bundle", message: "the new version was changed after the emulator checked it (its code signature no longer holds)", hint: "Press Update to download it again, or download the new version from the release page." });
+    result({ ok: false, code: "bad_bundle", message: "the new version was changed after the emulator checked it (its code signature no longer holds)", hint: "Try again to download it once more, or download the new version from the release page." });
     rmSync(plan.staging, { recursive: true, force: true });
     launch(plan.exe, log).unref();
     return;
@@ -228,7 +228,7 @@ async function setupWindows(plan, log, result) {
   for (let tries = 1; ; tries++) {
     if (!(await stillTheUpdate(plan))) {
       log(`setup (try ${tries}): its SHA-256 is no longer the manifest's`);
-      result({ ok: false, code: "bad_file", message: "the downloaded setup was changed after the emulator checked it", hint: "Press Update to download it again, or download the setup from the release page." });
+      result({ ok: false, code: "bad_file", message: "the downloaded setup was changed after the emulator checked it", hint: "Try again to download it once more, or download the setup from the release page." });
       rmSync(plan.setup, { force: true });
       launch(plan.exe, log).unref();
       return;
@@ -248,7 +248,7 @@ async function setupWindows(plan, log, result) {
   }
   const words =
     code === 3
-      ? { code: "in_use", message: "a program still runs from the emulator's folder (most likely an agent's busy-emulator mcp or a command line)", hint: "Close the program, or the agent's session, then press Update again." }
+      ? { code: "in_use", message: "a program still runs from the emulator's folder (most likely an agent's busy-emulator mcp or a command line)", hint: "Close the program, or the agent's session, then try again." }
       : { code: "setup_failed", message: `the setup ended with code ${code} (its log is ${plan.setupLog})`, hint: "Download the setup from the release page and run it." };
   result({ ok: false, ...words });
   launch(plan.exe, log).unref();

@@ -7,7 +7,10 @@
 //                       time it started, its executable) and where it listens. The app's mirror for the command line,
 //                       run/emulator.json, is the app's (EMU-202) and lies beside it.
 //   key                 the server's key (ADR-0012; made by EMU-009 with privateFile below)
-//   bar/<firmware>/ext  the emulated bar's storage, one bar for each firmware: installed apps, their data, settings
+//   bar/ext             the emulated BUSY Bar's storage: installed apps, their data and settings. One BUSY Bar whatever
+//                       the firmware, as a real one keeps its apps when its firmware is replaced (EMU-318)
+//   bar/chosen-firmware.json  the firmware the BUSY Bar was last switched to, { "version": "1.3.1" }: what the next start runs
+//                       when it is not told (keptFirmware, keepFirmware below; EMU-320)
 //
 // What the server makes here, it makes for the user alone (0700 folders, 0600 files; on Windows rights come from the
 // folder above, and %LOCALAPPDATA% is the user's alone) and never through a link: a link where the server would make
@@ -28,17 +31,76 @@ import path, { dirname, join } from "node:path";
 
 import { processInfo } from "./process-info.mjs";
 
-export const FORMAT = 1;
+export const FORMAT = 2;
 export const LOCK_FILE = join("run", "server.lock");
 
 /**
  * The steps that move a data folder from one format to the next: MIGRATIONS[n] moves format n to n + 1. A step is
- * { what, run({ root, firmware }) }: `what` is one line for the person ("the bar's settings moved to ..."), `run` does
- * it (it may be async) and throws when it cannot. A step must be safe to run again on a folder it already half moved:
- * the record says n until the step has ended. The first format is 1, so there is no step yet; a release that changes
- * what the folder holds adds one here and raises FORMAT (docs/release.md, "Hotfix during the hackathon").
+ * { what, run({ root }) }: `what` is one line for the person ("the bar's settings moved to ..."), `run` does it (it may
+ * be async) and throws when it cannot; when it returns a line, that line is said instead of `what`. A step must be
+ * safe to run again on a folder it already half moved: the record says n until the step has ended. A release that
+ * changes what the folder holds adds a step here and raises FORMAT (docs/release.md, "Hotfix during the hackathon").
  */
-export const MIGRATIONS = Object.freeze({});
+export const MIGRATIONS = Object.freeze({ 1: Object.freeze({ what: "the emulated BUSY Bar is one for every firmware now, bar/ext", run: oneBar }) });
+
+/**
+ * The firmware every release that made format 1 ran by default (0.1.0-beta.1 to beta.5): its BUSY Bar is the one the
+ * person used. A fact about those releases, not a choice of firmware: the step below is its only reader.
+ */
+const FORMAT_1_DEFAULT = "1.3.1";
+
+/**
+ * Format 1 to 2: a BUSY Bar for each firmware (bar/<firmware>/ext) becomes one BUSY Bar (bar/ext). The bar of
+ * FORMAT_1_DEFAULT becomes bar/ext as it is. What else bar/ held is set aside, untouched, in
+ * set-aside/format-1-bars-<time>/: the other firmwares' bars, and an older bar/ext when the bar of FORMAT_1_DEFAULT is
+ * there too (format 1 never wrote bar/ext; an earlier release that opened a folder of the layout before EMU-005 left
+ * it, and its apps are not the ones the person used since). What cannot be moved, but for the bar that is kept, stays
+ * where it is and is said: the step does not fail for it, so the folder is not set aside whole. The line it returns
+ * says only what it did. Safe to run again: its renames are whole, and with no bar of FORMAT_1_DEFAULT left, bar/ext
+ * is the one the step moved. `rename` is for the tests (renameWhole: on Windows a file held a moment is waited for).
+ */
+function oneBar({ root, rename = renameWhole }) {
+  const bars = join(root, "bar");
+  if (!exists(bars)) return null;
+  const isFolder = (at) => exists(at) && lstatSync(at).isDirectory();
+  const kept = join(bars, FORMAT_1_DEFAULT);
+  const one = join(bars, "ext");
+  let aside = null;
+  const asideFolder = () => {
+    if (aside) return aside;
+    const parent = join(root, "set-aside");
+    ownFolder(parent, root);
+    aside = join(parent, `format-1-bars-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+    mkdirSync(aside, { mode: 0o700 });
+    return aside;
+  };
+  const said = [];
+  const setAside = [];
+  if (isFolder(join(kept, "ext"))) {
+    if (exists(one)) {
+      rename(one, join(asideFolder(), "ext-before-format-1"));
+      setAside.push("an older bar/ext from before format 1");
+    }
+    rename(join(kept, "ext"), one);
+    said.push(`the apps of firmware ${FORMAT_1_DEFAULT} are its apps`);
+  } else if (!exists(one)) said.push(`there was no BUSY Bar of firmware ${FORMAT_1_DEFAULT}, so it starts without apps`);
+  // The folder of the firmware is empty now, but for files macOS may keep beside it on exFAT ("._*").
+  if (isFolder(kept) && readdirSync(kept).every((name) => name.startsWith("._"))) rmSync(kept, { recursive: true, force: true });
+  const stayed = [];
+  for (const name of readdirSync(bars)) {
+    if (name.startsWith("._") || name === "ext" || name === "chosen-firmware.json") continue;
+    const what = isFolder(join(bars, name, "ext")) ? `the BUSY Bar of firmware ${name}` : `bar/${name}`;
+    try {
+      rename(join(bars, name), join(asideFolder(), name));
+      setAside.push(what);
+    } catch (e) {
+      stayed.push(`${what} could not be moved (${e?.code ?? e?.message ?? e}) and stays where it is, unread`);
+    }
+  }
+  if (setAside.length) said.push(`${setAside.join(", ")} ${setAside.length === 1 ? "is" : "are"} set aside, untouched, in ${aside}`);
+  said.push(...stayed);
+  return `the emulated BUSY Bar is one for every firmware now, bar/ext${said.length ? `: ${said.join("; ")}` : ""}`;
+}
 
 /** What a folder that cannot be moved keeps in place when the rest is set aside: the lock, the app's own files, the log. */
 const KEPT_WHEN_SET_ASIDE = new Set(["run", "set-aside", "logs", "shell", "install.json", "app-settings.json"]);
@@ -367,6 +429,7 @@ async function takeLock(root, record, { notices, signal, processInfo: info }) {
   const clearing = `${file}.clearing`;
   const nonce = randomBytes(12).toString("hex");
   const text = JSON.stringify({ ...record, nonce }, null, 2) + "\n";
+  const written = { ...record, nonce };
   const deadline = Date.now() + 10_000;
   // The proof that this process runs, before the lock names it.
   const pipe = windows ? await holdPipe(nonce) : null;
@@ -389,7 +452,7 @@ async function takeLock(root, record, { notices, signal, processInfo: info }) {
         }
         held.set(file, { nonce, pipe });
         letGoAtExit();
-        return { file, nonce, rightsKept: kept };
+        return { file, nonce, record: written, rightsKept: kept };
       }
 
       const kind = kindAt(file);
@@ -467,16 +530,10 @@ function releaseLock(lock) {
 
 // ------------------------------------------------------------------------------------------------------ the folder
 
-/**
- * The bar's storage for one firmware, bar/<firmware>: its /ext and the folders an empty /ext has, made if they are not
- * there, and writable.
- */
-function prepareBar(root, firmware) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(firmware) || firmware.includes("..")) throw new TypeError(`Not a firmware name for a folder: ${firmware}`);
-  const bars = join(root, "bar");
-  const bar = join(bars, firmware);
+/** The BUSY Bar's storage, bar: its /ext and the folders an empty /ext has, made if they are not there, and writable. */
+function prepareBar(root) {
+  const bar = join(root, "bar");
   const ext = join(bar, "ext");
-  ownFolder(bars, root);
   ownFolder(bar, root);
   ownFolder(ext, root);
   const apps = join(ext, "user_assets");
@@ -500,15 +557,16 @@ function prepareBar(root, firmware) {
  * or a step that fails, sets the folder aside (setAside) and writes `to` on the empty folder.
  * @returns {{ from: number, to: number, setAside: string | null }}
  */
-async function migrate(root, { from, to, migrations, firmware, notices }) {
+async function migrate(root, { from, to, migrations, notices }) {
   const done = [];
   for (let n = from; n < to; n++) {
     const step = migrations[n];
     let why = null;
+    let said = null;
     if (!step || typeof step.run !== "function") why = `this emulator has no way to move format ${n}`;
     else {
       try {
-        await step.run({ root, firmware });
+        said = await step.run({ root });
       } catch (e) {
         why = `moving format ${n} to ${n + 1} failed: ${e?.message ?? e}`;
       }
@@ -523,7 +581,8 @@ async function migrate(root, { from, to, migrations, firmware, notices }) {
       return { from, to, setAside: aside };
     }
     privateFile(join(root, "format"), `${n + 1}\n`);
-    if (step.what) done.push(step.what);
+    if (typeof said === "string" && said) done.push(said);
+    else if (step.what) done.push(step.what);
   }
   notices.push(`The data folder, made by an earlier emulator, is moved from format ${from} to ${to}${done.length ? `: ${done.join("; ")}` : ""}.`);
   return { from, to, setAside: null };
@@ -547,14 +606,37 @@ function setAside(root, n) {
 }
 
 /**
+ * The firmware the BUSY Bar of the data folder `root` was last switched to (bar/chosen-firmware.json): { version,
+ * problem }, version null when none was chosen, `problem` saying why a record that is there cannot be read. Only reads:
+ * a server asks before it takes the folder's lock, so that the lock names the firmware from the start.
+ */
+export function readChosenFirmware(root) {
+  const file = join(root, "bar", "chosen-firmware.json");
+  let text;
+  try {
+    text = readOwnFile(file);
+  } catch (e) {
+    if (e?.code === "ENOTDIR") return { version: null, problem: null };
+    return { version: null, problem: `${file} cannot be read (${e?.code ?? e?.message ?? e})` };
+  }
+  if (text === null) return { version: null, problem: null };
+  try {
+    const version = JSON.parse(text)?.version;
+    if (typeof version === "string" && version) return { version, problem: null };
+  } catch {
+    // Said below.
+  }
+  return { version: null, problem: `${file} does not name a firmware` };
+}
+
+/**
  * Opens a data folder for a server: checks its format (and leaves it exactly as it is if it cannot be used), takes its
- * lock, records the format in a new folder or moves an older one to it, and makes the bar's storage for the firmware
- * ready.
+ * lock, records the format in a new folder or moves an older one to it, and makes the BUSY Bar's storage ready.
  *
  * @param {string} root the data folder, resolved
  * @param {object} o
- * @param {string} o.firmware the firmware's name: the bar is bar/<firmware>
- * @param {object} o.record what the lock says about the server besides the process: { port, url, firmware, apiVersion }
+ * @param {object} o.record what the lock says about the server besides the process: { port, url, ... }; the firmware
+ *   and its API, once the server knows them, go in with updateRecord
  * @param {AbortSignal} [o.signal]
  * @param {(pid: number) => Promise<{ start: number, exe: string } | null>} [o.processInfo] for tests: how the system
  *   describes a process. By default `ps` on macOS and Linux; on Windows the owner's pipe is asked instead, unless a
@@ -562,13 +644,18 @@ function setAside(root, n) {
  * @param {number} [o.format] for tests: the format this emulator makes (FORMAT)
  * @param {object} [o.migrations] for tests: the steps between formats (MIGRATIONS)
  * @returns {Promise<{ root: string, barDir: string, format: number, created: boolean, migrated: object | null,
- *   lockFile: string, rightsKept: boolean, notices: string[], release: () => void }>} `created`: the folder had no
+ *   lockFile: string, rightsKept: boolean, notices: string[], chosenFirmware: () => { version: string | null,
+ *   problem: string | null }, chooseFirmware: (version: string) => void, updateRecord: (fields: object) => void,
+ *   release: () => void }>} `barDir` is bar, whose ext plays the BUSY Bar's /ext. `created`: the folder had no
  *   format record and has one now — a new folder. `migrated`: { from, to, setAside } when it was of an older format;
  *   setAside names where its contents went when they could not be moved, null when they were. `rightsKept`: false where the file system does not keep the user-alone rights the files
  *   were made with. `notices`: what a person should hear about the folder (a lock cleared, rights not kept), a line
- *   each. release() lets go of the lock; calling it again does nothing.
+ *   each. chosenFirmware() reads bar/chosen-firmware.json: the version the BUSY Bar was last switched to, null when
+ *   none was chosen; `problem` says why a record that is there could not be read. chooseFirmware() writes it.
+ *   updateRecord() adds `fields` to what the lock says (the firmware that runs now), while the lock is this server's.
+ *   release() lets go of the lock; calling it again does nothing.
  */
-export async function openDataFolder(root, { firmware, record = {}, signal, processInfo: info = processInfo, format: target = FORMAT, migrations = MIGRATIONS }) {
+export async function openDataFolder(root, { record = {}, signal, processInfo: info = processInfo, format: target = FORMAT, migrations = MIGRATIONS }) {
   makeRoot(root);
   const format = readFormat(root);
   if (format === null) {
@@ -576,7 +663,7 @@ export async function openDataFolder(root, { firmware, record = {}, signal, proc
     if (exists(ext) && lstatSync(ext).isDirectory()) {
       throw formatError(
         `The data folder ${root} has the layout of an earlier emulator, without a format record: the BUSY Bar's storage, ext, is at its top. ` +
-          `This emulator does not move it, and leaves it as it is. Move ${ext} to ${join(root, "bar", firmware, "ext")}, or name another folder.`,
+          `This emulator does not move it, and leaves it as it is. Move ${ext} to ${join(root, "bar", "ext")}, or name another folder.`,
       );
     }
   } else if (format > target) {
@@ -605,12 +692,20 @@ export async function openDataFolder(root, { firmware, record = {}, signal, proc
     let rightsKept = lock.rightsKept;
     let migrated = null;
     if (format === null) rightsKept = privateFile(join(root, "format"), `${target}\n`) && rightsKept;
-    else if (format < target) migrated = await migrate(root, { from: format, to: target, migrations, firmware, notices });
-    const barDir = prepareBar(root, firmware);
+    else if (format < target) migrated = await migrate(root, { from: format, to: target, migrations, notices });
+    const barDir = prepareBar(root);
     if (!rightsKept) {
       notices.push(`The file system of ${root} does not keep file rights: other users of this computer may read the emulator's files there. Keep the data folder on the system disk.`);
     }
-    return { root, barDir, format: target, created: format === null, migrated, lockFile: lock.file, rightsKept, notices, release };
+    const chosenFile = join(barDir, "chosen-firmware.json");
+    const chosenFirmware = () => readChosenFirmware(root);
+    const chooseFirmware = (version) => void privateFile(chosenFile, JSON.stringify({ version }) + "\n");
+    const updateRecord = (fields) => {
+      if (released) return;
+      Object.assign(lock.record, fields, { nonce: lock.nonce });
+      privateFile(lock.file, JSON.stringify(lock.record, null, 2) + "\n");
+    };
+    return { root, barDir, format: target, created: format === null, migrated, lockFile: lock.file, rightsKept, notices, chosenFirmware, chooseFirmware, updateRecord, release };
   } catch (e) {
     release();
     throw e;

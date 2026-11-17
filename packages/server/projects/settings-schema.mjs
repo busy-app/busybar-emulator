@@ -1,7 +1,7 @@
 // An app's settings file (appmeta/settings.json), checked as the firmware checks it when it loads the app's settings
-// (lib/js_app/js_app_settings.c, js_app_settings_parse; firmware 1.3.1): the same order, the first problem found, in
-// the firmware's words with the field's path in front ("Field 'a.b': key 'options' is missing"). A bar that meets
-// such a file shows "Settings file is invalid." and says no more; this says which field.
+// (lib/js_app/js_app_settings.c, js_app_settings_parse; firmwares 1.3.1 and 1.4.1): the same order, the first problem
+// found, in the firmware's words with the field's path in front ("Field 'a.b': key 'options' is missing"). A bar that
+// meets such a file shows "Settings file is invalid." and says no more; this says which field.
 //
 // By the firmware's code, not checked on a device; the emulated bar runs that code, and a test holds this module to
 // what it logs. Stricter than the firmware in one place, where its documented schema is (documentation/JavaScript
@@ -23,6 +23,9 @@ export const STRING_DEFAULT_MAX_LENGTH = 64;
 export const ENUM_MAX_OPTIONS = 32;
 export const GEO_NAME_MAX_LENGTH = 128;
 export const TYPES = Object.freeze(["boolean", "integer", "string", "enum", "color", "time", "geolocation", "group"]);
+// The firmwares differ in one rule: 1.3.1 (API 27.14.0) wants an integer's range to be a multiple of its step, and
+// 1.4.1 (API 27.15.0) dropped that check (0a11d1f9). Which rules apply is told by the BUSY Bar's API version.
+const STEP_DIVIDES_UNTIL_API = [27, 15, 0];
 const INT_MIN = -2147483648;
 const INT_MAX = 2147483647;
 
@@ -99,6 +102,8 @@ function get(path, json, key, type, optional = false) {
 
 /** Whether a fraction where a whole number belongs is a problem (the documented schema) or cut off (the firmware). */
 let strictNumbers = true;
+/** Whether an integer's range must be a multiple of its step (firmware 1.3.1). */
+let stepDivides = false;
 
 function whole(path, json, key, optional) {
   const value = get(path, json, key, "number", optional);
@@ -127,7 +132,7 @@ const PARSE = {
     }
     if (min > max) throw new Problem(path, "'min' is greater than 'max'");
     if (step === 0) throw new Problem(path, "key 'step' must be a non-zero integer");
-    if ((max - min) % step !== 0) throw new Problem(path, "'max' - 'min' must be evenly divisible by 'step'");
+    if (stepDivides && (max - min) % step !== 0) throw new Problem(path, "'max' - 'min' must be evenly divisible by 'step'", "Make max - min a multiple of step: firmware 1.3.1 refuses the file otherwise, and 1.4.1 takes it.");
     if (value < min || value > max) throw new Problem(path, "default is out of bounds");
   },
   string(path, json) {
@@ -200,13 +205,16 @@ function nodes(fields, parent, depth) {
 /**
  * Checks the text of a settings file.
  * @param {string} text
- * @param {{ strict?: boolean }} [o] `strict: false` takes a fraction where a whole number belongs, as the firmware does
+ * @param {{ strict?: boolean, api?: string | null }} [o] `strict: false` takes a fraction where a whole number belongs, as
+ *   the firmware does; `api`: the API version of the BUSY Bar whose firmware's rules apply ("27.14.0" for 1.3.1), the
+ *   newest rules when not given
  * @returns {{ ok: true, schema: object } | { ok: false, field: string | null, problem: string, advice: string | null }}
  *   `field` is the path of the field at fault ("group.field"), null for a problem of the file's own keys; `problem`
  *   the firmware's words for it; `advice` what to change, where the words alone do not say.
  */
-export function checkSettingsSchema(text, { strict = true } = {}) {
+export function checkSettingsSchema(text, { strict = true, api = null } = {}) {
   strictNumbers = strict;
+  stepDivides = api !== null && olderThan(api, STEP_DIVIDES_UNTIL_API);
   if (jsonDepth(text, MAX_JSON_DEPTH) > MAX_JSON_DEPTH) {
     return { ok: false, field: null, problem: `Malformed JSON: nested deeper than ${MAX_JSON_DEPTH} levels`, advice: `Groups nest at most ${MAX_DEPTH} deep; no settings file needs more than ${MAX_JSON_DEPTH} levels of brackets.` };
   }
@@ -233,6 +241,14 @@ export function checkSettingsSchema(text, { strict = true } = {}) {
     return { ok: false, field: e.field, problem: e.problem, advice: e.advice };
   }
   return { ok: true, schema: root };
+}
+
+/** Whether the version "a.b.c" is below `than` ([a, b, c]); a version that is not three numbers is not. */
+function olderThan(version, than) {
+  const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)?.slice(1).map(Number);
+  if (!parts) return false;
+  for (let i = 0; i < 3; i++) if (parts[i] !== than[i]) return parts[i] < than[i];
+  return false;
 }
 
 /** One line for a person or a log: "field 'a.b': key 'options' is missing", or the file's own problem. */

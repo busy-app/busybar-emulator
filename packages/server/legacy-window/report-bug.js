@@ -62,19 +62,19 @@
     box.append(top, control);
     return box;
   }
-  const titleInput = make("input", "report-bug-input");
+  const titleInput = make("input", "input report-bug-input");
   titleInput.type = "text";
   titleInput.id = "report-bug-title-input";
   titleInput.maxLength = LIMITS.title;
   titleInput.placeholder = "The app stops when the wheel turns";
   titleInput.autocomplete = "off";
   titleInput.spellcheck = true;
-  const whatInput = make("textarea", "report-bug-input");
+  const whatInput = make("textarea", "input report-bug-input");
   whatInput.id = "report-bug-what";
   whatInput.maxLength = LIMITS.what;
   whatInput.rows = 5;
   whatInput.placeholder = "1. Open the app\n2. Turn the wheel\n3. …";
-  const expectedInput = make("textarea", "report-bug-input");
+  const expectedInput = make("textarea", "input report-bug-input");
   expectedInput.id = "report-bug-expected";
   expectedInput.maxLength = LIMITS.expected;
   expectedInput.rows = 3;
@@ -124,7 +124,7 @@
   said.id = "report-bug-said";
   said.setAttribute("role", "status");
   said.setAttribute("aria-live", "polite");
-  const revealButton = make("button", "btn small report-bug-reveal", SHOW);
+  const revealButton = make("button", "btn report-bug-reveal", SHOW);
   revealButton.type = "button";
   revealButton.hidden = true;
   const saveButton = make("button", "btn report-bug-save");

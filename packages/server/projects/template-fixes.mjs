@@ -16,8 +16,12 @@
 // Nothing here is done again for a project that exists: a later version of the emulator does not rewrite old projects.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { MINIMAL_EXAMPLE } from "./settings-schema.mjs";
+
+/** The engine beside the server: firmware.json and each firmware's build (packages/engine). */
+const ENGINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "engine");
 
 /** What tells the template's broken helper: it looks for the runtime's global. */
 const BROKEN_HELPER = /globalThis as \{ Settings\?: SettingsApi \}/;
@@ -83,8 +87,75 @@ export const WINDOWS_CALLS = Object.freeze({
   cmd: '"%LOCALAPPDATA%\\busy-emulator\\bin\\busy-emulator.exe"',
 });
 
-/** The emulator's section of a project's AGENTS.md. `typecheck`: the project has a typecheck script. */
-export function agentsSection({ typecheck = true } = {}) {
+/**
+ * The pair of firmwares the section's list of differences was written for (epic E12, EMU-323): what the latest has and
+ * the previous lacks. A test holds it to firmware.json, so a new firmware makes someone write the list again.
+ */
+export const FIRMWARE_LIST_WRITTEN_FOR = Object.freeze({ latest: "1.4.1", previous: "1.3.1" });
+
+/**
+ * The latest and the previous firmware of this copy of the emulator, each { version, api }, from the engine's
+ * firmware.json and its builds' build-info.json, as firmwareChoices() and loadFirmware() in ../firmware.mjs name them
+ * (a test holds the two to each other). Read here, not imported: a copy of the command line without the engine still
+ * runs `create`. Null when there is no previous firmware or the engine cannot be read; the section then leaves its
+ * firmware part out.
+ */
+export function sectionFirmwares(engine = ENGINE) {
+  try {
+    const config = JSON.parse(readFileSync(path.join(engine, "firmware.json"), "utf8"));
+    const released = (name) => /^\d+(\.\d+)*$/.test(name);
+    const newer = (a, b) => {
+      const [x, y] = [a, b].map((name) => name.split(".").map(Number));
+      for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
+      return 0;
+    };
+    const latest = config.default;
+    if (!released(latest) || !config.versions?.[latest]) return null;
+    const previous = Object.keys(config.versions).filter((name) => released(name) && newer(name, latest) < 0).sort(newer).at(-1);
+    if (!previous) return null;
+    const one = (version) => {
+      const api = JSON.parse(readFileSync(path.join(engine, "build", version, "build-info.json"), "utf8")).api;
+      if (typeof api !== "string" || !api) throw new Error(`no API for firmware ${version}`);
+      return { version, api };
+    };
+    return { latest: one(latest), previous: one(previous) };
+  } catch {
+    return null;
+  }
+}
+
+/** The section's part on the two firmwares: what needs the latest's API, and what differs in behavior. Empty without both. */
+function firmwareLines(firmwares) {
+  if (!firmwares) return [];
+  const { latest, previous } = firmwares;
+  return [
+    "### Firmware",
+    "",
+    `BUSY Bars run firmware ${latest.version} (API ${latest.api}) or ${previous.version} (API ${previous.api}). The emulator runs ${latest.version} unless someone switched it; \`busy-emulator firmware\` says which.`,
+    "",
+    `Keep \`api_version\` in \`src/appmeta/manifest.json\` at ${previous.api}, so the app installs on ${previous.version}. Raise it to ${latest.api} only if the app uses one of these:`,
+    "",
+    "- `/api/storage`, with paths under `/ext/data`, the app's own folder.",
+    "- `console.warn`.",
+    "",
+    `Other differences are in behavior, and \`api_version\` does not guard against them. On ${previous.version}:`,
+    "",
+    "- `fetch` refuses a URL with a space or a non-ASCII letter (`\"Invalid URL\"`). Encode such parts with `encodeURIComponent`.",
+    `- \`fetch\` sends \`#...\` to the server and silently drops \`user:pw@\`. ${latest.version} does not send \`#...\` and refuses \`user:pw@\`.`,
+    `- A network or body error rejects with a string; ${latest.version} rejects with a \`TypeError\`. \`String(e?.message ?? e)\` reads both.`,
+    "- A response header with an empty value restarts the BUSY Bar (https://github.com/busy-app/busybar-emulator/issues/1).",
+    "- A short Back clears the app's screen.",
+    "",
+    `Check the app on ${previous.version} too: \`busy-emulator firmware use previous\`, \`busy-emulator dev --once\`, a few seconds later \`busy-emulator logs --since-run\`, then \`busy-emulator firmware use latest\`. Tell the person that you switched.`,
+    "",
+  ];
+}
+
+/**
+ * The emulator's section of a project's AGENTS.md. `typecheck`: the project has a typecheck script. `firmwares`: the
+ * latest and the previous firmware, { version, api } each (sectionFirmwares, read from this emulator's engine).
+ */
+export function agentsSection({ typecheck = true, firmwares = sectionFirmwares() } = {}) {
   return [
     SECTION_BEGIN,
     "## No BUSY Bar needed: this project runs on BUSY Bar Emulator",
@@ -128,7 +199,7 @@ export function agentsSection({ typecheck = true } = {}) {
     "",
     "### Network and memory",
     "",
-    "- `fetch`: `res.ok`, `res.status`, `res.json()`, `res.text()`, `res.body.getReader()`; a 404 resolves. A failure rejects with a string, not an `Error`: `\"socket error\"`, `\"Inactivity timeout\"`. No `TextDecoder` or `TextEncoder`.",
+    "- `fetch`: `res.ok`, `res.status`, `res.json()`, `res.text()`, `res.body.getReader()`; a 404 resolves. A failure gives `\"socket error\"`, `\"Inactivity timeout\"` and the like; its type depends on the firmware (below). No `TextDecoder` or `TextEncoder`.",
     "- Redirects are not followed: a 301 or 302 reaches the app as it is. Use the final `https://` address; `busy-emulator logs` names it.",
     "- HTTPS takes about 1.5 s on a BUSY Bar, HTTP 0.1 s. Refresh no more often than the data changes.",
     "- 5 s without data, counted from the start, end a request with `\"Inactivity timeout\"`: a server slower than that fails. In a stream, `reader.read()` then gives `{ done: true, value: \"Inactivity timeout\" }`.",
@@ -137,6 +208,7 @@ export function agentsSection({ typecheck = true } = {}) {
     "",
     "`not_running`: run `busy-emulator start` first. `untrusted_project` (a folder the emulator did not create): run `busy-emulator trust <folder>`, which asks the person in a dialog. Another project is made with `busy-emulator create <new-folder-name>`: a folder that does not exist yet, not `.` in a folder with files.",
     "",
+    ...firmwareLines(firmwares),
     "### Settings",
     "",
     "`src/appmeta/settings.json` describes the app's settings; the BUSY Bar draws their screen and their web page itself. `busy-emulator build` checks the file and names the field at fault. The smallest valid file:",

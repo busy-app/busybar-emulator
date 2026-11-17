@@ -134,6 +134,7 @@ const QUOTED = [
   [/end: "cancel[l]ed"/g, "the state Electron gives a stopped download"],
   [/"cancel[l]ed"/g, "the text the firmware rejects a reader's closed promise with (js_readable_stream.c)"],
   [/requests\/licen[c]es\.md|repository-and-licen[c]es/g, "the names of internal documents"],
+  [/lib\/lvgl\/LICEN[C]E\.txt/g, "the name of LVGL's license file in its repository"],
   [/colo[u]r: "color"/g, "the guess for a type an author spells the British way"],
 ];
 const NOT_READ = [

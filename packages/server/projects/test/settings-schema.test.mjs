@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { loadFirmware } from "../../firmware.mjs";
 import { checkSettingsSchema, EXAMPLE, jsonDepth, MAX_JSON_DEPTH, MINIMAL_EXAMPLE, problemText } from "../settings-schema.mjs";
 import { BROKEN } from "./settings-cases.mjs";
 
@@ -58,12 +59,29 @@ test("the file's own keys", () => {
   assert.equal(check({}).problem, "Root key 'fields' must not be empty");
 });
 
-for (const [fields, at, problem] of BROKEN) {
-  test(`refused: ${at}: ${problem}`, () => {
-    const answer = check(fields);
-    assert.deepEqual([answer.ok, answer.field, answer.problem], [false, at, problem], JSON.stringify(answer));
-  });
+// By the rules of each firmware, told by its API version as the BUSY Bar reports it; with none, the newest rules.
+for (const firmware of loadFirmware().versions) {
+  const api = loadFirmware(firmware).apiVersion;
+  for (const [fields, at, problem, only] of BROKEN) {
+    const refused = !only || only.includes(firmware);
+    test(`${firmware} (API ${api}) ${refused ? "refuses" : "takes"}: ${at}: ${problem}`, () => {
+      const answer = checkSettingsSchema(file(fields), { api });
+      if (refused) assert.deepEqual([answer.ok, answer.field, answer.problem], [false, at, problem], JSON.stringify(answer));
+      else assert.equal(answer.ok, true, JSON.stringify(answer));
+    });
+  }
 }
+
+test("without the BUSY Bar's API version, the newest firmware's rules: an integer's range need not be a multiple of its step", () => {
+  const steps = { a: { type: "integer", label: "A", default: 0, min: 0, max: 10, step: 3 } };
+  assert.equal(check(steps).ok, true);
+  assert.equal(checkSettingsSchema(file(steps), { api: "27.15.0" }).ok, true);
+  const old = checkSettingsSchema(file(steps), { api: "27.14.0" });
+  assert.deepEqual([old.ok, old.problem], [false, "'max' - 'min' must be evenly divisible by 'step'"]);
+  assert.match(old.advice, /1\.3\.1/);
+  // The rule does not stick to the next call.
+  assert.equal(check(steps).ok, true);
+});
 
 test("a fraction where a whole number belongs: a problem by the documented schema, cut off as the firmware does with strict: false", () => {
   const text = file({ a: { type: "integer", label: "A", default: 1.5 } });

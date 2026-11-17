@@ -1,7 +1,8 @@
 // The parts of EMU-232 that the bar's recordings (test/state.test.mjs) do not reach: /api/apps/settings as an app
 // asks for it, apps without a schema or with a broken one, documents the firmware refuses before it reads them, the
 // settings file an app leaves behind, and what the router answers for a method or a path no handler takes. Each
-// expectation names its source: a bar's answer, or the firmware 1.3.1 code (8edd2da4) where no bar was asked.
+// expectation names its source: a bar's answer, or the firmware 1.3.1 code (8edd2da4) where no bar was asked. And what
+// an app may reach by the firmware the BUSY Bar runs: /api/storage in its own folder on 1.4.1 (28c175b3), by code.
 // Run: node --test emulator/packages/server/device-api.test.mjs
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -30,11 +31,11 @@ async function install(device, schema) {
 }
 
 /** A bar without its screen module (none of these requests reaches it), with app.test.a installed. */
-async function bar({ schema = JSON.stringify(SCHEMA) } = {}) {
+async function bar({ schema = JSON.stringify(SCHEMA), firmware = FIRMWARE } = {}) {
   const root = mkdtempSync(join(tmpdir(), "emu-device-api-"));
   folders.push(root);
   const lines = [];
-  const device = new Device({ dataDir: root, firmware: FIRMWARE, log: (line) => lines.push(line) });
+  const device = new Device({ dataDir: root, firmware, log: (line) => lines.push(line) });
   const call = async (method, path, body = null, headers = {}) => {
     const r = await device.handle(method, `http://127.0.0.1/api/${path}`, headers, body === null ? null : new TextEncoder().encode(body));
     return { status: r.status, headers: Object.fromEntries(r.headers), text: Buffer.from(r.body).toString() };
@@ -43,7 +44,8 @@ async function bar({ schema = JSON.stringify(SCHEMA) } = {}) {
   return { device, call, root, lines, settingsFile: join(root, "ext", "apps_data", "jsrunner", "app.test.a.settings.json") };
 }
 const fromApp = { "x-busybar-fetch": "js" };
-const body = (status, error) => ({ status, text: JSON.stringify({ error }) });
+// The bar ends an error with a line feed (web_server_i.h, MG_REPLY_ERROR).
+const body = (status, error) => ({ status, text: `${JSON.stringify({ error })}\n` });
 const answer = (r) => ({ status: r.status, text: r.text });
 
 test("an app may read its own settings only, after the id and the app are checked (api_apps.c:640–672)", async () => {
@@ -163,4 +165,118 @@ test("a path no handler takes: GET is the local web's 404 page, any other method
     const p = await call("POST", path);
     assert.deepEqual([p.status, p.headers.Allow], [405, "GET"], `POST ${path}`);
   }
+});
+
+// ---------------------------------------------------------------- what an app may reach, by firmware
+
+const FW_141 = loadFirmware("1.4.1");
+// The storage API's refusal (api_storage.c, MG_REPLY_BAD_REQUEST: the JSON with a line end).
+const REFUSED = { status: 400, text: '{"error":"Bad Request"}\n' };
+
+test("what an app may reach follows the firmware the BUSY Bar runs now: /api/storage on 1.4.1, not on 1.3.1", async () => {
+  const { device, call } = await bar();
+  device.running = { id: "app.test.a" };
+  const reach = async () => (await call("GET", "storage/list?path=/ext/data", null, fromApp)).status;
+  // api_root.c of 1.3.1: storage is not in js_apps_api_allowlist.
+  assert.equal(await reach(), 403);
+  // The same Device after a switch of firmware (only device.firmware changes): the rule is read when it is used.
+  device.firmware = FW_141;
+  assert.equal(await reach(), 200);
+  device.firmware = FIRMWARE;
+  assert.equal(await reach(), 403);
+  // What both allow stays allowed, and what neither does stays refused.
+  for (const firmware of [FIRMWARE, FW_141]) {
+    device.firmware = firmware;
+    assert.equal((await call("GET", "version", null, fromApp)).status, 200, firmware.name);
+    assert.deepEqual(answer(await call("POST", "input?key=ok", null, fromApp)), body(403, "Forbidden"), firmware.name);
+    // A request that is not an app's reaches /api/storage on both, outside /ext/data too.
+    assert.equal((await call("GET", "storage/list?path=/ext")).status, 200, firmware.name);
+  }
+  device.running = null;
+});
+
+test("1.4.1: an app's /api/storage is its own folder, /ext/data; any other path is 400, and so is a request with no app running", async () => {
+  const { device, call, root } = await bar({ firmware: FW_141 });
+  const folder = join(root, "ext", "apps_data", "js_apps", "app.test.a");
+  // api_storage.c: "API request from JS, but no app is running".
+  assert.deepEqual(answer(await call("GET", "storage/list?path=/ext/data", null, fromApp)), REFUSED);
+  assert.equal(existsSync(folder), false);
+  device.running = { id: "app.test.a" };
+  // The first request makes the folder (js_app_launcher_ensure_app_directories), a list of it too.
+  assert.deepEqual(JSON.parse((await call("GET", "storage/list?path=/ext/data/", null, fromApp)).text), { list: [] });
+  assert.equal(existsSync(folder), true);
+  assert.equal((await call("POST", "storage/write?path=/ext/data/notes/a.txt", "hello", fromApp)).status, 200);
+  assert.equal(readFileSync(join(folder, "notes", "a.txt"), "utf8"), "hello");
+  assert.equal((await call("GET", "storage/read?path=/ext/data/notes/a.txt", null, fromApp)).text, "hello");
+  assert.equal((await call("POST", "storage/mkdir?path=/ext/data/more", null, fromApp)).status, 200);
+  assert.equal((await call("POST", "storage/rename?path=/ext/data/notes/a.txt&new_path=/ext/data/more/b.txt", null, fromApp)).status, 200);
+  assert.equal(readFileSync(join(folder, "more", "b.txt"), "utf8"), "hello");
+  assert.deepEqual(JSON.parse((await call("GET", "storage/list?path=/ext/data", null, fromApp)).text).list.map((e) => e.name).sort(), ["more", "notes"]);
+  // Outside /ext/data, an app's path is refused, whatever it names: path_replace_prefix() takes /ext/data only.
+  writeFileSync(join(root, "ext", "outside.txt"), "not yours");
+  for (const path of ["/ext/outside.txt", "/ext/apps_data/js_apps/app.test.a/more/b.txt", "/ext/database", "/ext/data/../outside.txt", "/ext/data/more/../../outside.txt", "/ext", "data/more/b.txt"]) {
+    assert.deepEqual(answer(await call("GET", `storage/read?path=${encodeURIComponent(path)}`, null, fromApp)), REFUSED, path);
+  }
+  // Both paths of a rename are the app's: out of its folder is refused, and the file stays.
+  assert.deepEqual(answer(await call("POST", "storage/rename?path=/ext/data/more/b.txt&new_path=/ext/taken.txt", null, fromApp)), REFUSED);
+  assert.equal(existsSync(join(root, "ext", "taken.txt")), false);
+  assert.deepEqual(answer(await call("POST", "storage/write?path=/ext/outside.txt", "mine", fromApp)), REFUSED);
+  assert.equal(readFileSync(join(root, "ext", "outside.txt"), "utf8"), "not yours");
+  // Another app that runs has a folder of its own: the first one's file is not under its /ext/data.
+  device.running = { id: "app.test.b" };
+  assert.deepEqual(answer(await call("GET", "storage/read?path=/ext/data/more/b.txt", null, fromApp)), REFUSED);
+  assert.deepEqual(JSON.parse((await call("GET", "storage/list?path=/ext/data", null, fromApp)).text), { list: [] });
+  // A request that is not an app's sees the folders where they are, as on 1.3.1.
+  assert.equal((await call("GET", "storage/read?path=/ext/apps_data/js_apps/app.test.a/more/b.txt")).text, "hello");
+  assert.equal((await call("DELETE", "storage/remove?path=/ext/data/more", null, fromApp)).status, 200);
+  assert.equal(existsSync(join(folder, "more")), true, "app.test.b removed nothing of app.test.a's");
+  device.running = { id: "app.test.a" };
+  assert.equal((await call("DELETE", "storage/remove?path=/ext/data/more", null, fromApp)).status, 200);
+  assert.equal(existsSync(join(folder, "more")), false);
+  device.running = null;
+});
+
+test("1.4.1: an app's upload that comes in pieces (POST storage/write) goes into its folder too; outside it, 400 from the headers", async () => {
+  const { device, root } = await bar({ firmware: FW_141 });
+  device.running = { id: "app.test.a" };
+  const headers = { ...fromApp, "content-length": "5" };
+  const coming = await device.reception("POST", "http://127.0.0.1/api/storage/write?path=/ext/data/up.txt", headers);
+  assert.ok(coming.upload, JSON.stringify(coming));
+  assert.equal(coming.upload.write(new TextEncoder().encode("piece")), null);
+  assert.equal(coming.upload.finish().status, 200);
+  assert.equal(readFileSync(join(root, "ext", "apps_data", "js_apps", "app.test.a", "up.txt"), "utf8"), "piece");
+  const refused = await device.reception("POST", "http://127.0.0.1/api/storage/write?path=/ext/up.txt", headers);
+  assert.equal(refused.answer?.status, 400);
+  assert.equal(existsSync(join(root, "ext", "up.txt")), false);
+  // On 1.3.1 the allowlist refuses it before its path is looked at.
+  device.firmware = FIRMWARE;
+  assert.equal((await device.reception("POST", "http://127.0.0.1/api/storage/write?path=/ext/data/up.txt", headers)).answer?.status, 403);
+  device.running = null;
+});
+
+test("an app's settings schema is read by the rules of the firmware the BUSY Bar runs now: 1.4.1 takes a step the range is no multiple of", async () => {
+  const steps = { format_version: 1, version: 1, fields: { count: { type: "integer", label: "Count", default: 0, min: 0, max: 10, step: 3 } } };
+  const { device, call } = await bar({ schema: JSON.stringify(steps) });
+  assert.deepEqual(answer(await call("GET", "apps/settings?app_id=app.test.a")), body(503, "Application settings schema is invalid"));
+  device.firmware = FW_141;
+  assert.equal((await call("GET", "apps/settings?app_id=app.test.a")).status, 200);
+  device.firmware = FIRMWARE;
+  assert.equal((await call("GET", "apps/settings?app_id=app.test.a")).status, 503);
+});
+
+test("/ext/apps_assets has the files of the firmware the BUSY Bar runs now: 1.4.1's arrow is not there on 1.3.1", async () => {
+  const { device, call } = await bar();
+  const arrow = "storage/read?path=/ext/apps_assets/shared/images/back_arrow_front_7x7.image";
+  const both = "storage/read?path=/ext/apps_assets/shared/images/info_front_8x8.image";
+  // apps-assets.json: "since": "1.4.1". Read when it is used: the same Device after a switch of firmware follows.
+  assert.deepEqual(answer(await call("GET", arrow)), REFUSED);
+  assert.equal(device.readFile("/ext/apps_assets/shared/images/back_arrow_front_7x7.image"), null);
+  device.firmware = FW_141;
+  assert.equal((await call("GET", arrow)).status, 200);
+  assert.ok(device.readFile("/ext/apps_assets/shared/images/back_arrow_front_7x7.image"));
+  device.firmware = FIRMWARE;
+  assert.deepEqual(answer(await call("GET", arrow)), REFUSED);
+  assert.equal((await call("GET", both)).status, 200);
+  // A path out of the folder stays refused on both.
+  assert.equal(device.readFile("/ext/apps_assets/../../firmware.json"), null);
 });

@@ -5,7 +5,7 @@
 // stand-in for GitHub on 127.0.0.1: a repository that is no app project but has a .tgz in its latest release offers
 // to install it, and does; one with neither is refused with what was found.
 //
-// INSTALL_PACKAGE_SHOTS=<folder> saves pictures of the tabs at 1200×800 and 900×650.
+// INSTALL_PACKAGE_SHOTS=<folder> saves pictures of the tabs at 1200×800 and 1140×650.
 import assert from "node:assert/strict";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -49,7 +49,7 @@ const part = (name) => clickOn(`document.querySelector(${q(`.create-app [data-pa
 // The click goes in as an input event and is handled later; while the pop-up still settles it can miss. So wait
 // for the tab to be the chosen one, and click again if it is not.
 async function way(id) {
-  const chosen = () => app.page(`document.querySelector(".create-app-way.on")?.dataset.way === ${q(id)}`);
+  const chosen = () => app.page(`document.querySelector('.create-app-way[aria-selected="true"]')?.dataset.way === ${q(id)}`);
   for (let i = 0; i < 5 && !(await chosen()); i++) {
     await clickOn(`document.querySelector(${q(`.create-app-way[data-way='${id}']`)})`, `the way ${id}`);
     await until(chosen, `the way ${id} to be chosen`, 2_000, 50).catch(() => {});
@@ -65,7 +65,7 @@ async function shot(name) {
   mkdirSync(SHOTS, { recursive: true });
   for (const [w, h] of [
     [1200, 800],
-    [900, 650],
+    [1140, 650],
   ]) {
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1] - 1), [w, h]);
     await new Promise((resolve) => setTimeout(resolve, 200));

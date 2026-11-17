@@ -3,9 +3,7 @@
 # BUSY Bar Emulator
 
 A BUSY Bar on your computer: write a BUSY Bar app, run it, take its screenshots and a clip, and get it ready for the
-catalog, all without a BUSY Bar.
-
-This is the first trial release, 0.1.0-beta.1.
+catalog, all without a BUSY Bar. It is in beta.
 
 | | Download | |
 |---|---|---|
@@ -102,9 +100,10 @@ A chat client that cannot run commands, such as Claude Desktop, gets the emulato
   Delete), the chosen app with its folder, Copy prompt for AI, Run and its Settings, Catalog and Files, and its
   console.
 - **The BUSY Bar's own code.** The JavaScript runtime, the drawing, the system screens and the BUSY Bar's local web are the
-  code of firmware 1.3.1, compiled to WebAssembly. Their frames are compared with a BUSY Bar's, pixel by pixel. The local
-  web, with your app's settings page, opens from Open in Local Web at the end of the app's Settings tab (or BUSY Bar →
-  App Settings in the menu, Cmd+, or Ctrl+,), or at http://127.0.0.1:8640 in a browser.
+  code of firmware 1.4.1 or 1.3.1 ([firmwares](#firmwares)), compiled to WebAssembly. Their frames are compared with a
+  BUSY Bar on 1.3.1, pixel by pixel. The local web, with your app's settings page, opens from Open in Local Web at the
+  end of the app's Settings tab (or BUSY Bar → App Settings in the menu, Cmd+, or Ctrl+,), or at http://127.0.0.1:8640
+  in a browser.
 - **The BUSY Bar's speed and limits.** Your app's JavaScript takes the time it would take on a BUSY Bar, and the same memory,
   `fetch` and API limits apply. What is slow or too big here is slow or too big on a BUSY Bar.
 - **Screenshots for the catalog.** PNG files of 72×16 and 160×80 pixels with nothing in them but the pixels: from
@@ -125,6 +124,34 @@ A chat client that cannot run commands, such as Claude Desktop, gets the emulato
 Create app starts a project from a template, an empty app, a folder you have, a repository on GitHub (Import from
 GitHub) or an app package (.tgz): [in the window](first-app.md#in-the-window). A BUSY Bar has the final word:
 [how the emulator differs from a BUSY Bar](differences.md).
+
+## Firmwares
+
+The emulator has the two latest released firmwares of the BUSY Bar: 1.4.1 (API 27.15.0) and 1.3.1 (API 27.14.0). It
+runs 1.4.1 unless you switch. BUSY Bars that have not updated still run 1.3.1.
+
+What 1.4.1 changes for apps:
+
+- An app can keep files in `/ext/data` through `/api/storage`.
+- `console.warn` works.
+- `fetch` encodes the URL itself and rejects a failed request with a `TypeError`.
+- A response header with an empty value no longer restarts the BUSY Bar.
+- A short Back keeps the app's screen.
+
+Switching works like a firmware update: your apps, their data and their settings stay. The emulator starts on the
+firmware it last ran.
+
+- **In the window:** pick a firmware in the "Firmware 1.4.1" list under the BUSY Bar's name. It takes effect at the
+  next restart of the BUSY Bar. Until then Restart BUSY Bar is white, and the line under the uptime beside it says
+  "Next: firmware 1.3.1".
+- **On the command line:** `busy-emulator firmware` shows what runs. `busy-emulator firmware use previous` switches
+  at once, and `busy-emulator firmware use latest` switches back.
+
+An app's `api_version` is the oldest API it needs. A firmware with an older API refuses to install or start the app.
+On 1.3.1 the Apps list marks such an app "Needs firmware 1.4.1", and its Run offers to switch.
+
+If the app needs nothing that only 1.4.1 has, set `api_version` to "27.14.0". Then it runs on both firmwares and on
+BUSY Bars that have not updated. The catalog accepts an `api_version` up to the API of the latest firmware.
 
 ## More
 

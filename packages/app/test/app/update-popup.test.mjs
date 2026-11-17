@@ -3,7 +3,7 @@
 // closes it and the top bar's notice stays; Update now starts the download, with its progress; a copy that cannot
 // replace itself offers Download; the first run's greeting goes first; a version is offered once in a run; a start
 // within a day of the last check still asks, and the pop-up follows; a long version's title is never cut.
-// UPDATE_POPUP_SHOTS=<folder> also saves pictures at 1200×800 and 900×650.
+// UPDATE_POPUP_SHOTS=<folder> also saves pictures at 1200×800 and 1140×650.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
@@ -143,7 +143,7 @@ async function shot(name) {
   mkdirSync(SHOTS, { recursive: true });
   for (const [w, h] of [
     [1200, 800],
-    [900, 650],
+    [1140, 650],
   ]) {
     // A hidden window paints again when its size changes: one pixel less first.
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1] - 1), [w, h]);
@@ -246,7 +246,7 @@ test("a start within a day of the last check asks again: the release out since t
   }
 });
 
-test("a long version's title is never cut: it wraps, at 900×650 and at 1200×800", skip, async () => {
+test("a long version's title is never cut: it wraps, at 1140×650 and at 1200×800", skip, async () => {
   const long = "10.10.10-beta.10";
   const before = served[LATEST];
   served[LATEST] = Buffer.from(JSON.stringify({ tag_name: `v${long}`, body: NOTES }));
@@ -255,7 +255,7 @@ test("a long version's title is never cut: it wraps, at 900×650 and at 1200×80
     await until(() => shown("#update-popup"), "the pop-up", 30_000);
     assert.equal(await text("#update-popup-title"), `BUSY Bar Emulator ${long} is available`);
     for (const [w, h] of [
-      [900, 650],
+      [1140, 650],
       [1200, 800],
     ]) {
       await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);

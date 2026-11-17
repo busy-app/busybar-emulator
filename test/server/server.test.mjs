@@ -7,7 +7,8 @@ import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { bar } from "../../packages/server/bar-speed.mjs";
+import { bars } from "../../packages/server/bar-speed.mjs";
+import { FORMAT } from "../../packages/server/data-folder.mjs";
 import { Device } from "../../packages/server/device.mjs";
 import { loadFirmware } from "../../packages/server/firmware.mjs";
 import { AppRuntime } from "../../packages/server/runtime.mjs";
@@ -41,13 +42,13 @@ async function occupy(t, wanted) {
 
 test("a server answers on its port, and the handle says what was started", async (t) => {
   const dataDir = tempDir(t);
-  const emulator = await start(t, { dataDir, firmware: "dev", barSpeed: false });
+  const emulator = await start(t, { dataDir, firmware: "1.3.1", barSpeed: false });
   assert.equal(emulator.url, `http://127.0.0.1:${emulator.port}`);
   if (port(0)) assert.equal(emulator.port, port(0));
   assert.equal(emulator.dataDir, dataDir);
-  assert.equal(emulator.barDir, join(dataDir, "bar", "dev"));
-  assert.deepEqual(emulator.dataFolder, { format: 1, created: true, lockFile: join(dataDir, "run", "server.lock"), keyFile: join(dataDir, "key") });
-  assert.equal(emulator.firmware.name, "dev");
+  assert.equal(emulator.barDir, join(dataDir, "bar"));
+  assert.deepEqual(emulator.dataFolder, { format: FORMAT, created: true, lockFile: join(dataDir, "run", "server.lock"), keyFile: join(dataDir, "key") });
+  assert.equal(emulator.firmware.name, "1.3.1");
   assert.equal(emulator.barSpeed, false);
   assert.equal(typeof emulator.stop, "function");
 
@@ -55,10 +56,10 @@ test("a server answers on its port, and the handle says what was started", async
   assert.equal(version.status, 200);
   assert.deepEqual(version.json(), { api_semver: emulator.apiVersion });
   const state = (await get(`${emulator.url}/_emu/state`)).json();
-  assert.deepEqual(state.firmware, { name: "dev", commit: emulator.firmware.info.firmware });
+  assert.deepEqual(state.firmware, { name: "1.3.1", commit: emulator.firmware.info.firmware });
   assert.equal((await get(`${emulator.url}/emulator`)).status, 200);
-  // The data folder holds a bar for the firmware, whose ext is the bar's /ext.
-  assert.ok(existsSync(join(dataDir, "bar", "dev", "ext", "user_assets")));
+  // The data folder holds one BUSY Bar, whatever the firmware, whose ext is the bar's /ext.
+  assert.ok(existsSync(join(dataDir, "bar", "ext", "user_assets")));
 });
 
 test("port 0 takes a free port and the handle names it", async (t) => {
@@ -69,8 +70,8 @@ test("port 0 takes a free port and the handle names it", async (t) => {
 
 test("the firmware is the default one unless named, and bar speed is on unless turned off", async (t) => {
   const emulator = await start(t);
-  assert.equal(emulator.firmware.name, "1.3.1");
-  assert.equal((await firmwareOf(emulator)).version, "1.3.1");
+  assert.equal(emulator.firmware.name, "1.4.1");
+  assert.equal((await firmwareOf(emulator)).version, "1.4.1");
   assert.equal(emulator.barSpeed, true);
 });
 
@@ -82,7 +83,7 @@ test("options that cannot work are refused before anything is touched", async (t
   await assert.rejects(startServer({ port: 65536, dataDir }), RangeError);
   await assert.rejects(startServer({ port: Number.NaN, dataDir }), RangeError);
   await assert.rejects(startServer({ port: "8761", dataDir }), RangeError);
-  await assert.rejects(startServer({ port: port(0), dataDir, firmware: "no-such-firmware" }), { name: "FirmwareError", code: "unknown-firmware", message: /^Unknown firmware "no-such-firmware"\. The emulator has: 1\.3\.1, dev / });
+  await assert.rejects(startServer({ port: port(0), dataDir, firmware: "no-such-firmware" }), { name: "FirmwareError", code: "unknown-firmware", message: /^Unknown firmware "no-such-firmware"\. The emulator has: 1\.4\.1, 1\.3\.1 / });
   assert.ok(!existsSync(dataDir), "the data folder was not made");
   assert.deepEqual(await activeResourcesSettled(before), before);
 });
@@ -123,30 +124,30 @@ test("until the BUSY Bar is up nobody is answered", async (t) => {
 
 test("two servers in one process: their own ports, data folders, firmware and state", async (t) => {
   const release = await start(t, { firmware: "1.3.1" });
-  const dev = await start(t, { port: port(1), firmware: "dev" });
-  assert.notEqual(release.port, dev.port);
-  assert.notEqual(release.dataDir, dev.dataDir);
+  const newer = await start(t, { port: port(1), firmware: "1.4.1" });
+  assert.notEqual(release.port, newer.port);
+  assert.notEqual(release.dataDir, newer.dataDir);
 
   // Each says its own firmware.
-  const [a, b] = [await firmwareOf(release), await firmwareOf(dev)];
+  const [a, b] = [await firmwareOf(release), await firmwareOf(newer)];
   assert.equal(a.version, "1.3.1");
-  assert.equal(b.version, "dev");
+  assert.equal(b.version, "1.4.1");
   assert.equal(a.commit_hash, release.firmware.info.firmware);
-  assert.equal(b.commit_hash, dev.firmware.info.firmware);
+  assert.equal(b.commit_hash, newer.firmware.info.firmware);
   assert.notEqual(a.commit_hash, b.commit_hash);
 
-  // And runs it: 1.3.1's runtime has no console.warn, dev's has. The same app is installed on both.
+  // And runs it: 1.3.1's runtime has no console.warn, 1.4.1's has. The same app is installed on both.
   const script = `console.log("console.warn is " + typeof console.warn); setInterval(function () {}, 1000);`;
-  for (const emulator of [release, dev]) {
+  for (const emulator of [release, newer]) {
     await installApp(emulator.url, "app.test.warn", script);
     assert.equal((await request("POST", `${emulator.url}/api/apps/launch?app_id=app.test.warn`)).status, 200);
   }
   const said = (emulator) => until(`the app's line on ${emulator.firmware.name}`, () => emulator.lines.find((line) => line.includes("console.warn is")));
   assert.match(await said(release), /console\.warn is undefined/);
-  assert.match(await said(dev), /console\.warn is function/);
+  assert.match(await said(newer), /console\.warn is function/);
 
   // The screen modules are their firmware's too: a short Back takes a running app's picture off the screen on
-  // 1.3.1 and leaves it on dev.
+  // 1.3.1 and leaves it on 1.4.1.
   const draw = `
     fetch("http://localhost/api/display/draw", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       application_name: "app.test.draw", elements: [{ id: "t", type: "text", text: "HELLO", font: "small", x: 0, y: 0, display: "front" }],
@@ -154,7 +155,7 @@ test("two servers in one process: their own ports, data folders, firmware and st
     setInterval(function () {}, 1000);`;
   const front = async (emulator) => (await get(`${emulator.url}/api/screen?display=0`)).text;
   const afterBack = {};
-  for (const emulator of [release, dev]) {
+  for (const emulator of [release, newer]) {
     await installApp(emulator.url, "app.test.draw", draw);
     assert.equal((await request("POST", `${emulator.url}/api/apps/launch?app_id=app.test.draw`)).status, 200);
     await until(`the drawing on ${emulator.firmware.name}`, () => emulator.lines.some((line) => line.includes("drawn 200")));
@@ -172,41 +173,41 @@ test("two servers in one process: their own ports, data folders, firmware and st
     afterBack[emulator.firmware.name] = (await front(emulator)) === drawn ? "kept" : "cleared";
     assert.equal((await get(`${emulator.url}/_emu/state`)).json().running.id, "app.test.draw");
   }
-  assert.deepEqual(afterBack, { "1.3.1": "cleared", dev: "kept" });
+  assert.deepEqual(afterBack, { "1.3.1": "cleared", "1.4.1": "kept" });
 
   // An app installed on one is not on the other, in the API and on disk.
   await installApp(release.url, "app.test.only", "setInterval(function () {}, 1000);");
   const apps = async (emulator) => (await get(`${emulator.url}/api/apps/list`)).json().apps.map((app) => app.id).sort();
   assert.deepEqual(await apps(release), ["app.test.draw", "app.test.only", "app.test.warn"]);
-  assert.deepEqual(await apps(dev), ["app.test.draw", "app.test.warn"]);
-  assert.deepEqual(readdirSync(join(dev.barDir, "ext", "user_assets")).sort(), ["app.test.draw", "app.test.warn"]);
+  assert.deepEqual(await apps(newer), ["app.test.draw", "app.test.warn"]);
+  assert.deepEqual(readdirSync(join(newer.barDir, "ext", "user_assets")).sort(), ["app.test.draw", "app.test.warn"]);
 
   // The bars' settings and what runs on them are apart.
   assert.equal((await request("POST", `${release.url}/api/audio/volume?volume=7&silent=1`)).status, 200);
   assert.equal((await request("POST", `${release.url}/api/name`, Buffer.from(JSON.stringify({ name: "First" })))).status, 200);
   assert.equal((await get(`${release.url}/api/audio/volume`)).json().volume, 7);
-  assert.equal((await get(`${dev.url}/api/audio/volume`)).json().volume, 50);
+  assert.equal((await get(`${newer.url}/api/audio/volume`)).json().volume, 50);
   assert.equal((await get(`${release.url}/api/name`)).json().name, "First");
-  assert.notEqual((await get(`${dev.url}/api/name`)).json().name, "First");
-  assert.equal((await request("POST", `${dev.url}/api/apps/quit`)).status, 200);
-  await until("the app to stop on dev", async () => (await get(`${dev.url}/_emu/state`)).json().running === null);
+  assert.notEqual((await get(`${newer.url}/api/name`)).json().name, "First");
+  assert.equal((await request("POST", `${newer.url}/api/apps/quit`)).status, 200);
+  await until("the app to stop on 1.4.1", async () => (await get(`${newer.url}/_emu/state`)).json().running === null);
   assert.equal((await get(`${release.url}/_emu/state`)).json().running.id, "app.test.draw");
 
   // Stopping one leaves the other working.
   await release.stop();
   await refused(`${release.url}/api/version`);
-  assert.equal((await firmwareOf(dev)).version, "dev");
+  assert.equal((await firmwareOf(newer)).version, "1.4.1");
 });
 
 test("two servers with different firmware started at the same moment", async (t) => {
   const dirs = [tempDir(t), tempDir(t)];
-  const [release, dev] = await Promise.all([
+  const [release, newer] = await Promise.all([
     startServer({ port: port(0), dataDir: dirs[0], firmware: "1.3.1" }),
-    startServer({ port: port(1), dataDir: dirs[1], firmware: "dev" }),
+    startServer({ port: port(1), dataDir: dirs[1], firmware: "1.4.1" }),
   ]);
-  t.after(() => Promise.all([release.stop(), dev.stop()]));
+  t.after(() => Promise.all([release.stop(), newer.stop()]));
   assert.equal((await firmwareOf(release)).version, "1.3.1");
-  assert.equal((await firmwareOf(dev)).version, "dev");
+  assert.equal((await firmwareOf(newer)).version, "1.4.1");
 });
 
 test("a port in use: a clear error, and nothing left behind", async (t) => {
@@ -299,7 +300,7 @@ test("stop twice, and at the same time: one stop, the same promise", async (t) =
   await refused(`${emulator.url}/api/version`);
 });
 
-test("after a stop the same port and data folder start again, with the apps still installed; another firmware has a BUSY Bar of its own", async (t) => {
+test("after a stop the same port and data folder start again, with the apps still installed, on another firmware too: there is one BUSY Bar", async (t) => {
   const dataDir = tempDir(t);
   const first = await start(t, { dataDir });
   await installApp(first.url, "app.test.kept", "setInterval(function () {}, 1000);");
@@ -308,10 +309,10 @@ test("after a stop the same port and data folder start again, with the apps stil
   assert.equal(again.dataFolder.created, false);
   assert.deepEqual((await get(`${again.url}/api/apps/list`)).json().apps.map((app) => app.id), ["app.test.kept"]);
   await again.stop();
-  const dev = await start(t, { dataDir, port: first.port, firmware: "dev" });
-  assert.equal((await firmwareOf(dev)).version, "dev");
-  assert.deepEqual((await get(`${dev.url}/api/apps/list`)).json().apps, []);
-  assert.deepEqual(readdirSync(join(dataDir, "bar")).filter((name) => !name.startsWith("._")).sort(), ["1.3.1", "dev"]);
+  const other = await start(t, { dataDir, port: first.port, firmware: "1.3.1" });
+  assert.equal((await firmwareOf(other)).version, "1.3.1");
+  assert.deepEqual((await get(`${other.url}/api/apps/list`)).json().apps.map((app) => app.id), ["app.test.kept"]);
+  assert.deepEqual(readdirSync(join(dataDir, "bar")).filter((name) => !name.startsWith("._")).sort(), ["ext"]);
 });
 
 test("a stop with an app running, streams open and requests unfinished", async (t) => {
@@ -593,7 +594,7 @@ test("a data folder that cannot be used: an error that says what is wrong, and n
     const locked = join(parent, "locked");
     const inside = join(parent, "inside");
     mkdirSync(locked);
-    const apps = join(inside, "bar", "1.3.1", "ext", "user_assets");
+    const apps = join(inside, "bar", "ext", "user_assets");
     mkdirSync(apps, { recursive: true });
     chmodSync(locked, 0o555);
     chmodSync(apps, 0o555);
@@ -617,8 +618,11 @@ test("there is no BUSY Bar without a firmware", () => {
 });
 
 test("the BUSY Bar's speed, shared by every server in the process, cannot be changed", () => {
-  assert.ok(Object.isFrozen(bar) && Object.isFrozen(bar.model) && Object.isFrozen(bar.network));
-  assert.throws(() => (bar.model.opMs = 1), TypeError);
+  assert.ok(Object.isFrozen(bars));
+  for (const bar of Object.values(bars)) {
+    assert.ok(Object.isFrozen(bar) && Object.isFrozen(bar.model) && Object.isFrozen(bar.network));
+    assert.throws(() => (bar.model.opMs = 1), TypeError);
+  }
 });
 
 test("an app's runtime ended while it was loading makes no engine and runs nothing", async () => {

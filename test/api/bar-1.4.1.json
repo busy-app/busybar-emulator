@@ -1,0 +1,617 @@
+{
+ "source": {
+  "bar": "BUSY Bar, firmware 1.4.1",
+  "firmware": "28c175b3",
+  "recorded": "2026-11-16T23:40:41.636Z"
+ },
+ "answers": {
+  "GET version": {
+   "status": 200,
+   "shape": {
+    "api_semver": "string"
+   }
+  },
+  "GET transport": {
+   "status": 200,
+   "shape": {
+    "type": "string"
+   }
+  },
+  "GET name": {
+   "status": 200,
+   "shape": {
+    "name": "string"
+   }
+  },
+  "GET access": {
+   "status": 200,
+   "shape": {
+    "key_valid": "boolean",
+    "mode": "string"
+   }
+  },
+  "GET access/tokens": {
+   "status": 200,
+   "shape": {
+    "tokens": [
+     "{\"created_at\":\"string\",\"display_id\":\"string\",\"last_used_at\":\"string\",\"name\":\"string\",\"short_id\":\"string\"}"
+    ]
+   }
+  },
+  "GET status": {
+   "status": 200,
+   "shape": {
+    "device": {
+     "ble_mac": "string",
+     "firmware_security": "string",
+     "otp_model": "string",
+     "otp_timestamp": "number",
+     "otp_valid": "boolean",
+     "serial_number": "string",
+     "usb_mac": "string",
+     "wifi_mac": "string"
+    },
+    "firmware": {
+     "branch": "string",
+     "build_date": "string",
+     "commit_hash": "string",
+     "intercom_version": "string",
+     "matter_version": "string",
+     "nwp_version": "string",
+     "target": "number",
+     "version": "string"
+    },
+    "power": {
+     "battery_charge": "number",
+     "battery_current": "number",
+     "battery_voltage": "number",
+     "state": "string",
+     "usb_voltage": "number"
+    },
+    "system": {
+     "api_semver": "string",
+     "auto_update_enabled": "boolean",
+     "boot_time": "number",
+     "uptime": "string"
+    }
+   }
+  },
+  "GET status/system": {
+   "status": 200,
+   "shape": {
+    "api_semver": "string",
+    "auto_update_enabled": "boolean",
+    "boot_time": "number",
+    "uptime": "string"
+   }
+  },
+  "GET status/device": {
+   "status": 200,
+   "shape": {
+    "ble_mac": "string",
+    "firmware_security": "string",
+    "otp_model": "string",
+    "otp_timestamp": "number",
+    "otp_valid": "boolean",
+    "serial_number": "string",
+    "usb_mac": "string",
+    "wifi_mac": "string"
+   }
+  },
+  "GET status/firmware": {
+   "status": 200,
+   "shape": {
+    "branch": "string",
+    "build_date": "string",
+    "commit_hash": "string",
+    "intercom_version": "string",
+    "matter_version": "string",
+    "nwp_version": "string",
+    "target": "number",
+    "version": "string"
+   }
+  },
+  "GET status/power": {
+   "status": 200,
+   "shape": {
+    "battery_charge": "number",
+    "battery_current": "number",
+    "battery_voltage": "number",
+    "state": "string",
+    "usb_voltage": "number"
+   }
+  },
+  "GET time": {
+   "status": 200,
+   "shape": {
+    "timestamp": "string"
+   }
+  },
+  "GET time/timezone": {
+   "status": 200,
+   "shape": {
+    "abbr": "string",
+    "name": "string",
+    "offset": "string"
+   }
+  },
+  "GET time/tzlist": {
+   "status": 200,
+   "shape": {
+    "list": [
+     "{\"abbr\":\"string\",\"name\":\"string\",\"offset\":\"string\"}"
+    ]
+   }
+  },
+  "GET wifi/status": {
+   "status": 200,
+   "shape": {
+    "bssid": "string",
+    "channel": "number",
+    "ip_config": {
+     "address": "string",
+     "ip_method": "string",
+     "ip_type": "string"
+    },
+    "rssi": "number",
+    "security": "string",
+    "ssid": "string",
+    "state": "string"
+   }
+  },
+  "GET ble/status": {
+   "status": 200,
+   "shape": {
+    "status": "string"
+   }
+  },
+  "GET update/status": {
+   "status": 200,
+   "shape": {
+    "check": {
+     "available_version": "string",
+     "event": "string",
+     "status": "string"
+    },
+    "install": {
+     "action": "string",
+     "detail": "string",
+     "download": {
+      "received_bytes": "number",
+      "speed_bytes_per_sec": "number",
+      "total_bytes": "number"
+     },
+     "event": "string",
+     "is_allowed": "boolean",
+     "status": "string"
+    }
+   }
+  },
+  "GET update/autoupdate": {
+   "status": 200,
+   "shape": {
+    "interval_end": "string",
+    "interval_start": "string",
+    "is_enabled": "boolean"
+   }
+  },
+  "GET update/changelog": {
+   "status": 400,
+   "error": "Version parameter missing"
+  },
+  "GET update/changelog?version=0.0.0": {
+   "status": 400,
+   "error": "Changelog not available"
+  },
+  "GET account/info": {
+   "status": 200,
+   "shape": {
+    "linked": "boolean"
+   }
+  },
+  "GET account/status": {
+   "status": 200,
+   "shape": {
+    "status": "string"
+   }
+  },
+  "GET account/backend": {
+   "status": 200,
+   "shape": {
+    "client_cert_type": "string",
+    "ignore_server_cert": "boolean",
+    "server_url": "string"
+   }
+  },
+  "GET smart_home/pairing": {
+   "status": 200,
+   "shape": {
+    "fabric_count": "number",
+    "latest_pairing_status": {
+     "value": "string"
+    }
+   }
+  },
+  "GET smart_home/switch": {
+   "status": 200,
+   "shape": {
+    "state": "boolean"
+   }
+  },
+  "GET busy/snapshot": {
+   "status": 200,
+   "shape": {
+    "snapshot": {
+     "busy_bar_settings": {
+      "show_work_phase_only": "boolean",
+      "theme": "string",
+      "trigger_smart_home": "boolean"
+     },
+     "type": "string"
+    },
+    "snapshot_timestamp_ms": "number"
+   }
+  },
+  "GET busy/profiles/busy": {
+   "status": 200,
+   "shape": {
+    "busy_bar_settings": {
+     "show_work_phase_only": "boolean",
+     "theme": "string",
+     "trigger_smart_home": "boolean"
+    },
+    "id": "string",
+    "profile_timestamp_ms": "number",
+    "sort_order": "number",
+    "timer_settings": {
+     "interval_rest_ms": "number",
+     "interval_work_cycles_count": "number",
+     "interval_work_ms": "number",
+     "is_autostart_enabled": "boolean",
+     "type": "string"
+    },
+    "title": "string"
+   }
+  },
+  "GET busy/profiles/custom": {
+   "status": 200,
+   "shape": {
+    "busy_bar_settings": {
+     "show_work_phase_only": "boolean",
+     "theme": "string",
+     "trigger_smart_home": "boolean"
+    },
+    "id": "string",
+    "profile_timestamp_ms": "number",
+    "sort_order": "number",
+    "timer_settings": {
+     "type": "string"
+    },
+    "title": "string"
+   }
+  },
+  "GET busy/profiles/nope": {
+   "status": 400,
+   "error": "Invalid profile slot name"
+  },
+  "GET audio/volume": {
+   "status": 200,
+   "shape": {
+    "volume": "number"
+   }
+  },
+  "GET display/brightness": {
+   "status": 200,
+   "shape": {
+    "value": "string"
+   }
+  },
+  "GET apps/list": {
+   "status": 200,
+   "shape": {
+    "apps": [
+     "{\"api_version\":\"string\",\"author\":\"string\",\"description\":\"string\",\"icon_path\":\"string\",\"id\":\"string\",\"is_debug\":\"boolean\",\"name\":\"string\",\"version\":\"string\"}"
+    ]
+   }
+  },
+  "GET storage/status": {
+   "status": 200,
+   "shape": {
+    "free_bytes": "number",
+    "total_bytes": "number",
+    "used_bytes": "number"
+   }
+  },
+  "GET storage/list?path=/ext": {
+   "status": 200,
+   "shape": {
+    "list": [
+     "{\"name\":\"string\",\"size\":\"number\",\"type\":\"string\"}",
+     "{\"name\":\"string\",\"type\":\"string\"}"
+    ]
+   }
+  },
+  "GET storage/list?path=/nowhere": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "GET storage/list": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "GET storage/read?path=/ext/no-such-file-here": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "GET storage/read?path=/ext/../etc": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST name {}": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST name {\"name\":\"\"}": {
+   "status": 400,
+   "error": "Name is empty"
+  },
+  "POST name {\"name\":\"   \"}": {
+   "status": 400,
+   "error": "Name consists of only spaces"
+  },
+  "POST name {\"name\":\"a name that is far too long for a bar\"}": {
+   "status": 400,
+   "error": "Name is too long"
+  },
+  "PUT name": {
+   "status": 405,
+   "error": "Method Not Allowed"
+  },
+  "POST time/timezone?timezone=Nowhere": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST time/timezone": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST time/timestamp": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST time/timestamp?timestamp=yesterday": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST wifi/connect {}": {
+   "status": 400,
+   "error": "Key ssid is missing"
+  },
+  "POST wifi/connect {\"ssid\":\"\"}": {
+   "status": 400,
+   "error": "ssid must not be empty"
+  },
+  "POST wifi/connect {\"ssid\":\"x\",\"password\":\"\",\"security\":\"Nope\"}": {
+   "status": 400,
+   "error": "Nope is not valid security mode"
+  },
+  "POST update/install": {
+   "status": 400,
+   "error": "Version parameter missing"
+  },
+  "POST update/install?version=0.0.0": {
+   "status": 400,
+   "error": "Update not available"
+  },
+  "POST access?mode=nope": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST access": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "DELETE access/tokens/nosuchid": {
+   "status": 404,
+   "error": "Not Found"
+  },
+  "POST access/tokens {}": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST audio/volume?volume=500": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST display/brightness?value=500": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST smart_home/switch {}": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "PUT account/backend not json": {
+   "status": 400,
+   "error": "Malformed request"
+  },
+  "POST storage/mkdir": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST storage/rename?path=/ext/no-such-file-here": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST log_dump?filename=bad/name": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "POST assets/upload?application_name=bad name&file=x": {
+   "status": 400,
+   "error": "Bad Request"
+  },
+  "DELETE assets/upload": {
+   "status": 400,
+   "error": "Bad Request"
+  }
+ },
+ "appStorage": {
+  "answers": {
+   "list the folder": {
+    "status": 200,
+    "body": {
+     "list": []
+    }
+   },
+   "write a file": {
+    "status": 200,
+    "body": {
+     "result": "OK"
+    }
+   },
+   "append to it": {
+    "status": 200,
+    "body": {
+     "result": "OK"
+    }
+   },
+   "read it": {
+    "status": 200,
+    "body": "one two"
+   },
+   "make a folder": {
+    "status": 200,
+    "body": {
+     "result": "OK"
+    }
+   },
+   "rename into it": {
+    "status": 200,
+    "body": {
+     "result": "OK"
+    }
+   },
+   "list the inner folder": {
+    "status": 200,
+    "body": {
+     "list": [
+      {
+       "type": "file",
+       "name": "b.txt",
+       "size": 7
+      }
+     ]
+    }
+   },
+   "a path ending in /": {
+    "status": 200,
+    "body": {
+     "list": [
+      {
+       "type": "file",
+       "name": "b.txt",
+       "size": 7
+      }
+     ]
+    }
+   },
+   "the storage's status": {
+    "status": 200,
+    "body": {
+     "used_bytes": 61898752,
+     "free_bytes": 7479623680,
+     "total_bytes": 7541522432
+    }
+   },
+   "a path without /ext/data": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "another app's file": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "a name that only starts like it": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "a relative path": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "/ext/data/.. in the query": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "/ext/data/../.. to a file outside": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "%2e%2e in the query": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "a write outside": {
+    "error": "Incomplete response body"
+   },
+   "a folder outside": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "a rename to outside": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "a rename from outside": {
+    "status": 400,
+    "body": {
+     "error": "Bad Request"
+    }
+   },
+   "remove the file": {
+    "status": 200,
+    "body": {
+     "result": "OK"
+    }
+   },
+   "remove the inner folder": {
+    "status": 200,
+    "body": {
+     "result": "OK"
+    }
+   },
+   "list the folder again": {
+    "status": 200,
+    "body": {
+     "list": []
+    }
+   }
+  },
+  "noApp": {
+   "status": 400,
+   "body": {
+    "error": "Bad Request"
+   }
+  },
+  "outside": []
+ }
+}

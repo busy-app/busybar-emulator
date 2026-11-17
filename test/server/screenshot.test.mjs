@@ -13,7 +13,7 @@ import { finish, get, knownPort, node, port, request, serverModule, tempDir } fr
 after(finish);
 
 const CLI = serverModule(join("cli", "busy-emulator.mjs"));
-const GOLDEN = join(serverModule(""), "..", "..", "test", "golden");
+const GOLDEN = join(serverModule(""), "..", "..", "test", "golden", "1.3.1");
 const CHECKER = serverModule(join("capture", "catalog-png.mjs"));
 
 let emulator;

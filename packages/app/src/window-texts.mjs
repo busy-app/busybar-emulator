@@ -8,7 +8,7 @@
 // The command line's own texts are left as they are for a terminal and an agent: the mapping is the window's.
 
 /** The commands of the command line (packages/server/cli/commands); a test holds the list to that folder. */
-export const COMMANDS = Object.freeze(["allow-local", "build", "catalog-texts", "check", "create", "dev", "help", "icon", "install", "logs", "mcp", "press", "projects", "publish", "quit", "record", "restart-bar", "run", "screenshot", "settings", "start", "status", "stop", "submit", "time", "trust", "typecheck", "uninstall", "update", "version"]);
+export const COMMANDS = Object.freeze(["allow-local", "build", "catalog-texts", "check", "create", "dev", "firmware", "help", "icon", "install", "logs", "mcp", "press", "projects", "publish", "quit", "record", "restart-bar", "run", "screenshot", "settings", "start", "status", "stop", "submit", "time", "trust", "typecheck", "uninstall", "update", "version"]);
 
 /** The button of the window that does what a command does, or null when there is none. */
 function buttonFor(command, args) {
@@ -42,10 +42,13 @@ const END = String.raw`(?=[\s,;)]|[.:](?:\s|$)|$)`;
 const QUOTED = String.raw`'(?:[^']|'\\'')*'|"[^"]*"`;
 const VALUED = String.raw`--(?:text|from|example|catalog|out|wait|app)\s+(?:${QUOTED}|\S+?${END})`;
 const PATH = String.raw`(?:~|\.{1,2})?[\\/]\S*?${END}|[A-Za-z]:\\\S*?${END}`;
+// `firmware use <latest|previous|version>`: the one command whose words are not flags or paths, bound to it alone (a
+// version may have a pre-release, 1.4.1-rc1; a sentence's full stop after it is not part of it).
+const FIRMWARE_USE = String.raw`firmware\s+use\s+(?:latest|previous|\d+(?:\.\d+)*(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?|<[^<>\s]+>)${END}`;
 const ARG = String.raw`(?:${QUOTED}|${VALUED}|--[A-Za-z][\w-]*|<[^<>\s]+>|${PATH}|\.(?=[\s,;)]|$))`;
 // The command line by name: bare, in PowerShell's `& 'busy-emulator'`, or in quotes.
 const NAME = String.raw`(?:&\s+)?(?:'busy-emulator'|"busy-emulator"|busy-emulator)`;
-const COMMAND = new RegExp(String.raw`(\b[Rr]un\s+)?${NAME}\s+(${COMMANDS.join("|")})(?![\w-])((?:\s+${ARG})*)`, "g");
+const COMMAND = new RegExp(String.raw`(\b[Rr]un\s+)?${NAME}\s+(${FIRMWARE_USE}|${COMMANDS.join("|")})(?![\w-])((?:\s+${ARG})*)`, "g");
 
 // The command line by a path: the Node inside the app and the script, or a launcher, quoted or not.
 const word = (end) => String.raw`(?:'[^']*[\\/]${end}'|"[^"]*[\\/]${end}"|[^\s'"]*[\\/]${end})`;

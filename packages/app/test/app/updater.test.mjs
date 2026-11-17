@@ -159,10 +159,15 @@ test("a tampered file and an unsigned manifest are refused; the app stays as it 
     const s = await state();
     assert.equal(s.code, code, what);
     assert.ok(s.message && s.hint, "said in words, with a next step");
-    // The page draws the refusal a moment after the state says it (seen on Windows): waited for, not read at once.
-    await until(() => shown("#update-link"), `${what}: the Download line is back`);
-    assert.match(await app.page(`document.querySelector("#update-link").title`), /refused/);
-    assert.equal(await app.page(`document.querySelector("#update-link").href`), `https://github.com/busy-app/busybar-emulator/releases/tag/v${VERSION}`);
+    // The page draws the refusal a moment after the state says it (seen on Windows): waited for, not read at once. It
+    // is one button, Update failed (EMU-327: the top bar's room); its menu says why and offers Try again and the
+    // download page.
+    await until(async () => (await shown("#update-go")) && (await text("#update-go")) === "Update failed", `${what}: Update failed`);
+    assert.equal(await shown("#update-link"), false, `${what}: one control, not the Download line beside it`);
+    await app.click("#update-go");
+    await until(() => app.page(`Boolean(document.querySelector(".update-menu"))`), `${what}: the failed update's menu`);
+    assert.match(await app.page(`document.querySelector(".update-menu .menu-head").textContent`), /refused/);
+    assert.equal(await app.page(`document.querySelector(".update-menu a.menu-item").href`), `https://github.com/busy-app/busybar-emulator/releases/tag/v${VERSION}`);
     assert.ok(!existsSync(path.join(path.dirname(target), `.busy-emulator-update-${VERSION}`)), `${what}: nothing beside the app`);
     await app.close();
     app = null;

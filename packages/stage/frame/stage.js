@@ -1,7 +1,8 @@
 // The 3D view's frame: the bar as a model in the Tride player, with the emulator's pictures on both displays and
 // its controls on the model. It runs in a sandboxed frame with no origin and no rights: it loads its own files and
 // then talks only to the page that holds it, by messages (the protocol is in ../README.md).
-import { BACK, createBackPainter, createLedPainter, FRONT, statusLedLook } from "./leds.js";
+import { BACK, createBackPainter, createLedPainter, FRONT } from "./leds.js";
+import { lightsAt, parseLights, redrawDelay, statusLedLook } from "./status-lights.mjs";
 import { TrideScene } from "./player/tride-web/tride-web.js";
 
 const POSITIONS = ["busy", "custom", "off", "apps", "settings"];
@@ -300,47 +301,25 @@ const bytesOf = (value, length) => {
 // ---------------------------------------------------------------- the RGB LEDs beside Start
 // The bar's two status lights, in the slots of its top at the two ends of Start (the scene's led_light_1 on the
 // switch's side, led_light_2 on the wheel's). The page gives their state as the window's event "lights" has it
-// (legacy-window/README.md): { preset, color: "#rrggbb", brightness: 0..1 }, the same the flat view's strips show.
+// (legacy-window/README.md): { preset, color: "#rrggbb", brightness: 0..1, elapsed, set? }, elapsed being how long the
+// preset has run, set the ms into a notification a brightness set came at. What they show from moment to moment is the firmware's own timeline (status-lights.mjs, the
+// window's module, which the flat view and the server go by too): each step drawn when it comes, nothing after a
+// notification has ended, and a message that comes in the middle of a preset shows the step it is at.
 // The scene takes each LED's color in linear RGB, an array [r, g, b], and its level 0..1 (its glow is 6 × level);
-// black or 0 is dark. It is given what the eye sees of the LED, not the PWM duty (leds.js, statusLedLook): the LED's
-// hue at full strength and a level that puts anything the firmware lights clearly on, the BUSY timer's red at 1. The presets move as the firmware's status lights move them (status_lights/presets): blink
-// half a second on, half off; a notification three such blinks at full brightness, then dark; fade up and down in
-// 2.56 s; the rainbow round in 4 s. The scene is given new values only when they change.
-const LIGHT_PRESETS = ["off", "static", "fade", "rainbow", "blink", "notification"];
-const LIGHT_TICK_MS = { blink: 500, notification: 500, fade: 40, rainbow: 40 };
-const NOTIFICATION_MS = 3000;
-let lights = { preset: "off", rgb: [0, 0, 0], brightness: 1, since: 0 };
+// black or 0 is dark. It is given what the eye sees of the LED, not the PWM duty (status-lights.mjs, statusLedLook):
+// the LED's hue at full strength and a level that puts anything the firmware lights clearly on, the BUSY timer's red
+// at 1. The scene is given new values only when they change.
+let lights = parseLights(null);
+let lightsSince = 0; // performance.now() when the preset started
+// Asked for less motion, the presets that never hold still (fade, the rainbow) show one step of theirs and stay there,
+// as in the flat view; the blinks, which say something, go on.
+const lessMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let lightInputs = null; // the LEDs' inputs as last given to the scene (for checks: probe)
 let lightTimer = 0;
 
-/** The color (bytes, sRGB), the level the firmware runs them at and the color's strength (`value`, when it is not
- * the color's own) of the LEDs `t` milliseconds into `state`. */
-function lightsAt(state, t) {
-  const { preset, rgb, brightness } = state;
-  const blinkOn = Math.floor(t / 500) % 2 === 0;
-  if (preset === "static") return { rgb, level: brightness };
-  if (preset === "blink") return { rgb, level: blinkOn ? brightness : 0 };
-  if (preset === "notification") return { rgb, level: t < NOTIFICATION_MS && blinkOn ? 1 : 0 };
-  if (preset === "fade") {
-    const phase = (t % 2560) / 2560;
-    return { rgb, level: brightness * (phase < 0.5 ? phase * 2 : 2 - phase * 2) };
-  }
-  if (preset === "rainbow") {
-    const h = ((t % 4000) / 4000) * 6;
-    const x = 1 - Math.abs((h % 2) - 1);
-    const [r, g, b] = [[1, x, 0], [x, 1, 0], [0, 1, x], [0, x, 1], [x, 0, 1], [1, 0, x]][Math.floor(h) % 6];
-    // The firmware's rainbow has the HSV value 16 of 255 (status_lights/presets/rainbow_gradient.c): dim.
-    return { rgb: [r, g, b].map((v) => Math.round(v * 255)), level: brightness, value: 16 / 255 };
-  }
-  return { rgb: [0, 0, 0], level: 0 };
-}
-
 function setLights(m) {
-  const preset = LIGHT_PRESETS.includes(m.preset) ? m.preset : "off";
-  const hex = /^#[0-9a-f]{6}$/i.test(m.color ?? "") ? m.color : "#000000";
-  const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const brightness = Number.isFinite(m.brightness) ? Math.min(1, Math.max(0, m.brightness)) : 1;
-  lights = { preset, rgb, brightness, since: performance.now() };
+  lights = parseLights(m);
+  lightsSince = performance.now() - lights.elapsed;
   showLights();
 }
 
@@ -348,19 +327,19 @@ function showLights() {
   clearTimeout(lightTimer);
   lightTimer = 0;
   if (!scene || disposed) return;
-  const t = performance.now() - lights.since;
-  const { rgb, level, value } = lightsAt(lights, t);
-  const look = statusLedLook(rgb, level, value);
+  const elapsed = performance.now() - lightsSince;
+  const { rgb, level, next } = lightsAt(lights, elapsed, { still: lessMotion.matches });
+  const look = statusLedLook(rgb, level);
   const color = look ? look.hue.map((v) => Math.round((v / 255) ** 2.2 * 1e4) / 1e4) : [0, 0, 0];
   const glow = look ? look.glow : 0;
-  const next = { led_left: color, led_left_level: glow, led_right: [...color], led_right_level: glow };
-  if (JSON.stringify(next) !== JSON.stringify(lightInputs)) {
-    lightInputs = next;
-    scene.setInputs(next);
+  const inputs = { led_left: color, led_left_level: glow, led_right: [...color], led_right_level: glow };
+  if (JSON.stringify(inputs) !== JSON.stringify(lightInputs)) {
+    lightInputs = inputs;
+    scene.setInputs(inputs);
     changed();
   }
-  const tick = LIGHT_TICK_MS[lights.preset];
-  if (tick && !(lights.preset === "notification" && t >= NOTIFICATION_MS)) lightTimer = setTimeout(showLights, tick - (t % tick) + 1);
+  const wait = redrawDelay(lights.preset, elapsed, next);
+  if (wait !== null) lightTimer = setTimeout(showLights, wait);
 }
 
 // ---------------------------------------------------------------- the controls' state on the model
@@ -695,8 +674,11 @@ addEventListener("message", (e) => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   showFrames({});
+  // The LEDs' timer was throttled while nobody saw the frame: the step they are at, at once.
+  showLights();
   changed();
 });
+lessMotion.addEventListener("change", showLights);
 
 // What the frame's policy refused: nothing should be, and a check from outside can see it.
 document.addEventListener("securitypolicyviolation", (e) => {

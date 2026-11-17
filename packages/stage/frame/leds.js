@@ -169,29 +169,3 @@ export function createBackPainter(scale = 1) {
   }
   return { width, height, data, paint };
 }
-
-// ---------------------------------------------------------------- the RGB status LEDs: how lit they look
-// The firmware drives each channel of a status LED at component / 255 × level^1.85 of full PWM (status_lights_backend.c,
-// status_lights_scale_component), `level` the brightness the lights run at: 0.05 to 0.9 by the brightness setting
-// (brightness_conv.c, 5 + 85 % of the user's 0..100), 1 for a notification. A real LED at a few percent of PWM still
-// reads as plainly lit and fully saturated: the eye takes light roughly as a cube root, and the LED is a point far
-// brighter than a screen. Its color times its duty on a screen looks dull and dark. So the screen shows the LED's own
-// hue at full strength (its largest channel at 255) and how lit it looks, `glow` 0..1: the cube root of the duty,
-// doubled, eased. Anything the firmware lights shows at about half or more; the BUSY timer's red (150, 0, 0) at the
-// default brightness (0.48) at full; the rainbow (HSV value 16 of 255) at about two thirds. The flat view's LEDs use
-// the same curve (legacy-window/window.js, ledLook).
-
-/**
- * How a status LED looks on screen.
- * @param {number[]} rgb  the firmware's color, sRGB bytes
- * @param {number} level  the brightness the lights run at, 0..1
- * @param {number} [value]  the color's strength, 0..1: its largest channel over 255 unless given (the rainbow's 16/255)
- * @returns {{ hue: number[], glow: number, halo: number } | null}  the hue at full strength (bytes); glow 0..1; halo
- *   0..1, the cube root of the duty, for what grows on with the brightness past full glow. null when dark.
- */
-export function statusLedLook(rgb, level, value) {
-  const peak = Math.max(...rgb);
-  if (!(peak > 0) || !(level > 0)) return null;
-  const halo = Math.cbrt(Math.min(1, value ?? peak / 255) * Math.min(1, level) ** 1.85);
-  return { hue: rgb.map((v) => Math.round((v / peak) * 255)), glow: Math.round(Math.min(1, 2 * halo) ** 0.6 * 1e4) / 1e4, halo: Math.round(halo * 1e4) / 1e4 };
-}

@@ -339,5 +339,6 @@ test("a window is never opened larger than the screen's work area: a 1366x768 la
   const tiny = fitToScreen(want, { width: 1093, height: 582 });
   assert.equal(tiny.height, 582);
   assert.equal(tiny.minHeight, 582, "the smallest size gives way as well, or the window could not be made to fit");
-  assert.equal(tiny.minWidth, 880);
+  assert.equal(tiny.width, 1093);
+  assert.equal(tiny.minWidth, 1093, "the smallest width gives way too, under the card's 1140");
 });

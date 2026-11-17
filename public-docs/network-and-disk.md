@@ -85,10 +85,11 @@ In the data folder:
 
 | | What |
 |---|---|
-| `bar/<firmware>/ext/` | The emulated BUSY Bar's storage, one for each firmware (`bar/1.3.1/ext/`): the apps you installed, their settings and their data. It stays from one start to the next. The BUSY Bar's own settings (volume, name, time zone) do not: every start is a BUSY Bar fresh out of the box, with your apps on it. |
+| `bar/ext/` | The emulated BUSY Bar's storage: the apps you installed, their settings and their data. There is one BUSY Bar whatever its firmware: switching the firmware keeps them, as on a BUSY Bar whose firmware is updated. It stays from one start to the next. The BUSY Bar's own settings (volume, name, time zone) do not: every start is a BUSY Bar fresh out of the box, with your apps on it. |
+| `bar/chosen-firmware.json` | The firmware the BUSY Bar was last switched to; the next start runs it. When this emulator no longer has that firmware, the BUSY Bar starts on the latest, and the emulator says so once. |
 | `install.json` | Where the app and its command line are. Agents read it to find the command line. |
 | `key` | The server's key for the management address: new at every start, readable by your user alone, removed when the emulator quits (from its menu or with `busy-emulator quit`). If the emulator is ended some other way, the file stays until the next start writes a new one; nothing answers to the old key. |
-| `set-aside/` | Only after an update that could not carry the folder over to its new layout (it says so in `logs/shell.log`): what the folder held then, untouched. The emulator never reads it again; delete it when you no longer need it. |
+| `set-aside/` | Only after an update that could not carry the folder over to its new layout, or carried it over without some of it (it says so in `logs/shell.log`): what the folder held then, untouched. The move to one BUSY Bar puts the BUSY Bars of firmwares other than 1.3.1 here, in `format-1-bars-<time>/`. The emulator never reads it again; delete it when you no longer need it. |
 | `format`, `run/` | The folder's layout version (a newer emulator moves an older folder to its own layout when it first starts); which process uses the folder and where its BUSY Bar answers (`run/server.lock` and `run/emulator.json`, both removed when the emulator quits), and two small notes `start` and `quit` leave each other so that a `quit` during a `start` leaves nothing running. `run/build-lines.jsonl` holds what the window's buttons ran (build, install, start, the checks) for the Console and `logs --kind build`; it is emptied at every start. |
 | `logs/shell.log` | The app's log, with everything the server prints: at most about 2 MB (`shell.log.1` holds the previous megabyte). |
 | `shell/` | The windows' own browser files. |

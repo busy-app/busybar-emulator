@@ -67,7 +67,7 @@ test("a running server carries out 125 ticks for every second of real time", asy
 });
 
 test("two servers in one process, on different firmwares, each carry out 125 ticks for every second", async (t) => {
-  const servers = [await start(t, { firmware: "1.3.1" }), await start(t, { port: port(1), firmware: "dev" })];
+  const servers = [await start(t, { firmware: "1.4.1" }), await start(t, { port: port(1), firmware: "1.3.1" })];
   for (const seen of await watch(servers)) t.diagnostic(assert125(seen));
 });
 

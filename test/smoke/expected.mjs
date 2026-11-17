@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The smoke test's expected frame (test/smoke/front.png): the front frame a bar showed for the scene
-// "text-color-center" (test/golden/text-color-center.json, recorded on the bar named there), encoded by the command
+// "text-color-center" (test/golden/1.3.1/text-color-center.json, recorded on the bar named there), encoded by the command
 // line's own encoder (packages/server/capture/png.mjs). The smoke app (test/smoke/app.busy.smoke) draws the same
 // elements from its JS.
 //
@@ -14,7 +14,7 @@ import { commandLine } from "../../packages/server/arguments.mjs";
 import { encodeScreenPng } from "../../packages/server/capture/png.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const GOLDEN = path.join(here, "..", "golden", "text-color-center.json");
+export const GOLDEN = path.join(here, "..", "golden", "1.3.1", "text-color-center.json");
 export const EXPECTED = path.join(here, "front.png");
 
 export function expectedPng() {

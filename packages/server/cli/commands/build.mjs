@@ -24,7 +24,7 @@ import path from "node:path";
 import { fontWarnings, fontWarningText } from "../../projects/font-check.mjs";
 import { busyCliScript, busyCliVersion } from "../../projects/node-tools.mjs";
 import { CliError } from "../output.mjs";
-import { buildFailureHint, commandFor, ensureDependencies, fixBusyCli, projectAt, remember, requireTrust, requireValidSettings, runTool, shown, toolFailed, TRUST_OPTION } from "../project.mjs";
+import { barApiVersion, buildFailureHint, commandFor, ensureDependencies, fixBusyCli, projectAt, remember, requireTrust, requireValidSettings, runTool, shown, toolFailed, TRUST_OPTION } from "../project.mjs";
 
 export default {
   name: "build",
@@ -57,7 +57,7 @@ export default {
     if (options.tgzName !== undefined && options.emit === "dir") throw usage("--tgz-name names the archive, and --emit dir makes none.");
     if (options.tgzName !== undefined && (/[\\/]/.test(options.tgzName) || !options.tgzName.trim())) throw usage("--tgz-name takes a file name, such as \"{id}-{version}.tgz\".");
     const extra = [...(options.noMinify ? ["--no-minify"] : []), ...(options.bundle ? ["--bundle"] : []), ...(options.emit !== undefined ? ["--emit", options.emit] : []), ...(options.out !== undefined ? ["--out", path.resolve(sys.cwd(), options.out)] : []), ...(options.tgzName !== undefined ? ["--tgz-name", options.tgzName] : [])];
-    const settings = requireValidSettings(ctx, project);
+    const settings = requireValidSettings(ctx, project, await barApiVersion(ctx, sys));
     const dependencies = await ensureDependencies(ctx, sys, project, progress);
     const fix = fixBusyCli(ctx, project);
     progress(`busy-cli build${extra.length ? ` ${extra.join(" ")}` : ""}`);

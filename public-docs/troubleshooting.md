@@ -136,7 +136,7 @@ says why. Wait with `setTimeout` or `await` instead of a loop:
 
 An app can leave BUSY Bar taking no keys: the supervisor's warning after its JavaScript memory filled up, or a screen
 that nothing changes. On a real BUSY Bar you hold Back and Start together; here press **Restart BUSY Bar** on its
-card in the window (under the back display), or run `busy-emulator restart-bar` (the MCP tool `restart_bar`), which waits until it answers
+card in the window, beside the back display (in a narrow window it says **Restart**), or run `busy-emulator restart-bar` (the MCP tool `restart_bar`), which waits until it answers
 again. Installed apps and their settings are kept. If the app hangs again once it is started, `busy-emulator
 uninstall` it and fix it.
 
@@ -316,10 +316,15 @@ publishing use the same codes. A code with a section above links to it. The exit
 | Code | What happened | What to do |
 |---|---|---|
 | `app_crashed` | The app started and stopped at once with an error | [The BUSY Bar shows nothing after run](#app_crashed-or-the-busy-bar-shows-nothing-after-run) |
+| `api_mismatch` | The app's `api_version` is newer than the API of the firmware the BUSY Bar runs, so the firmware refuses it | Lower `api_version` in its manifest if the app needs nothing newer. Or switch: `busy-emulator firmware use latest` ([firmwares](README.md#firmwares)) |
 | `author_required` | `create` found no author but a name many computers share ("User", "admin"), which would give other people's apps the same id | Give `--author` with your GitHub login or your name, or sign in to GitHub first |
 | `bar_off` | The emulated BUSY Bar is powered down in the window, or its battery ran out there | Turn it on in the window, then try again |
 | `blocked_file`, `blocked_network` | An agent's sandbox is in the way | [Sandboxes](#blocked_network-or-blocked_file) |
 | `build_failed`, `install_failed`, `run_failed` | A round of `dev` failed at that stage; the BUSY Bar keeps the last version that built | Read the output, fix it and save again |
+| `firmware_failed` | The emulator did not switch the firmware, for a reason it has no code for | `busy-emulator logs` says why; `busy-emulator firmware` shows what runs |
+| `firmware_start_failed` | The firmware did not start; the BUSY Bar stays on the one it ran | `busy-emulator logs` says why |
+| `firmware_switching` | The BUSY Bar was switching firmware and did not answer in time | Wait a moment and run the command again |
+| `firmware_unknown` | This emulator has no such firmware | `busy-emulator firmware` lists the firmwares |
 | `folder_not_empty` | `create` needs a new folder name, or an empty folder | Give a name that is not taken: `create` makes the folder |
 | `icon_exists` | The project has icons already, and they are kept | Add `--force` to replace them |
 | `interrupted` | npm or busy-cli was stopped before it ended | Run the command again |

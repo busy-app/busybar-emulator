@@ -261,8 +261,8 @@ What the examples have in common, because a BUSY Bar asks for it:
   section to play and sends only the elements that changed (`shared/screen.ts`).
 - **A settings page that changes what the app does.** The BUSY Bar has no keyboard: everything is set on its web page,
   under Apps. `src/appmeta/settings.json` describes the fields; the app reads the saved values once, at its start,
-  with the BUSY Bar's HTTP API (`shared/settings.ts`: the template's own `loadValues()` reads a global that firmware 1.3.1
-  does not have), and the page offers Restart after a save.
+  with the BUSY Bar's HTTP API (`shared/settings.ts`: the template's own `loadValues()` reads a global that the released
+  firmwares do not have), and the page offers Restart after a save.
 - **Both displays.** The front one (72×16, color) faces the room; the back one (160×80, gray) faces the person at the
   desk and says what the controls do. An element with `display: "back"` goes there.
 - **A 96 KiB heap**, set in the manifest (`heap_size_kib`): what an app gets when a BUSY Bar starts it from its command

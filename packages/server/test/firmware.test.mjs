@@ -15,7 +15,7 @@ import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { port } from "../../../test/server/helpers.mjs";
-import { FirmwareError, loadFirmware } from "../firmware.mjs";
+import { appsAssetFile, appsAssets, FirmwareError, firmwareChoices, loadFirmware } from "../firmware.mjs";
 
 const server = join(dirname(fileURLToPath(import.meta.url)), "..");
 const engine = join(server, "../engine");
@@ -24,8 +24,8 @@ const config = JSON.parse(readFileSync(join(engine, "firmware.json"), "utf8"));
 
 // ---------------------------------------------------------------- servers on different firmwares
 
-// The firmwares in the repository may well report the same API version and ship the same local web (1.3.1 and dev
-// do), and then a server that mixes them up, or answers with a version written into its code, looks right. So the
+// The firmwares in the repository may well report the same API version and ship the same local web (1.3.1 and an
+// earlier development build did), and then a server that mixes them up, or answers with a version written into its code, looks right. So the
 // servers of this test run from a copy where every firmware's build is marked as its own: an API version and a build
 // date no other has, and a first page of the local web with the firmware's name in it (changed, not added: the number
 // of files stays what build-info.json says).
@@ -132,7 +132,7 @@ describe("a build the server cannot run", () => {
     return () => loadFirmware(firmware, made);
   }
 
-  const good = { version: "one", firmware: COMMIT.slice(0, 8), commit: COMMIT, buildDate: "2001-02-03", api: "1.2.3", web: { files: 2 } };
+  const good = { version: "one", firmware: COMMIT.slice(0, 8), commit: COMMIT, buildDate: "2001-02-03", api: "1.2.3", appAllowlist: { version: "exact GET" }, web: { files: 2 } };
 
   /** Refused: an error with this code, whose message is one line that matches every pattern. */
   function refused(load, code, ...patterns) {
@@ -164,6 +164,10 @@ describe("a build the server cannot run", () => {
   test("a build made before the commit was recorded", () => {
     const old = { version: "one", firmware: COMMIT.slice(0, 8), optimized: true };
     refused(engineWith("old", { info: old }), "old-build", /was made by an older build script/, /does not record the firmware commit/, /build\.mjs --firmware one/);
+    // A build of the script before the apps' allowlist was recorded (build-info.json's appAllowlist): the server could
+    // not tell what an app may reach.
+    const { appAllowlist, ...beforeAllowlist } = good;
+    refused(engineWith("old-allowlist", { info: beforeAllowlist }), "old-build", /what apps may reach/);
   });
 
   test("a build of another commit: both commits in full", () => {
@@ -185,4 +189,41 @@ describe("a build the server cannot run", () => {
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /^Unknown firmware "no-such-firmware"\. The emulator has: .*\n$/);
   });
+});
+
+test("the app assets of a firmware: a file a later release added (apps-assets.json, since) is not there", () => {
+  const arrow = "shared/images/back_arrow_front_7x7.image";
+  assert.deepEqual([...loadFirmware("1.3.1").assetsAfter], [arrow]);
+  assert.deepEqual([...loadFirmware("1.4.1").assetsAfter], []);
+  assert.equal(appsAssetFile(loadFirmware("1.3.1"), arrow), null);
+  // Not in another letter case either, which the file system of macOS and Windows would find.
+  assert.equal(appsAssetFile(loadFirmware("1.3.1"), "shared/images/BACK_ARROW_front_7x7.image"), null);
+  assert.equal(appsAssetFile(loadFirmware("1.3.1"), "Shared/Images/Back_Arrow_Front_7x7.Image"), null);
+  assert.equal(appsAssetFile(loadFirmware("1.4.1"), arrow), join(appsAssets, arrow));
+  assert.equal(appsAssetFile(loadFirmware("1.3.1"), "shared/images/info_front_8x8.image"), join(appsAssets, "shared/images/info_front_8x8.image"));
+  // Outside the folder, and a folder beside it whose name starts the same.
+  assert.equal(appsAssetFile(loadFirmware("1.4.1"), "../firmware.json"), null);
+  assert.equal(appsAssetFile(loadFirmware("1.4.1"), "../apps-assets-x/a"), null);
+});
+
+// ---------------------------------------------------------------- the choice among firmwares (EMU-320)
+
+test("latest is the default, previous the newest released one below it, by version and not by text; dev only by name", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "emu-server-choices-"));
+  try {
+    const versions = Object.fromEntries(["1.2.0", "dev", "1.9.3", "1.10.0", "1.4.1"].map((v) => [v, { commit: "1".repeat(40), summary: v }]));
+    writeFileSync(join(tmp, "firmware.json"), JSON.stringify({ default: "1.10.0", versions }));
+    const choices = firmwareChoices(tmp);
+    assert.deepEqual(choices.versions, ["1.10.0", "1.9.3", "1.4.1", "1.2.0", "dev"]);
+    assert.deepEqual([choices.latest, choices.previous], ["1.10.0", "1.9.3"]);
+    assert.deepEqual(["latest", "previous", "1.2.0", "dev"].map(choices.resolve), ["1.10.0", "1.9.3", "1.2.0", "dev"]);
+    assert.deepEqual(choices.versions.map(choices.aliasOf), ["latest", "previous", null, null, null]);
+    assert.throws(() => choices.resolve("1.10"), { code: "unknown-firmware", message: 'This emulator has no firmware "1.10". It has: 1.10.0 (latest), 1.9.3 (previous), 1.4.1, 1.2.0, dev.' });
+    // A single released firmware has no previous one.
+    writeFileSync(join(tmp, "firmware.json"), JSON.stringify({ default: "1.2.0", versions: { "1.2.0": versions["1.2.0"], dev: versions.dev } }));
+    assert.equal(firmwareChoices(tmp).previous, null);
+    assert.throws(() => firmwareChoices(tmp).resolve("previous"), { code: "unknown-firmware", message: "This emulator has no released firmware older than the latest. It has: 1.2.0 (latest), dev." });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });

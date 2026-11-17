@@ -5,7 +5,7 @@
 // tools: it needs the npm registry, like actions-project.test.mjs. The second pop-up is opened by the menu's New App….
 // Each ends with the app running on the bar (one Refresh after create).
 //
-// CREATE_SHOTS=<folder> also saves a picture of each way at 1200×800 and 900×650.
+// CREATE_SHOTS=<folder> also saves a picture of each way at 1200×800 and 1140×650.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -63,7 +63,7 @@ async function shot(name) {
   mkdirSync(SHOTS, { recursive: true });
   for (const [w, h] of [
     [1200, 800],
-    [900, 650],
+    [1140, 650],
   ]) {
     // A hidden window paints again when its size changes: one pixel less first, so that the picture is of the page
     // as it is now.

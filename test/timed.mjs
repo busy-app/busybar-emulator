@@ -22,14 +22,18 @@
 // So frames and order do not depend on which ticks the drawing time happens to make the emulator miss, and the pace
 // is that of the emulator's drawing time, measured the same way on every run.
 //
-//   node emulator/test/timed.mjs                    an emulator of its own against the bar's saved recordings (test/timed/)
-//   node emulator/test/timed.mjs --firmware dev     the same on another firmware; --emu 127.0.0.1:8640 a running emulator
+//   node emulator/test/timed.mjs                    an emulator of its own against the bar's saved recordings
+//                                                   (test/timed/<firmware>/, the emulator's firmware)
+//   node emulator/test/timed.mjs --firmware 1.3.1   the same on another firmware; --emu 127.0.0.1:8640 a running emulator
 //   node emulator/test/timed.mjs --record           watch a connected bar (10.0.4.20) and save what it showed
 //   node emulator/test/timed.mjs --only scroll      one scene
 //   node emulator/test/timed.mjs --images           the bar's frames the emulator never showed, in a folder of the
 //                                                   system's temporary folder (EMU_TEST_OUT when the gate runs it)
 //   node emulator/test/timed.mjs --signatures       also a signature of each of the emulator's playbacks (its frames
 //                                                   and their times): the same in every run when the hold works
+//
+// A firmware's folder may name scenes it compares with another firmware's recording (borrowed.json), with why and
+// what was compared to allow it: 1.4.1's off is 1.3.1's. The line of such a scene says so.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest, Agent } from "node:http";
@@ -38,10 +42,9 @@ import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 
 import { commandLine } from "../packages/server/arguments.mjs";
-import { emulatorFor, outputDir, totals } from "./own-emulator.mjs";
+import { emulatorFor, firmwareAt, outputDir, recordingsDir, totals } from "./own-emulator.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const savedDir = join(here, "timed");
 const args = process.argv.slice(2);
 await commandLine(process.argv, { values: ["--bar", "--emu", "--only", "--firmware"], flags: ["--record", "--images", "--signatures"], emulator: "--emu" });
 const option = (name, fallback) => {
@@ -306,7 +309,7 @@ const LEAD_MS = 400;
 // time gives ~1.00, drawing that takes no time 1.00 everywhere, the emulator before EMU-231 (a wander of 0..2 ms on
 // every tick) 1.083 at 25 frames a second and 0.946 at 30. Each tolerance is about the spread of the bar's own runs,
 // plus what three seeds of the emulator leave of theirs:
-//   60       1.216; the runs spread 1.144-1.249 (-6 % / +3 %; the recordings in test/timed/ give 1.204 and 1.246):
+//   60       1.216; the runs spread 1.144-1.249 (-6 % / +3 %; the recordings in test/timed/1.3.1 give 1.204 and 1.246):
 //            3 %, as before;
 //   spinner  33 frames a second, the small animation: 1.025; the runs spread 1.005-1.043 (±2 %): 2 % (the emulator
 //            gives ~1.04: its drawing time does not shrink with what is drawn);
@@ -320,10 +323,17 @@ const BAR_SLOWDOWN = {
 };
 
 if (only && !SCENES[only]) throw new Error(`no scene ${only}: ${Object.keys(SCENES).join(", ")}`);
-if (record) mkdirSync(savedDir, { recursive: true });
 // The bar, or the emulator: one at --emu, else one of this test's own (at bar speed: the scenes need the wander).
 const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : await emulatorFor(args, { name: "timed" });
 const addr = target.addr;
+// The recordings of the firmware the bar or the emulator runs: test/timed/<firmware>.
+const firmware = target.firmware ?? (await firmwareAt(addr));
+const savedDir = recordingsDir("timed", firmware);
+if (record) mkdirSync(savedDir, { recursive: true });
+// Scenes this firmware compares with another one's recording, each with why and what was compared to allow it
+// (test/timed/<firmware>/borrowed.json). Recording replaces it: --record writes this firmware's own.
+const borrowedFile = join(savedDir, "borrowed.json");
+const borrowed = !record && existsSync(borrowedFile) ? JSON.parse(readFileSync(borrowedFile, "utf8")) : {};
 // An emulator that has just started shows the apps menu's title card for its first 1.5 s, and a draw in that time
 // starts blended with it. Its clock is moved past that first, whatever the computer's load made of the start.
 if (!record) {
@@ -336,7 +346,9 @@ let failed = 0;
 let passed = 0;
 for (const [name, scene] of Object.entries(SCENES)) {
   if (only && name !== only) continue;
-  const file = join(savedDir, `${name}.json`);
+  const lent = Object.hasOwn(borrowed, name) && !existsSync(join(savedDir, `${name}.json`)) ? borrowed[name] : null;
+  const file = lent ? join(recordingsDir("timed", lent.from), `${name}.json`) : join(savedDir, `${name}.json`);
+  if (lent) console.log(`  (${name}: not a recording of a bar on ${firmware}; ${lent.from}'s, as test/timed/${firmware}/borrowed.json says why)`);
   if (record) {
     const seen = await watchBar(scene);
     // The frames themselves are kept: the emulator must show each of them.

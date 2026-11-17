@@ -8,7 +8,7 @@
 // planted .env and a token in a source file are warned of before anything is published. Then stage 2 against a stand-in for GitHub. With the real server and the
 // real tools: it needs the npm registry, like actions-project.test.mjs.
 //
-// PUBLISH_SHOTS=<folder> also saves a picture of every step at 1200×800 and 900×650.
+// PUBLISH_SHOTS=<folder> also saves a picture of every step at 1200×800 and 1140×650.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -73,7 +73,7 @@ async function shot(name) {
   mkdirSync(SHOTS, { recursive: true });
   for (const [w, h] of [
     [1200, 800],
-    [900, 650],
+    [1140, 650],
   ]) {
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -186,9 +186,12 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   await shot("1-texts");
   // Next goes on at once: the texts were checked here; the writing runs behind the next step. So the next step is on
   // as soon as the click has been dispatched, in the click itself, not after the writing (a time in ms measured that
-  // as well as how busy the machine was).
-  await press("Next");
-  assert.equal(await app.page(`document.querySelector(".publish-step.on")?.textContent.includes("Screenshots")`), true, "the next step, in the click itself");
+  // as well as how busy the machine was). The click and the look are one turn of the page: a click sent as input
+  // reaches the page on its own time, and a look after it could come first (tride-win, 17.11).
+  assert.equal(await app.page(`(() => {
+    [...document.querySelectorAll(".publish button")].find((b) => b.textContent.trim() === "Next").click();
+    return document.querySelector(".publish-step.on")?.textContent.includes("Screenshots");
+  })()`), true, "the next step, in the click itself");
   await until(() => app.page(`document.querySelector(".publish-step.done")?.textContent === "Application Info"`), "the step ticked when written");
   await idle();
   assert.ok(!readFileSync(iconFile).equals(iconBefore), "the icon written on Next");

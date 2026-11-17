@@ -12,7 +12,7 @@ const DATA = "data:application/javascript;base64,";
 
 // Fails loudly when a firmware's build no longer has the worker in the shape the server knows: then its local web's
 // state stream is refused again (Origin: null), and the rewrite has to be looked at.
-for (const name of ["1.3.1", "dev"]) {
+for (const name of ["1.4.1", "1.3.1"]) {
   test(`${name}: the state stream's worker is found once and given from the local web's own address`, () => {
     const firmware = loadFirmware(name);
     const web = localWeb(firmware);

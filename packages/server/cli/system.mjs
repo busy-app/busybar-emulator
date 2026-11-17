@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { startProgram } from "../../engine/programs.mjs";
-import { LOCK_FILE } from "../data-folder.mjs";
+import { LOCK_FILE, readChosenFirmware } from "../data-folder.mjs";
 import { processInfoSync } from "../process-info.mjs";
 import { sameRealPath } from "../same-path.mjs";
 import { LOCAL_PORTS_PATH } from "../local-access.mjs";
@@ -218,6 +218,33 @@ export function askUpdate(port, key, op, waitMs, pid = null) {
     request.setTimeout(waitMs, () => request.destroy(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })));
     request.on("error", (e) => (SANDBOX_CODES.has(e?.code) ? resolve({ blocked: e.code }) : resolve({ failed: e?.code ?? String(e) })));
     request.end();
+  });
+}
+
+/** The BUSY Bar's firmware on the management address (server.mjs, EMU-320). */
+export const FIRMWARE_PATH = "/_emu/firmware";
+
+/**
+ * GET /_emu/firmware (the firmware that runs, those there are, the one chosen for the next restart) or POST it with
+ * `body`, { version, when } as JSON: the BUSY Bar restarts on that firmware, and the answer comes once it is up. With
+ * the server's key, to 127.0.0.1 only.
+ * @returns {Promise<{ status: number, body: string } | { failed: string } | { blocked: string }>}
+ */
+export function askFirmware(port, key, method, body, waitMs) {
+  return new Promise((resolve) => {
+    const payload = body === null || body === undefined ? null : Buffer.from(JSON.stringify(body), "utf8");
+    const headers = { Authorization: authorizationFor(key), Connection: "close", ...(payload ? { "Content-Type": "application/json", "Content-Length": payload.length } : {}) };
+    const request = http.request({ host: "127.0.0.1", port, path: FIRMWARE_PATH, method, agent: false, headers }, (response) => {
+      let text = "";
+      response.setEncoding("utf8").on("data", (chunk) => {
+        if (text.length < 64 * 1024) text += chunk;
+      });
+      response.on("end", () => resolve({ status: response.statusCode, body: text }));
+      response.on("error", (e) => resolve({ failed: e?.code ?? String(e) }));
+    });
+    request.setTimeout(waitMs, () => request.destroy(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })));
+    request.on("error", (e) => (SANDBOX_CODES.has(e?.code) ? resolve({ blocked: e.code }) : resolve({ failed: e?.code ?? String(e) })));
+    request.end(payload ?? undefined);
   });
 }
 
@@ -665,6 +692,9 @@ export const system = Object.freeze({
   stopClip: (port, key) => stopClip(port, key),
   askGithub: (port, key, query, waitMs) => askGithub(port, key, query, waitMs),
   askUpdate: (port, key, op, waitMs, pid) => askUpdate(port, key, op, waitMs, pid),
+  askFirmware: (port, key, method, body, waitMs) => askFirmware(port, key, method, body, waitMs),
+  // The firmware the data folder's BUSY Bar was last switched to: what the next start runs (data-folder.mjs).
+  chosenFirmware: (dataDir) => readChosenFirmware(dataDir),
   userName,
   // A new app's author (projects/author.mjs): read from files, no gh or git started.
   githubLogin: (dataDir, env = {}) => githubLogin({ dataDir, env, platform: process.platform, home: os.homedir() }),

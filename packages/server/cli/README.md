@@ -52,6 +52,9 @@ busy-emulator press <up|down|ok|back|start> [--times <n>] [--hold <ms>] [--power
                          a button of the BUSY Bar or a click of its wheel; --hold holds a button down (a long press)
 busy-emulator restart-bar                   restart BUSY Bar, as holding Back and Start does on a real one, and wait until
                                             it answers again (how long it took); apps and their settings are kept
+busy-emulator firmware [use <latest|previous|version>]
+                         the firmware the emulated BUSY Bar runs and the ones this emulator has, with their API; use
+                         switches it now and waits until the BUSY Bar answers; apps, their data and settings stay
 busy-emulator settings get|set|reset [<folder>] [<key>=<value> …] [--app <id>] [--restart]
                          an app's settings on the BUSY Bar: read them, set some (--restart starts the app again), reset
 busy-emulator trust [<folder>] [--wait <seconds>]
@@ -126,7 +129,10 @@ was given: it trusts nothing), `trust_refused`, `trust_refused_recently`, `trust
 are not asked again yet; nobody answered in time; another question is open; the folder's path cannot be shown to a
 person as it is; the emulator has no dialog or no window to ask in),
 `settings_invalid` (`build`, `dev`, `run`, `settings`: the app's settings file is one the BUSY Bar refuses; `field` and
-`problem` say where and what), `no_settings`, `not_installed`, `settings_refused`, `settings_failed`, `restart_failed`,
+`problem` say where and what), `api_mismatch` (`install`, `run`, `dev`: the app's api_version is newer than the API of
+the firmware the BUSY Bar runs; `firmware`, `needs_firmware` and the hint, which names a lower api_version first and
+`firmware use` second), `firmware_unknown`, `firmware_switching`, `firmware_start_failed`, `firmware_failed`
+(`firmware use`: the server's refusal of the switch, with its code), `no_settings`, `not_installed`, `settings_refused`, `settings_failed`, `restart_failed`,
 `no_app_named` (`settings`), `press_failed`, `bar_off` (`press`: the BUSY Bar is powered off; `--power-on` turns it on), `no_typecheck`, `typecheck_failed` (`typecheck`; `errors` holds
 `file`, `line`, `column`, `code`, `message`), `folder_not_empty` (`create`; `holds` and `suggestion`),
 `no_dependencies` (`install`, `run`,
@@ -680,6 +686,7 @@ starts the server in any folder, and a project there must not be acted on.
 | `screenshot` | `screenshot [--back] [--scale <n>] --out <folder>/` |
 | `settings_get`, `settings_set` | `settings get`, `settings set <key>=<value> … [--restart]` |
 | `restart_bar` (destructive: the running app stops) | `restart-bar` |
+| `firmware_get`, `firmware_use` (destructive: the running app stops) | `firmware`, `firmware use -- <version>` |
 | (none) | `allow-local [<port>] [--remove <port>]`: the person's step only; the command refuses with `person_only` when the MCP server calls it |
 | `projects` | none: the list in `projects/trusted.json`, read only |
 

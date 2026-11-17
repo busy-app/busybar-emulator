@@ -6,8 +6,8 @@
 // tools/dist.mjs (--kind test; on macOS in a dmg made by packaging/macos.mjs dmgApp, on Windows in a setup.exe made by
 // packaging/windows.mjs buildSetup): they read BUSY_EMULATOR_DATA and BUSY_EMULATOR_USER_HOME, so nothing of the
 // person's own (the data folder, ~/.busy-emulator, Applications) is touched. Hidden windows, ports 18700 and 18705.
-// The new version is expected to be 0.1.0-beta.2 with a step from format 1 to 2 that writes notes/format-2.txt (the
-// fake of 12.11); change those checks for a real pair. On Windows run it in the desktop session
+// The old version is expected to make a data folder of format 1, the new one to be 0.1.0-beta.2 with the step from
+// format 1 to 2 of EMU-318 (one BUSY Bar, bar/ext); change the version checks for a real pair. On Windows run it in the desktop session
 // (tools/gate/desktop-task.mjs). Not part of any suite.
 //
 //   node test/upgrade-rehearsal.mjs <emulator folder> <old .dmg | setup.exe> <new .dmg | setup.exe> <work folder>
@@ -95,6 +95,14 @@ function cli(...args) {
   return { ...parsed, data: parsed.data ?? parsed };
 }
 const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
+/**
+ * The apps on the emulated BUSY Bar, as the data folder of either version keeps them: format 1 has a BUSY Bar for each
+ * firmware (bar/1.3.1/ext, the default of every release of that format), format 2 one BUSY Bar (bar/ext, EMU-318).
+ */
+function appsOnTheBar() {
+  const format = Number(readFileSync(path.join(data, "format"), "utf8").split("\n")[0]);
+  return readdirSync(path.join(data, "bar", ...(format === 1 ? ["1.3.1"] : []), "ext", "user_assets")).sort();
+}
 const hashOf = (dir) => createHash("sha256").update(readdirSync(dir).sort().map((n) => n + readFileSync(path.join(dir, n), "utf8")).join("|")).digest("hex");
 const greetingShown = (app) => app.page(`(() => { const box = document.querySelector("#welcome"); return Boolean(box && !box.hidden); })()`);
 async function ready(app) {
@@ -139,7 +147,7 @@ try {
     settings: cli("settings", "get", project).data.settings ?? cli("settings", "get", project).data,
     trust: readJson(path.join(data, "projects", "trusted.json")).projects.map((p) => [p.path, p.how]),
     install: readJson(path.join(data, "install.json")),
-    apps: readdirSync(path.join(data, "bar", "1.3.1", "ext", "user_assets")).sort(),
+    apps: appsOnTheBar(),
   };
   console.log("before:", JSON.stringify(before, null, 1));
   if (win) {
@@ -162,9 +170,9 @@ try {
   app = await start();
   await ready(app);
   assert.equal(readFileSync(path.join(data, "format"), "utf8"), "2\n");
-  assert.equal(readFileSync(path.join(data, "notes", "format-2.txt"), "utf8"), "moved\n");
-  assert.match(app.log(), /moved from format 1 to 2: a note of the move/);
-  ok("data folder moved from format 1 to 2 by the step, said in the log");
+  assert.ok(existsSync(path.join(data, "bar", "ext", "user_assets")) && !existsSync(path.join(data, "bar", "1.3.1")), "one BUSY Bar, bar/ext");
+  assert.match(app.log(), /moved from format 1 to 2: the emulated BUSY Bar is one for every firmware now, bar\/ext, with the apps of firmware 1\.3\.1/);
+  ok("data folder moved from format 1 to 2 by the step, said in the log: one BUSY Bar");
   const v2 = cli("version");
   assert.match(JSON.stringify(v2), /0\.1\.0-beta\.2/);
   ok("the same launcher path now runs beta.2", launcher);
@@ -173,7 +181,7 @@ try {
     settings: cli("settings", "get", project).data.settings ?? cli("settings", "get", project).data,
     trust: readJson(path.join(data, "projects", "trusted.json")).projects.map((p) => [p.path, p.how]),
     install: readJson(path.join(data, "install.json")),
-    apps: readdirSync(path.join(data, "bar", "1.3.1", "ext", "user_assets")).sort(),
+    apps: appsOnTheBar(),
   };
   console.log("after:", JSON.stringify(after, null, 1));
   assert.deepEqual(after.projects, before.projects);

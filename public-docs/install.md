@@ -352,6 +352,9 @@ folders you trusted, your answer to the first question, the windows' own setting
 command line at the same path (`~/.busy-emulator/bin/busy-emulator`,
 `%LOCALAPPDATA%\busy-emulator\bin\busy-emulator.exe`), so agents' instructions keep working.
 
+If the download or its check fails, the line becomes **Update failed**: click it for a menu that says what went wrong
+and what to do, with **Try again** and **Open the download page**.
+
 Where the emulator cannot replace itself, the line is a **Download** link instead, and its tooltip says why: on macOS
 when it runs from the disk image or from Downloads, or from a folder it may not write to; on Windows when it was not
 installed by its setup. Then update by hand, as below. On Windows the setup cannot replace the app while another

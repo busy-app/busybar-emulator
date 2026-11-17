@@ -2,12 +2,36 @@
   "format_version": 1,
   "version": 1,
   "fields": {
-    "note": {
-      "type": "string",
-      "label": "Note",
-      "description": "Unused: an app with settings shows Setup on its card.",
-      "default": "",
-      "max_length": 16
+    "time_format": {
+      "label": "Time Format",
+      "description": "Clock format.",
+      "type": "enum",
+      "default": "24h",
+      "options": [
+        {
+          "value": "24h",
+          "label": "24-hour"
+        },
+        {
+          "value": "12h",
+          "label": "12-hour"
+        }
+      ]
+    },
+    "show_date": {
+      "label": "Show date",
+      "type": "boolean",
+      "default": true
+    },
+    "show_seconds": {
+      "label": "Show seconds",
+      "type": "boolean",
+      "default": false
+    },
+    "blink_colons": {
+      "label": "Colon blink",
+      "type": "boolean",
+      "default": true
     }
   }
 }

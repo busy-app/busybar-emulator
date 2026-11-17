@@ -87,8 +87,8 @@ runtime) and `screen.wasm` (the displays, the GUI, the system programs) are comp
 [busy-app/busybar-firmware](https://github.com/busy-app/busybar-firmware). They are committed, so building the app
 does not compile them. To build them again and see that they are the same bytes:
 
-- the firmware commit of each module is in `packages/engine/firmware.json` (`1.3.1`: `8edd2da42ed2`, `dev`:
-  `4d1c24ac38e4`) and in `packages/engine/build/<firmware>/build-info.json`;
+- the firmware commit of each module is in `packages/engine/firmware.json` (`1.4.1`: `28c175b3b5c8`, `1.3.1`:
+  `8edd2da42ed2`) and in `packages/engine/build/<firmware>/build-info.json`;
 - the compiler is the Emscripten SDK of the version `firmware.json` names, 7.0.0;
 - what the emulator changes in the firmware's code is all in `packages/engine/patches.mjs`, applied to copies during
   the build; what it puts in place of the firmware's OS layer, storage and network is `packages/engine/native/`;

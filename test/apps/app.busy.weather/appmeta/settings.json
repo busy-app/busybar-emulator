@@ -2,12 +2,33 @@
   "format_version": 1,
   "version": 1,
   "fields": {
-    "note": {
-      "type": "string",
-      "label": "Note",
-      "description": "Unused: an app with settings shows Setup on its card.",
-      "default": "",
-      "max_length": 16
+    "location": {
+      "label": "Location",
+      "description": "In auto mode the place is resolved by the device address.",
+      "type": "geolocation",
+      "default": {
+        "mode": "auto",
+        "name": "Auto"
+      }
+    },
+    "units": {
+      "label": "Units",
+      "type": "enum",
+      "default": "celsius",
+      "options": [
+        { "value": "celsius", "label": "°C" },
+        { "value": "fahrenheit", "label": "°F" }
+      ]
+    },
+    "show_time": {
+      "label": "Show time",
+      "type": "boolean",
+      "default": true
+    },
+    "show_date": {
+      "label": "Show date",
+      "type": "boolean",
+      "default": true
     }
   }
 }

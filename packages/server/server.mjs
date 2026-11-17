@@ -41,17 +41,26 @@
 //   POST   /_emu/update?op=check|install[&pid=<the asking command's process>]
 // And a clip of the bar for a post (busy-emulator record; capture/record.mjs), which the app's window encodes:
 //   POST   /_emu/record?seconds=5&fps=30&layout=post   { file, frames, ... }: the clip, in the data folder's captures/
+// And the BUSY Bar's firmware (EMU-320; useFirmware below), which changes only the emulated BUSY Bar:
+//   GET    /_emu/firmware                 { firmware, firmwares, switching, pending, notice }: the one that runs, the
+//                                         others, and the one chosen for the next restart
+//   POST   /_emu/firmware  {"version": "latest" | "previous" | "<version>"}   the BUSY Bar restarts on that firmware;
+//                                         answered once it is up: { firmware, from, changed, ms, pending }
+//   POST   /_emu/firmware  {"version": ..., "when": "restart"}   the firmware is chosen for the BUSY Bar's next
+//                                         restart, whoever restarts it; answered at once: { firmware, pending, changed }.
+//                                         Asking for the one that runs clears the choice.
+// A refusal of these is { code, error, hint? } with a status of 4xx or 5xx, as /_emu/record's are.
 import { statSync } from "node:fs";
 import { createServer, STATUS_CODES } from "node:http";
 import { connect } from "node:net";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { barSpeed } from "./bar-speed.mjs";
-import { openDataFolder } from "./data-folder.mjs";
+import { openDataFolder, readChosenFirmware } from "./data-folder.mjs";
 import { Device } from "./device.mjs";
 import { attachDeviceWindow } from "./device-window.mjs";
 import { createEntryGuard } from "./entry-guard.mjs";
-import { loadFirmware } from "./firmware.mjs";
+import { firmwareChoices, loadFirmware } from "./firmware.mjs";
 import { createRecorder, RECORD_PATH, RECORD_STOP_PATH } from "./capture/record.mjs";
 
 /** Stage 2 of publishing, done by the app (POST /_emu/github). */
@@ -64,6 +73,18 @@ export const UPDATE_PATH = "/_emu/update";
 export const UPDATE_OPS = Object.freeze(["check", "install"]);
 /** The longest an update may take: the person's answer, then a download of some 250 MB. */
 const UPDATE_WAIT_MS = 30 * 60_000;
+/** The BUSY Bar's firmware (EMU-320): GET it, POST another. */
+export const FIRMWARE_PATH = "/_emu/firmware";
+/** How long a request that needs the BUSY Bar waits for a firmware switch to end before it is refused (firmware_switching). */
+const SWITCH_WAIT_MS = 30_000;
+/**
+ * How long a switch waits for a quiet moment before the BUSY Bar goes down: no request of the API under way (an install
+ * comes to its end first), and for an app staged without its install yet, STAGED_WAIT_MS more for the install.
+ */
+const DRAIN_MS = 10_000;
+const STAGED_WAIT_MS = 2000;
+/** The most a POST /_emu/firmware body may hold. */
+const FIRMWARE_BODY_MAX = 4096;
 import { createLocalAccess, LOCAL_PORTS_PATH, parseLocalPort } from "./local-access.mjs";
 import { localWeb } from "./local-web.mjs";
 import { apiDocs } from "./api-docs.mjs";
@@ -253,8 +274,8 @@ function someoneListens(port, signal) {
  * without an answer — as soon as this thread is free, which while the runtime compiles (a fraction of a second, once
  * per firmware in a process) is not at once.
  *
- * The data folder (data-folder.mjs, architecture.md section 4) holds a bar for each firmware, bar/<firmware>, whose
- * ext plays the bar's /ext: installed apps, their data and settings. One server uses a data folder at a time: the
+ * The data folder (data-folder.mjs, architecture.md section 4) holds one BUSY Bar, bar, whose ext plays the bar's
+ * /ext: installed apps, their data and settings, whatever the firmware. One server uses a data folder at a time: the
  * server takes its lock (run/server.lock) before the bar starts and lets go of it when it stops, and a second server
  * — in this process or another — is refused while the first runs. A lock left by a server that ended without
  * stopping (killed, crashed) is cleared by the next one, once it has made sure the process the lock names is gone or
@@ -270,7 +291,18 @@ function someoneListens(port, signal) {
  * @param {object} o
  * @param {string} o.dataDir the data folder. Made, for the user alone, if it is not there.
  * @param {number} [o.port] the port on 127.0.0.1; 0 takes a free one, which the result names. 8640 by default.
- * @param {string} [o.firmware] a version in packages/engine/firmware.json; its default version when left out
+ * @param {string} [o.firmware] a version in packages/engine/firmware.json, for this run: a switch (POST
+ *   /_emu/firmware) changes it, but it is not kept for the next start. Left out, the BUSY Bar runs the firmware it was
+ *   last switched to (bar/chosen-firmware.json in the data folder), and the latest (the default of firmware.json) when
+ *   none was chosen. A chosen one this emulator does not have or cannot start is replaced by the latest, and that is
+ *   said once: a line to `log`, and `notice` in GET /_emu/firmware and the window's hello for this run.
+ * @param {(event: object) => void} [o.onFirmware] told of the firmware, with what the window's "firmware" event
+ *   carries: { state: "pending", firmware, pending } when one is chosen for the next restart or the choice is
+ *   cleared, { state: "switching", from, to }, { state: "ready", firmware, from, pending } or { state: "failed",
+ *   firmware, to, code, error, hint, pending }. The desktop app's supervisor passes it to the shell.
+ * @param {number} [o.switchWaitMs] how long a request that needs the BUSY Bar waits for a switch; 30 s. For the tests.
+ * @param {number} [o.drainMs] how long a switch asked for now waits for the requests under way; 10 s. For the tests.
+ * @param {number} [o.stagedWaitMs] how long it waits for the install of a package staged before it; 2 s. For the tests.
  * @param {boolean} [o.barSpeed] apps run at a BUSY Bar's speed (bar-speed.mjs), which is the default; false lets
  *   them run as fast as the computer
  * @param {boolean} [o.verbose] API requests that the emulator has no answer for go to `log`
@@ -296,7 +328,8 @@ function someoneListens(port, signal) {
  *   carries the server's key, for a program in this process; the key itself is the value of no property, so that a
  *   result that is logged does not show it. Another process reads it from `dataFolder.keyFile` (readServerKey in
  *   server-key.mjs): written for the user alone before the server answers anybody, made anew at every start, removed
- *   by stop(). `barDir` is the bar's folder in the data folder, bar/<firmware>.
+ *   by stop(). `barDir` is the BUSY Bar's folder in the data folder, bar. `firmware` and `apiVersion` are those the
+ *   BUSY Bar runs now: they change with a switch.
  *   `dataFolder.created` says the folder was new (had no format record) and is made now. What a person should hear
  *   about the folder — a lock left by a server that did not stop was cleared, the file system does not keep the
  *   rights — goes to `log` during the start. `firmware` is what firmware.mjs's loadFirmware gives. stop()
@@ -305,7 +338,7 @@ function someoneListens(port, signal) {
  *   listening socket among its active resources for a few more turns of the event loop, longer on Windows; it does
  *   nothing and keeps nothing alive.) Calling it again gives the same promise.
  */
-export async function startServer({ dataDir, port = 8640, controlPort = 0, allowOrigins = [], windowOrigin = null, allowLocal = [], firmware: firmwareName, barSpeed: atBarSpeed = true, verbose = false, log = () => {}, onError = console.error, askPerson = null, trustRefusalPauseMs = TRUST_REFUSAL_PAUSE_MS, trustClock = Date.now, signal } = {}) {
+export async function startServer({ dataDir, port = 8640, controlPort = 0, allowOrigins = [], windowOrigin = null, allowLocal = [], firmware: firmwareName, barSpeed: atBarSpeed = true, verbose = false, log = () => {}, onError = console.error, askPerson = null, trustRefusalPauseMs = TRUST_REFUSAL_PAUSE_MS, trustClock = Date.now, onFirmware = () => {}, switchWaitMs = SWITCH_WAIT_MS, drainMs = DRAIN_MS, stagedWaitMs = STAGED_WAIT_MS, signal } = {}) {
   if (typeof dataDir !== "string" || !dataDir) throw new TypeError("startServer needs a data folder: { dataDir }");
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new RangeError(`The port must be a whole number from 0 to 65535, not ${port}`);
   if (!Number.isInteger(controlPort) || controlPort < 0 || controlPort > 65535) throw new RangeError(`The management port must be a whole number from 0 to 65535, not ${controlPort}`);
@@ -320,13 +353,20 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
     if (local === port || local === controlPort) throw new RangeError(`--allow-local ${local}: it is the port of the emulator's own ${local === port ? "BUSY Bar address" : "management address"}, which an app may never reach.`);
   }
   signal?.throwIfAborted();
-  const firmware = loadFirmware(firmwareName);
+  // One named for this run is checked before anything is touched; otherwise the data folder says which (below).
+  let firmware = firmwareName ? loadFirmware(firmwareName) : null;
+  // The firmwares of this emulator, and the API of each one's build, as they are for the whole run.
+  const choices = firmwareChoices();
+  const builds = new Map();
   const root = resolve(dataDir);
-  const speed = atBarSpeed ? barSpeed() : null;
-  // The firmware's local web, with its state stream's worker as a file of its own (local-web.mjs).
-  const web = localWeb(firmware);
-  // The bar's API documentation, /docs/ and /openapi.yaml (api-docs.mjs).
-  const docs = apiDocs(firmware);
+  // At the speed of the firmware the bar runs when the time is counted: a switch takes the other's model (bar-speed.mjs).
+  const speed = atBarSpeed ? barSpeed(() => device.firmware.name) : null;
+  // The firmware's local web, with its state stream's worker as a file of its own (local-web.mjs), and the bar's API
+  // documentation, /docs/ and /openapi.yaml (api-docs.mjs): the running firmware's, made anew by a switch.
+  let web = null;
+  let docs = null;
+  // What the person should hear once of the firmware this run started on (a chosen one replaced by the latest).
+  let notice = null;
 
   let device = null;
   let dataFolder = null;
@@ -371,6 +411,13 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
       target = new URL(req.url, `http://${req.headers.host}`);
     } catch {
       // Answered below, once the body has been taken in.
+    }
+    // While the BUSY Bar switches firmware, what needs it waits for it to be up (the device window's page and its
+    // stream of events do not: they go on across the switch). What goes on is counted, for the switch's quiet moment.
+    if (needsBar(target?.pathname ?? "")) {
+      if (holding && !(await barUp())) return answerEarly(req, switchingAnswer(), extra);
+      inFlight++;
+      res.once("close", () => inFlight--);
     }
     // A request that uploads a file is told from its headers how its body is taken in, or answered from them.
     let reception = null;
@@ -439,18 +486,34 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
 
   /**
    * The management address: the old /_emu/* paths, each for a program that sends the server's key, and nothing
-   * else. A body is not read: none of them takes one.
+   * else. A body is read only by POST /_emu/firmware, from a caller with the key; any other is dropped.
    */
   function respondControl(req, res, verdict) {
-    req.resume();
     try {
       // A preflight carries no key (a browser does not send it): it says what a page that may call here may send.
-      if (req.method === "OPTIONS" && verdict.cors.length) return preflight(res, verdict, "GET,POST", "Authorization");
+      if (req.method === "OPTIONS" && verdict.cors.length) return (req.resume(), preflight(res, verdict, "GET,POST", "Authorization, Content-Type"));
       if (!keyAuthorizes(req.headers.authorization, key)) {
+        req.resume();
         res.setHeader("WWW-Authenticate", 'Bearer realm="busy-emulator"');
         return send(res, jsonAnswer(401, { error: UNAUTHORIZED }));
       }
       const url = new URL(req.url, `http://${req.headers.host}`);
+      if (url.pathname === FIRMWARE_PATH) return void firmwareRequest(req, res).catch((e) => (onError(e), send(res, jsonAnswer(500, { error: String(e?.message ?? e) }))));
+      req.resume();
+      // What needs the BUSY Bar waits while it switches firmware, as on the BUSY Bar's address.
+      if (holding && url.pathname !== "/_emu/events" && (OLD_PATHS.has(url.pathname) || url.pathname === RECORD_PATH)) {
+        return void barUp().then((up) => (up ? routeControl(req, res, url, verdict) : send(res, switchingAnswer())));
+      }
+      return routeControl(req, res, url, verdict);
+    } catch (e) {
+      onError(e);
+      send(res, jsonAnswer(500, { error: String(e?.message ?? e) }));
+    }
+  }
+
+  /** The management address's paths, once the request has the key and the BUSY Bar is there. */
+  function routeControl(req, res, url, verdict) {
+    try {
       if (url.pathname === LOCAL_PORTS_PATH) return localPorts(req, res, url, verdict);
       if (url.pathname === TRUST_PATH) return void trustQuestion(req, res, url, verdict).catch((e) => (onError(e), send(res, jsonAnswer(500, { error: String(e?.message ?? e) }))));
       if (url.pathname === GITHUB_PATH) return void githubQuestion(req, res, url, verdict).catch((e) => (onError(e), send(res, jsonAnswer(500, { error: String(e?.message ?? e) }))));
@@ -578,7 +641,7 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
   }
 
   function newRecorder() {
-    return createRecorder({ device: { get running() { return device.running; }, get powered() { return device.powered; }, get screen() { return device.screen; }, manifest: (id) => device.manifest(id) }, dataDir: root, barSpeed: atBarSpeed, askShell: askPerson, log: (line) => device.log(line) });
+    return createRecorder({ device: { get running() { return device.running; }, get powered() { return device.powered; }, get screen() { return device.screen; }, get firmware() { return device.firmware; }, manifest: (id) => device.manifest(id) }, dataDir: root, barSpeed: atBarSpeed, askShell: askPerson, log: (line) => device.log(line) });
   }
 
   /**
@@ -803,7 +866,7 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
         // The system's clock (Unix ms), the GUI ticks it has carried out since the bar started and those it left out
         // after stalls: 125 ticks for every second of the clock (tick-clock.mjs). null while the bar is off.
         clock: device.screen.clockState?.() ?? null,
-        // The status lights: { preset, color, brightness }, as the device window's event "lights" has them.
+        // The status lights: { preset, color, brightness, elapsed, set? }, as the device window's event "lights" has them.
         lights: device.lightsState(),
       };
       return send(res, { status: 200, headers: [["Content-Type", "application/json"]], body: Buffer.from(JSON.stringify(state, null, 2)) });
@@ -814,6 +877,324 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
     }
     if (deviceWindow(req, res, url)) return;
     send(res, jsonAnswer(404, { error: "Not Found" }));
+  }
+
+  // ---------------------------------------------------------------- the firmware (EMU-320)
+  //
+  // A switch restarts the BUSY Bar on another firmware's modules in this process (Device.useFirmware): the ports, the
+  // key, the data folder's lock and every connection stay, the device window's stream and the state stream included.
+  // It goes in three steps. The target is loaded and its runtime compiled while the BUSY Bar still runs, so that a
+  // build that cannot start fails before anything stops. Then the switch waits for a quiet moment (quiet(): an
+  // install under way ends first) and from then on holds what needs the BUSY Bar (`holding`): a held request goes on
+  // once the BUSY Bar is up on the new firmware, its local web and documentation with it, or after switchWaitMs is
+  // refused with firmware_switching. Then the BUSY Bar restarts on the target; if its system does not come up, it
+  // restarts on the firmware it had, and the switch fails with firmware_start_failed.
+
+  // The switch under way, { to, done } from its start to its end; `holding`, from the quiet moment to the end, settles
+  // when it is over. Requests of the BUSY Bar's that are being answered now: the quiet moment is when there are none.
+  let switching = null;
+  let holding = null;
+  let inFlight = 0;
+  // The firmware chosen for the BUSY Bar's next restart (POST /_emu/firmware with "when": "restart"), as
+  // loadFirmware gives it, or null. Any restart applies it, whoever asks for it (the window, restart-bar, Back and
+  // Start held, the firmware's own supervisor after a fatal error): Device.reboot asks onRestart below, and the
+  // restart is the switch. It lives in this process only: one that no restart applied is dropped when the emulator
+  // quits, and the next start runs the firmware chosen last (bar/chosen-firmware.json), as before.
+  let pending = null;
+
+  const needsBar = (pathname) => !(pathname === "/emulator" || pathname.startsWith("/emulator/") || pathname === "/_emu/events");
+  const switchingAnswer = () => jsonAnswer(503, { code: "firmware_switching", error: `The emulated BUSY Bar is switching to firmware ${switching?.to ?? "another firmware"} and was not up again within ${Math.round(switchWaitMs / 1000)} s. Try again in a moment.` });
+
+  /** True once no switch holds the BUSY Bar, false when one still does after switchWaitMs. */
+  async function barUp() {
+    const deadline = Date.now() + switchWaitMs;
+    while (holding) {
+      const left = deadline - Date.now();
+      if (left <= 0) return false;
+      let timer;
+      const over = await Promise.race([holding.then(() => true), new Promise((resolve) => (timer = setTimeout(() => resolve(false), left)))]);
+      clearTimeout(timer);
+      if (!over) return false;
+    }
+    return true;
+  }
+
+  /** A firmware as the answers and events name it. */
+  const facts = (fw) => ({ version: fw.name, api: fw.apiVersion, commit: fw.info.firmware, alias: choices.aliasOf(fw.name), summary: fw.summary ?? null });
+  /** What the device window's hello says (device-window.mjs): the firmware that runs, and the rest of GET /_emu/firmware. */
+  const about = () => ({ ...firmwareNow(), firmware: { name: firmware.name, ...facts(firmware) } });
+  const tell = (event) => {
+    deviceWindow?.firmware(event);
+    try {
+      onFirmware(event);
+    } catch (e) {
+      onError(e);
+    }
+  };
+  const refusal = (status, code, error, hint, more = {}) => Object.assign(new Error(error), { status, code, hint, more });
+
+  const pendingFacts = () => (pending ? facts(pending) : null);
+
+  /** GET /_emu/firmware: the firmware that runs and those there are. */
+  function firmwareNow() {
+    const firmwares = choices.versions.map((version) => {
+      // Each build is looked at once a run: whether it is there and its API do not change while the emulator runs.
+      if (!builds.has(version)) {
+        let api = null;
+        try {
+          api = loadFirmware(version).apiVersion;
+        } catch {
+          // Not built in this copy of the emulator: it cannot be switched to.
+        }
+        builds.set(version, api);
+      }
+      const api = version === firmware.name ? firmware.apiVersion : builds.get(version);
+      return { version, api, alias: choices.aliasOf(version), summary: choices.summaryOf(version), news: choices.newsOf(version), running: version === firmware.name, available: api !== null };
+    });
+    return { firmware: facts(firmware), firmwares, switching: switching ? { to: switching.to } : null, pending: pendingFacts(), notice };
+  }
+
+  /** GET and POST /_emu/firmware (the file's head): answered with JSON, a refusal as { code, error, hint? }. */
+  async function firmwareRequest(req, res) {
+    if (req.method === "GET") {
+      req.resume();
+      return send(res, jsonAnswer(200, firmwareNow()));
+    }
+    if (req.method !== "POST") {
+      req.resume();
+      res.setHeader("Allow", "GET, POST");
+      return send(res, jsonAnswer(405, { code: "usage", error: "Method Not Allowed: GET /_emu/firmware reads the firmware, POST switches it." }));
+    }
+    const body = await receive(req, { limit: FIRMWARE_BODY_MAX });
+    if (body === undefined) return;
+    let asked = null;
+    try {
+      asked = JSON.parse(Buffer.from(body ?? []).toString("utf8"));
+    } catch {
+      // Said below.
+    }
+    const version = asked?.version;
+    const when = asked?.when ?? "now";
+    if (typeof version !== "string" || !version || !["now", "restart"].includes(when)) {
+      return send(res, jsonAnswer(400, { code: "usage", error: 'POST /_emu/firmware takes JSON: {"version": "latest"}, "previous" or a version this emulator has, and "when": "now" (the default) or "restart".' }));
+    }
+    try {
+      return send(res, jsonAnswer(200, when === "restart" ? await chooseForRestart(version) : await useFirmware(version, "asked by a program with the server's key")));
+    } catch (e) {
+      if (!e?.code || !e.status) throw e;
+      return send(res, jsonAnswer(e.status, { code: e.code, error: e.message, ...(e.hint ? { hint: e.hint } : {}), ...e.more }));
+    }
+  }
+
+  /**
+   * Switches the BUSY Bar to `wanted` ("latest", "previous" or a version): resolves with { firmware, from, changed,
+   * ms } once it is up on it, rejects with a refusal (status, code, message, hint). The one that runs already is no
+   * switch (changed: false). While a switch runs, asking for the same target waits for that switch; another target
+   * is refused.
+   */
+  function useFirmware(wanted, why) {
+    if (stopping) return Promise.reject(refusal(503, "stopped", "The emulator is stopping.", null));
+    let name;
+    try {
+      name = resolveFirmware(wanted);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    if (switching) {
+      if (switching.to === name) return switching.done;
+      return Promise.reject(busy(name));
+    }
+    // Asked for now: what was chosen for the next restart is not wanted any more.
+    if (pending && name === firmware.name) {
+      pending = null;
+      tell({ state: "pending", firmware: facts(firmware), pending: null });
+    }
+    if (name === firmware.name) return Promise.resolve({ firmware: facts(firmware), from: facts(firmware), changed: false, ms: 0, pending: null });
+    return startSwitch(name, why, { quiet: true });
+  }
+
+  /** The version `wanted` names (latest, previous or itself), or a refusal with firmware_unknown. */
+  function resolveFirmware(wanted) {
+    try {
+      return choices.resolve(wanted);
+    } catch (e) {
+      if (e?.code !== "unknown-firmware") throw e;
+      throw refusal(400, "firmware_unknown", e.message, null);
+    }
+  }
+  const busy = (name) => refusal(409, "firmware_switching", `The emulated BUSY Bar is switching to firmware ${switching.to} now.`, `Wait until it is up, then ask for firmware ${name} again.`);
+
+  function startSwitch(name, why, options) {
+    const entry = { to: name, done: null };
+    switching = entry;
+    entry.done = switchTo(name, why, options).finally(() => {
+      if (switching === entry) switching = null;
+    });
+    return entry.done;
+  }
+
+  /**
+   * POST /_emu/firmware with "when": "restart": `wanted` is the firmware of the BUSY Bar's next restart, which goes on
+   * running as it is. The one that runs clears the choice. A build that cannot be loaded is refused now, not at the
+   * restart. Answers { firmware, pending, changed: false }; every window hears { state: "pending", firmware, pending }.
+   */
+  async function chooseForRestart(wanted) {
+    if (stopping) throw refusal(503, "stopped", "The emulator is stopping.", null);
+    const name = resolveFirmware(wanted);
+    if (switching) throw busy(name);
+    const before = pending?.name ?? null;
+    if (name === firmware.name) pending = null;
+    else {
+      let next;
+      try {
+        next = loadFirmware(name);
+        // Compiled now, so that the restart does not wait for it.
+        await loadRuntime(next);
+      } catch (e) {
+        throw refusal(500, "firmware_start_failed", `Firmware ${name} cannot start: ${e?.message ?? e}`, `Nothing is chosen for the restart${pending ? ` but firmware ${pending.name}, as before` : ""}.`, { firmware: facts(firmware), pending: pendingFacts() });
+      }
+      if (switching) throw busy(name);
+      // A switch now may have ended meanwhile, on this very firmware: then there is nothing to wait for.
+      pending = next.name === firmware.name ? null : next;
+    }
+    if ((pending?.name ?? null) !== before) {
+      device.log(pending ? `Firmware ${pending.name} is chosen for the BUSY Bar: it runs it from its next restart` : `No firmware waits for the BUSY Bar's restart any more: it stays on firmware ${firmware.name}`);
+      tell({ state: "pending", firmware: facts(firmware), pending: pendingFacts() });
+    }
+    return { firmware: facts(firmware), pending: pendingFacts(), changed: false };
+  }
+
+  /** Device.reboot's question: a restart with a firmware chosen for it is that firmware's switch (one restart). */
+  function onRestart(why) {
+    if (!pending || switching || stopping) return null;
+    const boots = device.boots;
+    // A switch that failed before the BUSY Bar went down leaves it running: the restart asked for is still done.
+    return startSwitch(pending.name, `the BUSY Bar restarts: ${why}`, { quiet: false }).catch(() => (device.boots === boots ? device.reboot(why) : undefined));
+  }
+
+  /**
+   * The switch itself. `quiet`: wait for the quiet moment first (a switch asked for now); a restart that applies the
+   * firmware chosen for it does not wait, as a restart does not (and the request that asked for it is one under way).
+   */
+  async function switchTo(name, why, { quiet: waitForQuiet }) {
+    // Whatever comes of it, the choice for the restart is used up: a firmware that fails is not tried at every restart.
+    pending = null;
+    const from = firmware;
+    const began = performance.now();
+    const failed = (e, stays) => {
+      const error = `Firmware ${name} cannot start: ${e?.message ?? e}`;
+      const hint = device.powered ? `The BUSY Bar runs firmware ${stays.name} as before.` : "The BUSY Bar is off; press one of its buttons to turn it on.";
+      tell({ state: "failed", firmware: facts(stays), to: { version: name }, code: "firmware_start_failed", error, hint, pending: null });
+      return refusal(500, "firmware_start_failed", error, hint, { firmware: facts(stays) });
+    };
+    let next;
+    let nextWeb;
+    let nextDocs;
+    try {
+      next = loadFirmware(name);
+      await loadRuntime(next);
+      nextWeb = localWeb(next);
+      nextDocs = apiDocs(next);
+    } catch (e) {
+      device.log(`The BUSY Bar stays on firmware ${from.name}: firmware ${name} cannot start (${e?.message ?? e}).`, "error");
+      throw failed(e, from);
+    }
+    if (stopping) throw refusal(503, "stopped", "The emulator is stopping.", null);
+    tell({ state: "switching", from: facts(from), to: facts(next) });
+    device.log(`The BUSY Bar switches to firmware ${name} (${why})`);
+    let over;
+    const hold = () => (holding = new Promise((resolve) => (over = resolve)));
+    if (waitForQuiet) await quiet(hold);
+    else hold();
+    try {
+      await device.useFirmware(next);
+      if (stopping) throw new Error("the emulator is stopping");
+    } catch (e) {
+      holding = null;
+      over();
+      if (stopping) throw refusal(503, "stopped", "The emulator is stopping.", null);
+      device.log(device.powered ? `Firmware ${name} did not start (${e?.message ?? e}); the BUSY Bar runs firmware ${from.name} again.` : `Firmware ${name} did not start (${e?.message ?? e}).`, "error");
+      throw failed(e, from);
+    }
+    firmware = next;
+    web = nextWeb;
+    docs = nextDocs;
+    notice = null;
+    holding = null;
+    over();
+    for (const note of web.notes) log(note);
+    try {
+      dataFolder.chooseFirmware(next.name);
+      dataFolder.updateRecord({ firmware: next.name, apiVersion: next.apiVersion });
+    } catch (e) {
+      device.log(`The choice of firmware ${next.name} could not be kept in the data folder (${e?.code ?? e?.message ?? e}): the next start runs the one it ran before.`, "warn");
+    }
+    device.log(`The BUSY Bar runs firmware ${next.name} now`);
+    const answer = { firmware: facts(next), from: facts(from), changed: true, ms: Math.round(performance.now() - began), pending: null };
+    tell({ state: "ready", firmware: answer.firmware, from: answer.from, pending: null });
+    return answer;
+  }
+
+  /**
+   * Waits for the switch's quiet moment, then calls `hold` in the same turn: no request of the BUSY Bar's under way,
+   * and no app staged without its install (busy-cli sends the install right after the package). Not longer than
+   * drainMs; then the uploads still under way are undone, as a stop does.
+   */
+  async function quiet(hold) {
+    const deadline = Date.now() + drainMs;
+    let stagedSince = null;
+    for (;;) {
+      const staged = !!device.staged && inFlight === 0;
+      if (staged) stagedSince ??= Date.now();
+      else stagedSince = null;
+      const waiting = inFlight > 0 || (staged && Date.now() - stagedSince < stagedWaitMs);
+      if (!waiting || Date.now() >= deadline || stopping) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    hold();
+    if (inFlight > 0 && uploads.size) {
+      device.log(`An upload to the BUSY Bar did not end within ${drainMs / 1000} s of the firmware switch: it is undone.`, "warn");
+      for (const upload of uploads) upload.abort();
+    }
+  }
+
+  /**
+   * The firmware the data folder says the BUSY Bar was last switched to (read before its lock is taken, so that the
+   * lock names the firmware from the start), or the latest when it says none. One this emulator does not have, or
+   * cannot load, gives the latest: `notice` says so for this run (the window's console shows it), and the latest is
+   * kept in its place once the folder is the server's (`keepLatest`), so that the next start says nothing. One that
+   * loads but does not start is the same (startBar below), and is `fromChoice` meanwhile.
+   */
+  let keepLatest = false;
+  let fromChoice = false;
+  function chosenFirmware() {
+    const chosen = readChosenFirmware(root);
+    let why = chosen.problem;
+    if (chosen.version && !choices.versions.includes(chosen.version)) why = `this emulator does not have firmware ${chosen.version}`;
+    else if (chosen.version) {
+      try {
+        const loaded = loadFirmware(chosen.version);
+        fromChoice = loaded.name !== choices.latest;
+        return loaded;
+      } catch (e) {
+        why = `firmware ${chosen.version} cannot start: ${e?.message ?? e}`;
+      }
+    }
+    if (why) fallBack(why, chosen.version);
+    return loadFirmware(choices.latest);
+  }
+  function fallBack(why, version) {
+    notice = `The BUSY Bar runs firmware ${choices.latest}, the latest: ${why}.${version ? ` It ran ${version} before.` : ""}`;
+    keepLatest = true;
+  }
+
+  /** The BUSY Bar comes up on `firmware`: its runtime compiled, its system started and its first frame drawn. */
+  async function startBar() {
+    await loadRuntime(firmware);
+    signal?.throwIfAborted();
+    device = new Device({ dataDir: dataFolder.barDir, speed, firmware, log, localAccess, barAddress: () => `http://${HOST}:${bar.port}` });
+    device.onRestart = onRestart;
+    await device.start();
   }
 
   // The ports are taken before the bar starts, but until the bar is up nobody is answered: a connection made meanwhile
@@ -891,11 +1272,8 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
     })();
     await listening;
     signal?.throwIfAborted();
-    // The runtime's wasm is compiled here rather than when the first app starts.
-    await loadRuntime(firmware);
-    signal?.throwIfAborted();
+    firmware ??= chosenFirmware();
     dataFolder = await openDataFolder(root, {
-      firmware: firmware.name,
       record: {
         port: bar.port, url: `http://${HOST}:${bar.port}`, control: { port: control.port, url: `http://${HOST}:${control.port}` },
         firmware: firmware.name, apiVersion: firmware.apiVersion,
@@ -903,8 +1281,8 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
       signal,
     });
     // A lock cleared, rights the file system does not keep: for a person, with what the bar says.
-    for (const notice of dataFolder.notices) log(notice);
-    for (const note of web.notes) log(note);
+    for (const line of dataFolder.notices) log(line);
+    if (keepLatest) dataFolder.chooseFirmware(choices.latest);
     signal?.throwIfAborted();
     // A new key for every start: the folder is this server's now, and nobody is answered before the key is there.
     key = createServerKey();
@@ -918,10 +1296,29 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
     if (!kept && dataFolder.rightsKept) {
       log(`The file system of ${root} did not keep the rights of the server's key ${keyFile}: other users of this computer may read it. Keep the data folder on the system disk.`);
     }
-    device = new Device({ dataDir: dataFolder.barDir, speed, firmware, log, localAccess, barAddress: () => `http://${HOST}:${bar.port}` });
-    await device.start();
+    // The runtime's wasm is compiled here rather than when the first app starts.
+    try {
+      await startBar();
+    } catch (e) {
+      // The firmware chosen last does not start (its runtime does not compile, its system draws no first frame): the
+      // latest does, or the shell would start this server again and again until it gives up.
+      if (!fromChoice || signal?.aborted) throw e;
+      await device?.close();
+      device = null;
+      fallBack(`firmware ${firmware.name} did not start: ${e?.message ?? e}`, firmware.name);
+      dataFolder.chooseFirmware(choices.latest);
+      firmware = loadFirmware(choices.latest);
+      dataFolder.updateRecord({ firmware: firmware.name, apiVersion: firmware.apiVersion });
+      await startBar();
+    }
     signal?.throwIfAborted();
-    deviceWindow = attachDeviceWindow(device, { apiVersion: firmware.apiVersion });
+    web = localWeb(firmware);
+    docs = apiDocs(firmware);
+    for (const note of web.notes) log(note);
+    deviceWindow = attachDeviceWindow(device, { about });
+    // In the console of every window too (after the window's part is there, which keeps the lines a window gets when it
+    // opens): a person who did not read the log learns it there.
+    if (notice) device.log(notice, "warn");
     // The state stream is the bar's; the management address takes no WebSocket.
     stateStream = attachStateStream(bar.server, device, { admit: (req) => guard.admit(bar, req) });
     control.server.on("upgrade", (req, socket) => {
@@ -947,7 +1344,13 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
     control: { port: control.port, url: `http://${HOST}:${control.port}` }, controlHeaders,
     dataDir: root, barDir: dataFolder.barDir,
     dataFolder: { format: dataFolder.format, created: dataFolder.created, lockFile: dataFolder.lockFile, keyFile },
-    firmware, apiVersion: firmware.apiVersion, barSpeed: atBarSpeed,
+    get firmware() {
+      return firmware;
+    },
+    get apiVersion() {
+      return firmware.apiVersion;
+    },
+    barSpeed: atBarSpeed,
     localPorts: () => localAccess.ports(), stop,
   };
 }

@@ -3,6 +3,13 @@
 //   /api/assets/upload  web_server/http_api/api_assets.c
 //   /api/log_dump       web_server/http_api/api_log.c
 // The same paths, checks, status codes and texts. The files are the emulator's data folder (device.mjs).
+//
+// A request an app makes (the header js_fetch.c adds, x-busybar-fetch: js) reaches /api/storage only where the
+// firmware's allowlist lets it (device.mjs, appAllowlist in build-info.json): from 1.4.1 on (2fe36de1, FW-1219), not
+// on 1.3.1, which refuses it with 403 before it gets here. Such a request works in the app's own folder: by the
+// firmware's code, a path must name /ext/data, which stands for /ext/apps_data/js_apps/<id of the running app>, and
+// anything else is 400. The firmware's own test of that refusal is skipped (FW-1271); what is done here is what its
+// code says, not checked on a BUSY Bar.
 import { closeSync, existsSync, mkdirSync, openSync, renameSync, rmdirSync, rmSync, statSync, statfsSync, truncateSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -17,15 +24,47 @@ function sane(path) {
   return !path.startsWith("~") && !path.startsWith("..") && !/[/\\]\.\./.test(path);
 }
 
+// lib/js_app/js_app_common.h (1.4.1): what an app names its folder by, and where the folders are.
+const APP_DATA_MOUNT = "/ext/data";
+const APP_DATA_PREFIX = "/ext/apps_data/js_apps";
+
 /**
  * api_storage_parse_path_parameter(): the query's parameter as a path on /ext, without a trailing slash; null if it
- * is missing, empty, too long, not sane or not on /ext.
+ * is missing, empty, too long, not sane or not on /ext. `app` is undefined for a request that is not an app's; for
+ * an app's, the id of the app that runs, or null when none does (then null: "API request from JS, but no app is
+ * running"). An app's path is translated to its folder (inAppFolder), which is made if it is not there.
  */
-function pathParameter(query, name) {
+function pathParameter(device, query, name, app) {
+  if (app === null) return null;
   let path = query.get(name);
   if (!path || Buffer.byteLength(path) >= FILE_PATH_LEN_MAX) return null;
   if (path.endsWith("/")) path = path.slice(0, -1);
-  return sane(path) && path.startsWith("/ext") ? path : null;
+  if (!sane(path)) return null;
+  if (app === undefined) return path.startsWith("/ext") ? path : null;
+  const translated = inAppFolder(path, app);
+  // js_app_launcher_ensure_app_directories(): storage_simply_mkpath of the app's folder, on every request.
+  const folder = translated && device.local(`${APP_DATA_PREFIX}/${app}`);
+  if (!folder) return null;
+  try {
+    mkdirSync(folder, { recursive: true });
+  } catch {
+    return null;
+  }
+  return translated;
+}
+
+/**
+ * js_app_launcher_translate_path() with lib/toolbox/path.c's path_replace_prefix(): /ext/data and what is under it as
+ * the app's folder, /ext/apps_data/js_apps/<app>; null for any other path (/ext/database too).
+ */
+function inAppFolder(path, app) {
+  if (!path.startsWith(APP_DATA_MOUNT)) return null;
+  const rest = path.slice(APP_DATA_MOUNT.length);
+  const folder = `${APP_DATA_PREFIX}/${app}`;
+  if (rest === "") return folder;
+  if (!rest.startsWith("/")) return null;
+  // path_cleanup(): white space off both ends (furi_string_trim), then the slashes at the end.
+  return `${folder}${rest}`.replace(/^[ \n\r\t]+|[ \n\r\t]+$/g, "").replace(/\/+$/, "");
 }
 
 // The files that uploads have open for writing right now, by fileKey. The bar's file system does not tell letter
@@ -116,9 +155,9 @@ function upload(device, path, body, append) {
  * on_headers callbacks find it (api_storage_write_headers_callback, api_assets_upload_headers_callback): { path,
  * append }, or null for a query they answer 400.
  */
-export function uploadTarget(route, query) {
+export function uploadTarget(device, route, query, app) {
   if (route === "storage/write") {
-    const path = pathParameter(query, "path");
+    const path = pathParameter(device, query, "path", app);
     // api_storage_parse_append_parameter(): "0" or "1" if it is there at all.
     const append = query.get("append");
     if (!path || (append !== null && append !== "0" && append !== "1")) return null;
@@ -128,8 +167,10 @@ export function uploadTarget(route, query) {
   return path ? { path, append: false } : null;
 }
 
-/** /api/storage/<what>. Returns the response, or null if the path is not the storage API's. */
-export function storageApi(device, method, what, query, body) {
+/**
+ * /api/storage/<what>. Returns the response, or null if the path is not the storage API's. `app`: see pathParameter.
+ */
+export function storageApi(device, method, what, query, body, app) {
   // The methods each handler takes, as its HttpHandler says; anything else is 405 with them.
   const methods = { write: "POST", read: "GET", remove: "DELETE", mkdir: "POST", rename: "POST", list: "GET", status: "GET" };
   if (!(what in methods)) return null;
@@ -139,11 +180,14 @@ export function storageApi(device, method, what, query, body) {
 
   switch (what) {
     case "write": {
-      const target = uploadTarget("storage/write", query);
-      return target ? upload(device, target.path, body, target.append) : badRequest();
+      const target = uploadTarget(device, "storage/write", query, app);
+      // A write the bar refuses is answered twice: by the on_headers callback (MG_REPLY_ERROR_CLOSE) and again by the
+      // on_request one (MG_REPLY_BAD_REQUEST), both 400 on one connection (recorded on 1.4.1; test/app-storage.mjs).
+      // An app's fetch then counts more bytes than Content-Length (runtime.mjs, localFetch).
+      return target ? upload(device, target.path, body, target.append) : { ...badRequest(), repliedTwice: true };
     }
     case "read": {
-      const path = pathParameter(query, "path");
+      const path = pathParameter(device, query, "path", app);
       const data = path && device.readFile(path);
       if (!data) return badRequest();
       const name = path.slice(path.lastIndexOf("/") + 1);
@@ -152,21 +196,22 @@ export function storageApi(device, method, what, query, body) {
     }
     case "remove": {
       // storage_simply_remove_recursive(): what is not there is removed too.
-      const path = pathParameter(query, "path");
+      const path = pathParameter(device, query, "path", app);
       if (!path || !device.local(path)) return badRequest();
       device.removePath(path);
       return ok();
     }
     case "mkdir": {
       // storage_simply_mkpath(): every folder on the way; one that is already there is fine.
-      const local = device.local(pathParameter(query, "path") ?? "");
+      const local = device.local(pathParameter(device, query, "path", app) ?? "");
       if (!local || (existsSync(local) && !statSync(local).isDirectory())) return badRequest();
       mkdirSync(local, { recursive: true });
       return ok();
     }
     case "rename": {
-      const from = device.local(pathParameter(query, "path") ?? "");
-      const to = device.local(pathParameter(query, "new_path") ?? "");
+      // An app's both paths are in its own folder.
+      const from = device.local(pathParameter(device, query, "path", app) ?? "");
+      const to = device.local(pathParameter(device, query, "new_path", app) ?? "");
       if (!from || !to || !existsSync(from)) return badRequest();
       try {
         // storage_common_rename() replaces what has the new name.
@@ -179,7 +224,7 @@ export function storageApi(device, method, what, query, body) {
       return ok();
     }
     case "list": {
-      const path = pathParameter(query, "path");
+      const path = pathParameter(device, query, "path", app);
       const local = path && device.local(path);
       const entries = path && device.listDir(path);
       if (!entries) return badRequest();
@@ -216,7 +261,7 @@ function assetsFile(query) {
 /** POST and DELETE /api/assets/upload: a file for an app's folder on /ext/user_assets, and the folder's removal. */
 export function assetsApi(device, method, query, body) {
   if (method === "POST") {
-    const target = uploadTarget("assets/upload", query);
+    const target = uploadTarget(device, "assets/upload", query);
     return target ? upload(device, target.path, body, false) : badRequest();
   }
   if (method === "DELETE") {

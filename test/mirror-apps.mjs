@@ -1,11 +1,10 @@
 // Copies the apps installed on a bar into an emulator data folder, so that the apps menu lists the same apps on both
 // (golden frames of the system screens need that). Reads the bar only.
 //
-//   node emulator/test/mirror-apps.mjs [--bar 10.0.4.20] [--data emulator/.data-golden] [--firmware 1.3.1]
+//   node emulator/test/mirror-apps.mjs [--bar 10.0.4.20] [--data emulator/.data-golden]
 //
-// The apps go to the bar of every firmware the emulator has (bar/<firmware>/ext in the data folder, EMU-005), or of the
-// one --firmware names, so that the same folder serves `--firmware dev` too.
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// The apps go to the emulated BUSY Bar of the data folder (bar/ext, EMU-318), which every firmware runs with.
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,15 +12,14 @@ import { commandLine } from "../packages/server/arguments.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
-await commandLine(process.argv, { values: ["--bar", "--data", "--firmware"] });
+await commandLine(process.argv, { values: ["--bar", "--data"] });
 const option = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : fallback;
 };
 const bar = option("--bar", "10.0.4.20");
 const data = resolve(option("--data", join(here, "../.data-golden")));
-const firmwares = option("--firmware") ? [option("--firmware")] : Object.keys(JSON.parse(readFileSync(join(here, "../packages/engine/firmware.json"), "utf8")).versions);
-const bars = firmwares.map((firmware) => join(data, "bar", firmware));
+const bars = [join(data, "bar")];
 
 async function list(path) {
   const r = await fetch(`http://${bar}/api/storage/list?path=${encodeURIComponent(path)}`);

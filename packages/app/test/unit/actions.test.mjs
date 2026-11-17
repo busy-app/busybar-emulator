@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFi
 import path from "node:path";
 import { after, test } from "node:test";
 
-import { createActions, createRequest, GENERIC_AUTHORS, genericAuthor, NAME_CHECK_KEEP_MS, NAME_CHECKS_A_MINUTE, NAME_CHECKS_AN_HOUR, gitAuthor, iconPicture, MAX_COPY, maybeLaunched, namespaceOf, newAppAuthor, NO_GESTURE_NEEDED, showPath, shownCliPath, WINDOW_ACTIONS } from "../../src/actions.mjs";
+import { createActions, createRequest, manifestFacts, GENERIC_AUTHORS, genericAuthor, NAME_CHECK_KEEP_MS, NAME_CHECKS_A_MINUTE, NAME_CHECKS_AN_HOUR, gitAuthor, iconPicture, MAX_COPY, maybeLaunched, namespaceOf, newAppAuthor, NO_GESTURE_NEEDED, showPath, shownCliPath, WINDOW_ACTIONS } from "../../src/actions.mjs";
 import { createSettings } from "../../src/update-check.mjs";
 import { cliEnvironment } from "../../src/cli-process.mjs";
 import { removeFolder, sleep, temporaryFolder } from "../helpers.mjs";
@@ -25,7 +25,7 @@ const entry = (folder, more = {}) => ({ id: "app.you.clock", name: "Clock", fold
  * A stand-in for the command line: `answers(words)` gives the one line of JSON for a call (or a function of the run,
  * for a call that goes on); every call is kept.
  */
-function setup({ projects = [entry(CLOCK)], answers = () => ({ ok: true }), choose = {}, folderThere, platform = "darwin", newProjects = null, github = null, now = undefined, author = () => "Jane Doe" } = {}) {
+function setup({ projects = [entry(CLOCK)], answers = () => ({ ok: true }), choose = {}, folderThere, platform = "darwin", newProjects = null, github = null, now = undefined, author = () => "Jane Doe", control = null, bar = null } = {}) {
   const calls = [];
   const runs = [];
   const sent = [];
@@ -66,6 +66,8 @@ function setup({ projects = [entry(CLOCK)], answers = () => ({ ok: true }), choo
     author,
     ...(github ? { github } : {}),
     ...(now ? { now } : {}),
+    ...(control ? { control } : {}),
+    ...(bar ? { bar } : {}),
   });
   const call = async (name, arg) => {
     const answer = await actions.call(name, arg);
@@ -243,7 +245,7 @@ test("open: the folder is the person's choice; the command line asks for trust a
   quiet.state.removed = [{ id: "app.you.clock", folder: CLOCK, uninstalled: false }];
   await quiet.call("projects.list");
   assert.deepEqual(quiet.sent.map((job) => [job.kind, job.line]), [["removed", "The project left the list: its folder is gone."]]);
-  assert.deepEqual(NO_GESTURE_NEEDED, ["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.cancel", "github.checklist", "github.entry", "github.lookup"]);
+  assert.deepEqual(NO_GESTURE_NEEDED, ["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.cancel", "github.checklist", "github.entry", "github.lookup", "firmware.forget"]);
 
   const refused = setup({ choose: { open: CLOCK }, answers: () => ({ ok: false, code: "trust_refused", message: "The person chose Don't Trust." }) });
   assert.equal(await refused.call("projects.open"), null);
@@ -1240,4 +1242,107 @@ test("stale-check: Publish to GitHub and Send to catalog ask publish verify firs
   verify = { ok: true, checked: true, files: {} };
   await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "none", changelog: "Alarms, and a dimmer." });
   assert.ok(it.work().includes(`publish verify ${CLOCK} --renew=catalog.json --json`), it.work().join("\n"));
+});
+
+test("firmware.use (EMU-322): the server's management address is asked, its refusals are the page's, and a run follows only a switch made now", async () => {
+  const asked = [];
+  const launched = [];
+  let refuse = null;
+  const control = {
+    send: async (method, pathname, json) => {
+      asked.push([method, pathname, json]);
+      if (refuse) return { status: 409, body: JSON.stringify(refuse) };
+      const firmware = { version: json.version, api: "27.14.0" };
+      return { status: 200, body: JSON.stringify(json.when === "restart" ? { firmware: { version: "1.4.1" }, pending: firmware, changed: false } : { firmware, from: { version: "1.4.1" }, changed: true, ms: 900, pending: null }) };
+    },
+  };
+  const bar = { send: async (method, pathname) => (launched.push(`${method} ${pathname}`), { status: 200, body: "{}" }) };
+  const { call, work } = setup({ control, bar, answers: (words) => (words[0] === "dev" ? { ok: true, id: "app.you.clock", running: true } : { ok: true }) });
+
+  assert.deepEqual(await call("firmware.use", { version: "1.3.1", when: "restart" }), { ok: true, firmware: { version: "1.4.1" }, pending: { version: "1.3.1", api: "27.14.0" }, changed: false });
+  const now = await call("firmware.use", { version: "1.3.1", when: "now", run: { id: "app.you.weather" } });
+  assert.equal(now.ok, true);
+  assert.deepEqual(now.ran, { ok: true, message: "app.you.weather is running." });
+  assert.deepEqual(launched, ["POST /api/apps/launch?app_id=app.you.weather"]);
+  const refreshed = await call("firmware.use", { version: "1.4.1", when: "now", run: { folder: CLOCK } });
+  assert.equal(refreshed.ran.ok, true);
+  assert.deepEqual(work(), [`dev ${CLOCK} --once --json --progress`], "the Refresh after the switch");
+  assert.deepEqual(asked.map(([method, pathname, json]) => [method, pathname, json.version, json.when]), [["POST", "/_emu/firmware", "1.3.1", "restart"], ["POST", "/_emu/firmware", "1.3.1", "now"], ["POST", "/_emu/firmware", "1.4.1", "now"]]);
+
+  // Refused before anything is asked: a bad version, a run with a choice for the restart, a folder not in the list.
+  for (const arg of [{ version: "../1.3.1" }, { version: "1.3.1", when: "later" }, { version: "1.3.1", when: "restart", run: { id: "a.b" } }, { version: "1.3.1", run: { id: "no spaces" } }, null]) {
+    assert.equal((await call("firmware.use", arg)).rejected?.code, "usage", JSON.stringify(arg));
+  }
+  assert.equal((await call("firmware.use", { version: "1.3.1", run: { folder: "/not/a/project" } })).code, "unknown_project");
+  assert.equal(asked.length, 3);
+  // The server's refusal, in its words.
+  refuse = { code: "firmware_switching", error: "The emulated BUSY Bar is switching to firmware 1.3.1 now.", hint: "Wait until it is up, then ask for firmware 1.4.1 again." };
+  assert.deepEqual(await call("firmware.use", { version: "1.4.1", run: { id: "app.you.weather" } }), { ok: false, code: "firmware_switching", message: refuse.error, hint: refuse.hint });
+  assert.equal(launched.length, 1, "nothing runs after a switch that was refused");
+  // Without the management address (a browser's page has no bridge; a shell without it says so).
+  assert.equal((await setup().call("firmware.use", { version: "1.4.1" })).code, "unavailable");
+});
+
+test("a package for a newer API than the BUSY Bar's is refused before the question, kept, and installed after a switch made now (EMU-322)", async () => {
+  const file = path.join(root, "weather.tgz");
+  writeFileSync(file, "the package's bytes");
+  let api = "27.14.0";
+  const sent = [];
+  const questions = [];
+  const bar = {
+    send: async (method, pathname, body) => {
+      sent.push(`${method} ${pathname}`);
+      if (pathname === "/api/version") return { status: 200, body: JSON.stringify({ api_semver: api }) };
+      if (pathname === "/api/apps/stage") return { status: 200, body: JSON.stringify({ install_key: 7, staged: { id: "app.them.weather" }, bytes: String(body) }) };
+      return { status: 200, body: "{}" };
+    },
+  };
+  const control = { send: async (_method, _pathname, json) => ((api = "27.15.0"), { status: 200, body: JSON.stringify({ firmware: { version: json.version, api }, changed: true }) }) };
+  const startCli = (args) => {
+    const line = JSON.stringify({ ok: true, id: "app.them.weather", name: "Weather", version: "0.2.0", api_version: "27.15.0", notes: [] });
+    return { pid: 1, args, exited: Promise.resolve({ code: 0, signal: null, error: null, lines: [line] }), interrupt: () => {}, killNow: () => {} };
+  };
+  const actions = createActions({ startCli, dialogs: { choosePackage: async () => file }, show: () => {}, copy: () => {}, send: () => {}, dataDir: DATA, logFile: "/data/logs/shell.log", log: () => {}, bar, control, confirm: async (question) => (questions.push(question.about), "yes") });
+  const refused = (await actions.call("projects.package.install")).value;
+  assert.deepEqual([refused.ok, refused.code, refused.app], [false, "api_mismatch", { id: "app.them.weather", name: "Weather", api_version: "27.15.0" }]);
+  assert.match(refused.message, /^Weather needs API 27\.15\.0, newer than the emulated BUSY Bar's \(27\.14\.0\)\.$/);
+  assert.deepEqual([questions.length, sent], [0, ["GET /api/version"]], "nobody is asked, nothing is sent");
+  const switched = (await actions.call("firmware.use", { version: "1.4.1", run: { refused: true } })).value;
+  assert.equal(switched.ok, true);
+  assert.equal(switched.ran.ok, true, JSON.stringify(switched.ran));
+  assert.equal(questions.length, 1, "asked before the install, as always");
+  assert.deepEqual(sent.filter((one) => one.startsWith("POST")), ["POST /api/apps/stage", "POST /api/apps/install?install_key=7", "POST /api/apps/launch?app_id=app.them.weather"]);
+  // Kept for one install only: a second Switch and run is refused before any switch.
+  const before = sent.length;
+  assert.equal((await actions.call("firmware.use", { version: "1.4.1", run: { refused: true } })).value.code, "usage");
+  assert.equal(sent.length, before, "nothing sent: no switch, no install");
+});
+
+test("a project's manifest and its api_version are read only from its own files: no link on the way, nothing larger than a manifest (EMU-322)", { skip: process.platform === "win32" && "links need rights on Windows" }, async () => {
+  const { symlinkSync } = await import("node:fs");
+  const made = (name) => {
+    const dir = path.join(root, name);
+    mkdirSync(path.join(dir, "src", "appmeta"), { recursive: true });
+    return dir;
+  };
+  const plain = made("manifest-plain");
+  writeFileSync(path.join(plain, "src", "appmeta", "manifest.json"), JSON.stringify({ api_version: "27.15.0" }));
+  assert.deepEqual(manifestFacts(plain), { manifest: path.join(plain, "src", "appmeta", "manifest.json"), api_version: "27.15.0" });
+  // The folder src a link to elsewhere, or the file itself one: not read.
+  const elsewhere = made("manifest-elsewhere");
+  writeFileSync(path.join(elsewhere, "src", "appmeta", "manifest.json"), JSON.stringify({ api_version: "27.15.0" }));
+  const linkedFolder = path.join(root, "manifest-linked-folder");
+  mkdirSync(linkedFolder);
+  symlinkSync(path.join(elsewhere, "src"), path.join(linkedFolder, "src"));
+  assert.deepEqual(manifestFacts(linkedFolder), { manifest: null, api_version: null });
+  const linkedFile = made("manifest-linked-file");
+  symlinkSync(path.join(elsewhere, "src", "appmeta", "manifest.json"), path.join(linkedFile, "src", "appmeta", "manifest.json"));
+  assert.deepEqual(manifestFacts(linkedFile), { manifest: null, api_version: null });
+  // Not a version: the file is named, its API is not.
+  const odd = made("manifest-odd");
+  writeFileSync(path.join(odd, "src", "appmeta", "manifest.json"), JSON.stringify({ api_version: "latest" }));
+  assert.deepEqual(manifestFacts(odd).api_version, null);
+  const big = made("manifest-big");
+  writeFileSync(path.join(big, "src", "appmeta", "manifest.json"), JSON.stringify({ api_version: "27.15.0", pad: "x".repeat(70_000) }));
+  assert.deepEqual(manifestFacts(big), { manifest: null, api_version: null });
 });

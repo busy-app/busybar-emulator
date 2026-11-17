@@ -2,6 +2,67 @@
 
 What changes in each release of BUSY Bar Emulator. The newest release is first.
 
+## 0.1.0-beta.6
+
+The emulated BUSY Bar runs firmware 1.4.1, and switches to 1.3.1 and back while it runs.
+
+Firmware:
+
+- Firmware 1.4.1 (API 27.15.0) is the default. 1.3.1 (API 27.14.0) stays for BUSY Bars that have not updated.
+- For apps, 1.4.1 adds `/api/storage` for files in `/ext/data`, and `console.warn`.
+- In 1.4.1, `fetch` encodes the URL, does not send `#...` to the server, refuses `user:password@` and rejects a failed
+  request with a `TypeError`.
+- A response header with an empty value no longer restarts the BUSY Bar
+  ([#1](https://github.com/busy-app/busybar-emulator/issues/1)).
+- A short Back keeps an app's screen.
+- The firmware `dev` is gone: 1.4.1 has everything it had.
+- One BUSY Bar for both firmwares. Switching keeps the apps, their data and their settings, as an update does. The
+  emulator starts on the firmware it last ran.
+- At the first start the data folder moves to a new layout. The apps of the BUSY Bar on 1.3.1 stay. Apps installed on
+  `dev` go, untouched, to `set-aside/format-1-bars-<time>/`. Older versions of the emulator cannot open the folder
+  after that.
+
+The window:
+
+- "Firmware 1.4.1" under the BUSY Bar's name opens the list of firmwares. A new choice takes effect at the BUSY Bar's
+  next restart. Until then Restart BUSY Bar is the primary button, and "Next: firmware 1.3.1" is under the uptime.
+  While the BUSY Bar is not on the latest firmware, the label is highlighted.
+- An app whose `api_version` is newer than the API of the firmware that runs says "Needs firmware 1.4.1" in the Apps
+  list. Its Run offers to switch and run it, or to open its manifest. The emulator never edits the manifest.
+- The local web and the API documentation at `/docs/` are those of the firmware that runs.
+- The BUSY Bar's card is one row. The back display is on the left. Next to it are the name, the firmware and the API,
+  with Restart BUSY Bar and the uptime below them. On the right are the address with Copy and Local Web, and the four
+  settings.
+- The window is at least 1140 px wide (it was 880), so the card keeps its row.
+- The top bar shows the emulator's logo without a name. Report a Bug and the documentation links keep their words
+  while no one is signed in.
+- The Apps column and the stage no longer change their spacing in steps when the window is resized.
+- The icon blocks of Publish and Create app fit narrow windows.
+- One size of button and field across the window and its dialogs: the BUSY Bar card's, 40 px tall. The main action
+  is white, the others gray. Publish and Create app use the window's white primary button instead of blue.
+- An app's buttons in the Apps list stand over the end of its row while they show. While they are hidden, the name
+  has the whole row.
+- An update that fails is one "Update failed" button in the top bar. Its menu says why and has Try again and the
+  download page. The top bar no longer runs out of the window while an update downloads or after it fails.
+- The project folder's field always shows the end of the path, the folder's own name.
+- The two LEDs beside Start / Pause go dark after an app's notification (`led_notification_color`): in 2D they used to
+  stay lit. In 2D and in 3D they blink, fade and turn through the rainbow at the firmware's own pace, and a window
+  opened, or a 3D view shown, in the middle of a notification shows where it is. `busy-emulator time advance` no
+  longer cuts a notification short.
+
+The command line and MCP:
+
+- `busy-emulator firmware` names the firmware the BUSY Bar runs and the others, with their API.
+- `busy-emulator firmware use latest`, `previous` or a version switches the firmware. It answers once the BUSY Bar is
+  up. In MCP these are `firmware_get` and `firmware_use`.
+- `status`, `version` and MCP's `status` name the firmware that runs. In JSON it is `firmware: { version, api, alias }`.
+- `api_mismatch` names both API numbers and both ways out. Lower `api_version` if the app needs nothing newer, or
+  switch the firmware.
+- `check` hints when the code uses `/api/storage` or `console.warn` with `api_version` 27.14.0, and when
+  `api_version` is 27.15.0 with no use for it.
+- `busy-emulator install <file.tgz>` installs the package again. 0.1.0-beta.5 refused every package.
+- A new project's `AGENTS.md` says when to raise `api_version` and how to check the app on 1.3.1.
+
 ## 0.1.0-beta.5
 
 A timer fix and a release with its source: the code of the signed macOS builds is in this repository again.

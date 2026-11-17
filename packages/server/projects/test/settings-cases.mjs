@@ -1,7 +1,8 @@
 // Settings files the firmware refuses, each with the field at fault and the firmware's words for it: [fields, field,
-// problem]. Two tests share them: settings-schema.test.mjs holds the emulator's own check to them, and
-// emulator/test/server/agent-hands.test.mjs launches an app with each on the emulated bar and reads what the
-// firmware's parser itself logs.
+// problem, firmwares]; `firmwares`, where given, names the only firmwares that refuse it (the others take it). Two
+// tests share them: settings-schema.test.mjs holds the emulator's own check to them, and
+// emulator/test/server/agent-hands.test.mjs launches an app with each on the emulated bar of each firmware and reads
+// what the firmware's parser itself logs.
 export const BROKEN = [
   [{ a: { type: "select", label: "A", default: "x" } }, "a", "unknown type 'select'"],
   [{ a: { type: "boolean", default: true } }, "a", "key 'label' is missing"],
@@ -14,7 +15,8 @@ export const BROKEN = [
   [{ a: { type: "enum", label: "A", default: "x", options: [] } }, "a", "key 'options' must contain between 1 and 32 items"],
   [{ a: { type: "integer", label: "A", default: 5, min: 10, max: 1 } }, "a", "'min' is greater than 'max'"],
   [{ a: { type: "integer", label: "A", default: 50, min: 0, max: 10 } }, "a", "default is out of bounds"],
-  [{ a: { type: "integer", label: "A", default: 0, min: 0, max: 10, step: 3 } }, "a", "'max' - 'min' must be evenly divisible by 'step'"],
+  // Refused by 1.3.1 only: 1.4.1 dropped the rule (0a11d1f9).
+  [{ a: { type: "integer", label: "A", default: 0, min: 0, max: 10, step: 3 } }, "a", "'max' - 'min' must be evenly divisible by 'step'", ["1.3.1"]],
   [{ a: { type: "integer", label: "A", default: 0, step: 0 } }, "a", "key 'step' must be a non-zero integer"],
   [{ a: { type: "string", label: "A", default: "0123456789", max_length: 4 } }, "a", "default length is out of bounds"],
   [{ a: { type: "string", label: "A", default: "", max_length: 300 } }, "a", "'max_length' is greater than 255"],

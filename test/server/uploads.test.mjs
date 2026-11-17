@@ -24,7 +24,7 @@ const MiB = 1024 * 1024;
 
 /**
  * The server as its command line, on a data folder of its own, ended when the test is over. Returns { child, base,
- * port, dataDir, barDir (the bar's folder in the data folder, bar/<firmware>), stderr(), alive() }: alive() fails the
+ * port, dataDir, barDir (the BUSY Bar's folder in the data folder, bar), stderr(), alive() }: alive() fails the
  * test if the process has ended, and otherwise asks it for /api/version.
  */
 async function serve(t) {
@@ -38,7 +38,7 @@ async function serve(t) {
   child.exit.then(() => (ended = true));
   const address = await until("the server's first line", () => /^BUSY Bar emulator: http:\/\/127\.0\.0\.1:(\d+) .*, firmware (\S+) /.exec(out) ?? (ended && "ended"), 30000);
   assert.notEqual(address, "ended", `the server did not start: ${err}`);
-  const barDir = join(dataDir, "bar", address[2]);
+  const barDir = join(dataDir, "bar");
   // The APPS menu writes its settings a while after the start (see tree): before that the data folder is still
   // changing by itself.
   await until("the APPS menu's settings", () => existsSync(join(barDir, "ext", "apps_data", "apps_menu", "settings.json")), 10000);

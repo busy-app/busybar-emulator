@@ -3,11 +3,11 @@
 // display API answer /api/display/draw and render; its desktop, apps menu and JS app launcher decide which app runs
 // and ask the host to start or abort it in the runtime module.
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { timeOfDayOffset } from "./computer-clock.mjs";
-import { appsAssets } from "./firmware.mjs";
+import { appsAssetFile } from "./firmware.mjs";
 import { TickClock } from "./tick-clock.mjs";
 
 // The firmware's assets (shared fonts, images, animations, and the system apps' own) live on the bar's
@@ -117,8 +117,9 @@ export class Screen {
       },
       fileRead: (path) => {
         if (path.startsWith(ASSETS_PREFIX)) {
-          const p = resolve(appsAssets, path.slice(ASSETS_PREFIX.length));
-          if (!p.startsWith(appsAssets)) return null;
+          // A file a later firmware added is not there on this one (apps-assets.json, "since").
+          const p = appsAssetFile(this.firmware, path.slice(ASSETS_PREFIX.length));
+          if (!p) return null;
           try {
             return new Uint8Array(readFileSync(p));
           } catch {

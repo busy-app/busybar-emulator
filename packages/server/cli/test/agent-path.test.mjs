@@ -250,9 +250,15 @@ test("install <file.tgz>: a package from a trusted folder goes up as busy-cli se
   const done = await call(["install", path.join(dir, "dist", "app.you.pomodoro.tgz")], ctx, sys);
   assert.equal(done.code, 0, JSON.stringify(done.json));
   assert.equal(done.json.id, "app.you.pomodoro");
-  assert.deepEqual(sys.sent.map(([method, pathname]) => `${method} ${pathname}`), ["POST /api/apps/stage", "POST /api/apps/install?install_key=k1"]);
-  assert.deepEqual(Buffer.from(sys.sent[0][2]), pack, "the package's bytes");
+  // The BUSY Bar's API is asked first: an app for a newer API than its firmware's is refused before the upload (api_mismatch).
+  assert.deepEqual(sys.sent.map(([method, pathname]) => `${method} ${pathname}`), ["GET /api/version", "POST /api/apps/stage", "POST /api/apps/install?install_key=k1"]);
+  assert.deepEqual(Buffer.from(sys.sent[1][2]), pack, "the package's bytes");
   assert.equal((await call(["install", path.join(dir, "nothing.tgz")], ctx, sys)).json.code, "not_found");
+  // The BUSY Bar's key is a number (api_apps.c; test/archives/bar-stage-1.3.1.json): taken as it is.
+  const numeric = barSystem(root, { bar: (method, pathname) => (pathname === "/api/apps/stage" ? { status: 200, body: JSON.stringify({ result: "OK", install_key: 1131215523, staged: { id: "app.you.pomodoro", version: "1.2.0" } }) } : { status: 200, body: '{"result":"OK"}' }) });
+  const byNumber = await call(["install", path.join(dir, "dist", "app.you.pomodoro.tgz")], ctx, numeric);
+  assert.equal(byNumber.code, 0, JSON.stringify(byNumber.json));
+  assert.equal(numeric.sent.at(-1)[1], "/api/apps/install?install_key=1131215523");
   // A package the bar would not take is refused before anything is sent, with its reason.
   writeFileSync(path.join(dir, "dist", "broken.tgz"), Buffer.from([1, 2, 3]));
   writeFileSync(path.join(dir, "dist", "escapes.tgz"), targz({ "../evil.js": "x" }));

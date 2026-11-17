@@ -32,14 +32,16 @@ export const STAGE_FRAME_PATH = "/emulator/stage3d/frame/";
 
 /**
  * The frame's static files, the only ones a page without an origin may read: its page, its scripts and style, the
- * player's code, WebAssembly and lighting, the scene. A test holds this list to the files of packages/stage/frame
- * (the player's LICENSE and notices are served too, but not to a frame without an origin: it never asks for them).
+ * module of the status lights it shares with the window (stage3d.mjs, FROM_WINDOW), the player's code, WebAssembly
+ * and lighting, the scene. A test holds this list to the files of packages/stage/frame and FROM_WINDOW (the player's
+ * LICENSE and notices are served too, but not to a frame without an origin: it never asks for them).
  */
 export const STAGE_FRAME_FILES = Object.freeze([
   "stage.html",
   "stage.css",
   "stage.js",
   "leds.js",
+  "status-lights.mjs",
   "scene/bar.json",
   "scene/bar.trd",
   "player/tride-web/tride-web.js",

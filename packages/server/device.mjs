@@ -11,10 +11,11 @@ import { cjsonPrint } from "./cjson.mjs";
 import { computerNow, computerTimeOfDay, timeOfDayOffset } from "./computer-clock.mjs";
 import { deviceKeyAnswer } from "./device-key.mjs";
 import { assetsApi, logDump, openUpload, storageApi, uploadTarget } from "./files-api.mjs";
-import { appsAssets } from "./firmware.mjs";
+import { appsAssetFile, appsAssets } from "./firmware.mjs";
 import { readJsonFile, setAside, writeFileAtomic } from "./json-store.mjs";
 import { createLocalAccess, explainRefusal } from "./local-access.mjs";
-import { MEMORY_NOTE_MIN_BYTES, memoryNote, networkErrorNote, redirectNote, TEXT_CODEC_NOTE, usesTextCodec } from "./network-notes.mjs";
+import { MEMORY_NOTE_MIN_BYTES, memoryNote, networkErrorNote, redirectNote, TEXT_CODEC_NOTE, TYPE_ERRORS_FROM_API, usesTextCodec } from "./network-notes.mjs";
+import { LIGHT_PRESETS, lightsAt, lightsLevel, parseLights, PRESETS } from "./legacy-window/status-lights.mjs";
 import { insideRoots, within } from "./path-boundary.mjs";
 import { checkSettingsSchema } from "./projects/settings-schema.mjs";
 import { AppRuntime, InputKey, InputType } from "./runtime.mjs";
@@ -58,40 +59,23 @@ function darkScreen() {
   };
 }
 
-// The status lights, the bar's two RGB LEDs beside Start / Pause: the firmware's StatusLightsPreset by number
-// (status_lights_common.h), and the names the device window and /_emu/state give them.
-export const LIGHT_PRESETS = ["off", "static", "fade", "rainbow", "blink", "notification"];
-// A notification is three blinks of 500 ms on and 500 ms off, then dark (status_lights/presets/blink.c: 6 ticks of
-// 500 ms from the start, the last one dark, then the lights stop): the lights are dark 2.5 s after it started.
-export const NOTIFICATION_MS = 2500;
 // The user brightness that automatic stands for: the emulator has no light sensor (the state stream says half too).
 const AUTO_BRIGHTNESS = 50;
-const LIGHTS_OFF = Object.freeze({ preset: "off", rgb: [0, 0, 0], override: -1, at: 0 });
+const LIGHTS_OFF = Object.freeze({ preset: "off", rgb: [0, 0, 0], override: -1, at: 0, setAt: null });
 
 // How many of the latest log lines POST /api/log_dump writes out.
 const LOG_LINES = 2000;
 
-// The firmware's allowlist for requests made by apps (web_server/http_api/api_root.c). It applies when a request
+// What a request made by an app may reach is the running firmware's allowlist (api_root.c's js_apps_api_allowlist,
+// which the engine's build records in build-info.json as appAllowlist: 1.4.1 added storage). It applies when a request
 // carries the header js_fetch.c adds to every app request.
-const APP_ALLOWLIST = [
-  ["apps/settings", "exact", ["GET"]],
-  ["display/brightness", "exact", ["GET", "POST"]],
-  ["display/draw", "exact", ["POST", "DELETE"]],
-  ["audio/play", "exact", ["POST", "DELETE"]],
-  ["busy", "prefix", ["GET", "PUT"]],
-  ["name", "exact", ["GET"]],
-  ["audio/volume", "prefix", ["GET", "POST"]],
-  ["time", "prefix", ["GET"]],
-  ["wifi/status", "exact", ["GET"]],
-  ["version", "exact", ["GET"]],
-  ["access", "exact", ["GET"]],
-  ["transport", "exact", ["GET"]],
-  ["status", "exact", ["GET"]],
-  ["status/device", "exact", ["GET"]],
-  ["status/firmware", "exact", ["GET"]],
-  ["status/system", "exact", ["GET"]],
-  ["status/power", "exact", ["GET"]],
-];
+/** Whether the allowlist `rules` ({ path: "exact|prefix METHOD ..." }) lets an app send `method` to `path`. */
+function appMayReach(rules, method, path) {
+  return Object.entries(rules).some(([p, rule]) => {
+    const [kind, ...methods] = rule.split(" ");
+    return (kind === "exact" ? path === p : path === p || path.startsWith(p + "/")) && methods.includes(method);
+  });
+}
 
 // The firmware's handlers of the API root (api_root.c handlers_api_root, :667–819) in the order web_server.c tries
 // them, which is the order of the arrays: http_handler_add() calls M*LIB's push_back, which puts an item at the head
@@ -201,10 +185,13 @@ const APP_ID_RE = /^[a-zA-Z0-9_\-][a-zA-Z0-9_\-.]{0,31}$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 const json = (status, value) => ({ status, headers: [["Content-Type", "application/json"]], body: new TextEncoder().encode(JSON.stringify(value)) });
-const ok = () => json(200, { result: "OK" });
-const error = (status, message, extra = {}) => json(status, { error: message, ...extra });
-// An error as the bar's web server words it, with the line end (web_server_i.h's MG_REPLY_ERROR_CLOSE).
-const errorLine = (status, message) => ({ ...error(status, message), body: new TextEncoder().encode(JSON.stringify({ error: message }) + "\n") });
+// The bar's web server ends these with a line feed (web_server_i.h: RESPONSE_BODY_OK, MG_REPLY_ERROR and
+// MG_REPLY_ERROR_CLOSE), as recorded byte for byte on 1.4.1 (test/state/bar-state-1.4.1.json).
+const line = (status, value) => ({ status, headers: [["Content-Type", "application/json"]], body: new TextEncoder().encode(JSON.stringify(value) + "\n") });
+const ok = () => line(200, { result: "OK" });
+const error = (status, message) => line(status, { error: message });
+// The installer's errors (api_apps.c: cJSON printed with "%s") have no line feed, as the staged answer has none.
+const installerError = (message, code) => json(400, { error: message, error_code: code });
 
 // The routes that take a file as the body of a POST, and how: the bar's web server hands the body of these to a
 // handler as it comes, where every other request is held whole in its receive buffer first (see reception).
@@ -348,7 +335,7 @@ export class Device {
     // far ahead of the computer's, beside clockOffset.
     this.passed = 0;
     // The status lights as the firmware last lit them (lightsChanged), and what the device window was last told.
-    this.lights = LIGHTS_OFF;
+    this.lights = { ...LIGHTS_OFF, at: this.lightsNow() };
     this.lightsShown = null;
     // Who may use the API over Wi-Fi, and the tokens for it.
     this.access = new Access();
@@ -423,7 +410,7 @@ export class Device {
     this.screen.dispose();
     this.screen = darkScreen();
     // The lights go out with the system.
-    this.lights = LIGHTS_OFF;
+    this.lights = { ...LIGHTS_OFF, at: this.lightsNow() };
     this.showLights(false);
     this.events.emit("apps");
   }
@@ -446,6 +433,9 @@ export class Device {
   async reboot(why = "restart") {
     if (this.closed) return;
     if (this.booting) return this.booting;
+    // A firmware chosen for the next restart (server.mjs, onRestart): this restart is its switch, one restart.
+    const switched = this.onRestart?.(why);
+    if (switched) return switched;
     this.log(`The BUSY Bar restarts (${why})`, "system");
     this.staged = null; // the installer keeps its key in memory (js_app_installer.c)
     this.shutdown();
@@ -463,6 +453,45 @@ export class Device {
     } finally {
       this.booting = null;
     }
+  }
+
+  /**
+   * The bar restarts on another firmware (loadFirmware's), as a bar does whose firmware was replaced: what a restart
+   * keeps is kept (above). A restart under way ends first. Resolves once the bar is up on `next`. If its system does
+   * not come up, the bar restarts on the firmware it had and this rejects with why; if that fails too, the bar is off,
+   * as after a restart that failed. Only this.firmware changes: what depends on the firmware is to read it when it is
+   * used, not keep what the constructor was given.
+   */
+  async useFirmware(next) {
+    if (this.closed) throw new Error("The BUSY Bar is shut down");
+    await Promise.resolve(this.booting).catch(() => {});
+    const previous = this.firmware;
+    let failure = null;
+    this.staged = null;
+    this.shutdown();
+    this.firmware = next;
+    this.booting = this.boot()
+      .catch((e) => {
+        failure = e;
+        if (this.closed) return;
+        // What came up of the system that failed goes, and the bar starts again on what it ran.
+        this.shutdown();
+        this.firmware = previous;
+        return this.boot();
+      })
+      .catch((e) => {
+        if (this.closed) return;
+        this.log(`The BUSY Bar is off: it did not start again on firmware ${previous.name} either. ${e?.message ?? e} Press one of its buttons to try again.`, "error");
+        this.shutdown();
+        this.powered = false;
+        this.events.emit("status");
+      });
+    try {
+      await this.booting;
+    } finally {
+      this.booting = null;
+    }
+    if (failure) throw failure;
   }
 
   async boot() {
@@ -551,52 +580,94 @@ export class Device {
   //
   // The firmware starts a preset of the status lights (status_lights_run_preset: the BUSY timer, the brightness
   // program, pairing, an app's draw with led_notification_color) and the screen module tells the host at once
-  // (emu_screen.c). On a bar the other processor then runs it (status_lights_backend.c) at the brightness the
-  // brightness control gives the lights: round(5 + 85 × user brightness / 100) %, or full for a notification. Here the
-  // device window runs the preset's look; the server keeps what was started and says it in the event "lights"
-  // { preset, color: "#rrggbb", brightness: 0..1 } and in /_emu/state.
+  // (emu_screen.c). On a bar the other processor then runs it (status_lights_backend.c) at the level the brightness
+  // setting gives, or full for a notification. Here the device window's views run the preset's look by the firmware's
+  // timeline (legacy-window/status-lights.mjs); the server keeps what was started and when, and says it in the event
+  // "lights" { preset, color: "#rrggbb", brightness: 0..1, elapsed: ms, set? } and in /_emu/state, so that a window
+  // that opens, or a 3D view that comes up, in the middle of a preset shows the step it is at.
+  //
+  // The lights keep the computer's monotonic time (lightsNow), not the system's clock. On a bar the other processor
+  // runs them in real time, apart from the system and its apps; here the views run them in real time too, by their
+  // own monotonic clocks. The system's clock is not real time: busy-emulator time advance moves it on at once
+  // (passTime), a held clock stands still (POST /_emu/time?hold=1), and the bar's time of day is set back and forth
+  // (busy-emulator time set and reset). By that clock a notification the views still blink would be over at once
+  // after an advance, or go on for minutes after the time of day was set back: by the computer's it lasts its 2.5 s
+  // for everybody.
+
+  /** The clock the lights run by: the computer's monotonic time, ms. */
+  lightsNow() {
+    return performance.now();
+  }
 
   /** The screen module's report (emu_screen.c, host_lights): a preset started, or a program's hold on the brightness. */
   lightsChanged(preset, rgb, override, started) {
-    if (started) this.lights = { preset: LIGHT_PRESETS[preset] ?? "off", rgb, override, at: this.barClock() };
-    else this.lights = { ...this.lights, override };
-    this.showLights(started);
-  }
-
-  /** The system's clock, Unix ms, read without moving it: it may be read from inside a call into the module. */
-  barClock() {
-    return this.screen?.clock?.now() ?? computerNow();
+    if (started) {
+      this.lights = { preset: LIGHT_PRESETS[preset] ?? "off", rgb, override, at: this.lightsNow(), setAt: null };
+      this.showLights(true);
+    } else {
+      this.lights = { ...this.lights, override };
+      this.lightsBrightnessSet();
+    }
   }
 
   /**
-   * The status lights as they are now: { preset, color: "#rrggbb", brightness: 0..1 }. brightness is the level the
-   * lights run the preset at, the firmware's own 0..100 % over 100: 0.05 to 0.9 by the brightness setting, 1 for a
-   * notification. A notification that is over is "off".
+   * The brightness the lights run at was set: the brightness setting (the API, the brightness program) or a program's
+   * hold on it. On a bar that is status_lights_do_set_brightness, which drives the color that shows at the new level
+   * even during a notification, until its next run (legacy-window/status-lights.mjs, lightsAt): so a change during a
+   * notification is told, with the moment it came (set). A change of the setting is a set even while a program holds
+   * the lights' brightness: brightness_control.c, apply_brightness, calls status_lights_set_brightness on every change,
+   * with the held level (apply_override), which lightsState then gives as the level.
+   */
+  lightsBrightnessSet() {
+    this.lights = { ...this.lights, setAt: this.lightsNow() };
+    this.showLights(this.lightsState().preset === "notification");
+  }
+
+  /**
+   * The status lights as they are now: { preset, color: "#rrggbb", brightness: 0..1, elapsed, set? }. brightness is
+   * the level the lights run the preset at, the firmware's own 0..100 % over 100: 0.05 to 0.9 by the brightness
+   * setting, 1 for a notification. elapsed is how long, in whole ms, the preset has run (rounded down, as the views
+   * count: a notification is never told as running at 2500 ms). A notification that is over is "off", with elapsed
+   * counted from the moment it went dark. While the run of a notification in which the brightness was set lasts,
+   * brightness is that level and set the ms into the notification it was set at.
    */
   lightsState() {
-    const { rgb, override, at } = this.lights;
+    const { rgb, override, at, setAt } = this.lights;
     let { preset } = this.lights;
-    if (preset === "notification" && this.barClock() - at >= NOTIFICATION_MS) preset = "off";
+    let elapsed = Math.max(0, Math.floor(this.lightsNow() - at));
     const user = override >= 0 ? override : this.state.brightness === "auto" ? AUTO_BRIGHTNESS : Number(this.state.brightness);
-    const brightness = preset === "notification" ? 1 : Math.round(5 + (85 * Math.min(100, Math.max(0, user))) / 100) / 100;
-    const color = preset === "off" ? "#000000" : `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-    return { preset, color, brightness };
+    const level = lightsLevel(user);
+    const color = `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    const full = PRESETS[preset]?.full;
+    const set = full && setAt !== null && setAt >= at ? Math.floor(setAt - at) : null;
+    if (lightsAt({ preset, rgb, brightness: level, set }, elapsed).ended) {
+      elapsed -= PRESETS[preset].end;
+      preset = "off";
+    }
+    if (preset === "off") return { preset, color: "#000000", brightness: level, elapsed };
+    if (!full) return { preset, color, brightness: level, elapsed };
+    // A notification: at full, or at the level that was set, while the run it was set in lasts.
+    const { period } = PRESETS[preset];
+    const inSetRun = set !== null && Math.floor(set / period) === Math.floor(elapsed / period);
+    return inSetRun ? { preset, color, brightness: level, elapsed, set } : { preset, color, brightness: 1, elapsed };
   }
 
   /**
-   * Tells the device window when the lights change: always for a preset the firmware started (a second notification
-   * blinks again, as on a bar), otherwise only when a preset that is on shows a new brightness.
+   * Tells the device window when the lights change: always when `told` (a preset the firmware started, so a second
+   * notification blinks again as on a bar; a brightness set during a notification), otherwise only when what is lit
+   * shows a new brightness, or when lights that may still show go out (the system goes down in the middle of a
+   * notification). The end of a notification is not told: every view ends it by the same timeline at the same moment.
    */
-  showLights(started) {
+  showLights(told) {
     const shown = this.lightsState();
     const last = this.lightsShown;
-    if (!started) {
+    if (!told) {
       if (!last || shown.preset === "notification") return;
       if (shown.preset === last.preset && shown.color === last.color && shown.brightness === last.brightness) return;
-      // Dark already: nothing to tell.
-      if (shown.preset === "off" && (last.preset === "off" || last.preset === "notification")) return;
+      // Dark already: off, or a notification the views have run to its end.
+      if (shown.preset === "off" && (last.preset === "off" || (last.preset === "notification" && lightsAt(parseLights(last), last.elapsed + this.lightsNow() - last.told).ended))) return;
     }
-    this.lightsShown = shown;
+    this.lightsShown = { ...shown, told: this.lightsNow() };
     this.events.emit("lights", shown);
   }
 
@@ -611,7 +682,7 @@ export class Device {
       queueMicrotask(() => this.screen.status({ volume: this.state.volume }));
     } else if (name === "brightness") {
       this.state.brightness = value;
-      this.showLights(false);
+      this.lightsBrightnessSet();
     } else if (name === "timezone") {
       // The name at once: the firmware asks the host for it. The offset comes from the firmware's rules.
       this.state.timezone = { ...this.state.timezone, name: value };
@@ -724,8 +795,9 @@ export class Device {
   readFile(path) {
     // /ext/apps_assets is the firmware's own and the same for every data folder (packages/engine/build/apps-assets).
     if (path.startsWith("/ext/apps_assets/")) {
-      const asset = resolve(appsAssets, path.slice("/ext/apps_assets/".length));
-      return within(asset, appsAssets) && existsSync(asset) && statSync(asset).isFile() ? new Uint8Array(readFileSync(asset)) : null;
+      // A file a later firmware added is not there on this one (apps-assets.json, "since").
+      const asset = appsAssetFile(this.firmware, path.slice("/ext/apps_assets/".length));
+      return asset && within(asset, appsAssets) && existsSync(asset) && statSync(asset).isFile() ? new Uint8Array(readFileSync(asset)) : null;
     }
     const p = this.local(path);
     return p && existsSync(p) && statSync(p).isFile() ? new Uint8Array(readFileSync(p)) : null;
@@ -808,7 +880,8 @@ export class Device {
   settingsSchema(id) {
     const p = join(this.appsDir(), id, "appmeta", "settings.json");
     if (!existsSync(p)) return null;
-    const check = checkSettingsSchema(readFileSync(p, "utf8"), { strict: false });
+    // By the rules of the firmware the BUSY Bar runs now (1.4.1 dropped one).
+    const check = checkSettingsSchema(readFileSync(p, "utf8"), { strict: false, api: this.firmware.apiVersion });
     if (!check.ok) throw new Error(`appmeta/settings.json of ${id} is invalid: ${check.problem}`);
     return check.schema;
   }
@@ -908,7 +981,7 @@ export class Device {
     } catch (e) {
       (e?.notes ?? []).forEach((line) => this.log(`App package: ${line}`));
       this.log(`Cannot unpack the app package: ${e?.message ?? e}${isBusy(e) ? IN_USE : ""}`, "error");
-      return error(400, "Cannot unpack", { error_code: "unpack_error" });
+      return installerError("Cannot unpack", "unpack_error");
     }
     for (const name of topDirs) {
       const m = this.loadApp(join(staging, name));
@@ -916,7 +989,7 @@ export class Device {
       // All errors of a stage are 400 (api_apps.c:120–124; checked on a bar, 1.3.1 — the firmware's apps.yaml says 409).
       if (!semverLE(m.api_version, this.firmware.apiVersion)) {
         this.log(`Cannot install ${m.id}: it needs API ${m.api_version}, and the BUSY Bar has API ${this.firmware.apiVersion}`, "error");
-        return error(400, "API version mismatch", { error_code: "api_mismatch" });
+        return installerError("API version mismatch", "api_mismatch");
       }
       const key = 1 + Math.floor(Math.random() * 0x7ffffffe);
       this.staged = { key, path: join(staging, name) };
@@ -924,7 +997,7 @@ export class Device {
       return json(200, { result: "OK", install_key: key, staged: this.appInfo(m, `/ext/apps_data/js_app_installer/staging/${name}`), ...(installed ? { installed: this.appInfo(installed) } : {}) });
     }
     this.log("Cannot install the app package: it has no app folder with scripts/main.js and a valid appmeta/manifest.json (whose id is the folder's name)", "error");
-    return error(400, "Wrong app manifest", { error_code: "manifest_error" });
+    return installerError("Wrong app manifest", "manifest_error");
   }
 
   /**
@@ -1077,7 +1150,8 @@ export class Device {
         this.log(explainRefusal({ appId: id, url, refusal }), "warn");
       },
       onRedirect: (redirect) => networkNote(redirectNote(redirect)),
-      onNetworkError: (failure) => networkNote(networkErrorNote(failure)),
+      // The firmware the BUSY Bar runs when the request fails (a switch may come between), as it rejects.
+      onNetworkError: (failure) => networkNote(networkErrorNote({ ...failure, typeError: semverLE(TYPE_ERRORS_FROM_API, this.firmware.apiVersion) })),
       onConsole: (severity, text) => {
         this.log(`${id} ${severity}: ${text}`, severity);
         appLine(text);
@@ -1249,9 +1323,7 @@ export class Device {
     if (this.closed) return error(503, "The emulator has stopped");
     if (!this.powered) return error(503, "The emulated BUSY Bar is powered off: press one of its buttons to turn it on");
     if (headers["x-busybar-fetch"] === "js") {
-      const allowed = APP_ALLOWLIST.some(([p, kind, methods]) =>
-        (kind === "exact" ? path === p : path === p || path.startsWith(p + "/")) && methods.includes(method));
-      if (!allowed) return error(403, "Forbidden");
+      if (!appMayReach(this.firmware.info.appAllowlist, method, path)) return error(403, "Forbidden");
     }
     // api_root.c's http_api_is_version_allowed(): a client that names the API version it was made for is refused if
     // the major version is another; /api/version itself always answers.
@@ -1292,23 +1364,31 @@ export class Device {
       // (write error).": its data callback, set up before the size is checked, tries to write what is still in the
       // receive buffer (the headers, and what has come of the body) to a file that was never made. That is a fault
       // of the firmware, not its API, and the emulator does not repeat it.
-      if (length === 0) return { answer: errorLine(400, "Bad Request") };
-      if (length > PACKAGE_MAX) return { answer: errorLine(413, "Payload Too Large") };
+      if (length === 0) return { answer: error(400, "Bad Request") };
+      if (length > PACKAGE_MAX) return { answer: error(413, "Payload Too Large") };
       // The bar takes a package into one file of its own (JS_APP_DOWNLOAD_PATH, UPDATER_DEFAULT_DOWNLOAD_PATH), open
       // until the package has been handled; another package meanwhile cannot open it (temp_file_create fails with
       // FSE_ALREADY_OPEN) and is refused from its headers. Here the package is held in memory, so this also keeps
       // what the server holds to one package of each kind.
-      if (this.packagesComing.has(path)) return { answer: errorLine(508, "Failed to save update package (file init error).") };
+      if (this.packagesComing.has(path)) return { answer: error(508, "Failed to save update package (file init error).") };
       this.packagesComing.add(path);
-      return { limit: length, timeout: { ms: PACKAGE_IDLE_MS, answer: errorLine(408, "Upload timeout") }, done: () => this.packagesComing.delete(path) };
+      return { limit: length, timeout: { ms: PACKAGE_IDLE_MS, answer: error(408, "Upload timeout") }, done: () => this.packagesComing.delete(path) };
     }
-    const target = uploadTarget(path, u.searchParams);
-    if (!target) return { answer: errorLine(400, "Bad Request") };
+    const target = uploadTarget(this, path, u.searchParams, this.storageApp(headers));
+    if (!target) return { answer: error(400, "Bad Request") };
     const upload = openUpload(this, target.path, target.append);
     if (upload.answer) return { answer: upload.answer };
     // http_upload_start: with nothing to come, the file is written at once.
     if (length === 0) return { answer: upload.finish() };
-    return { upload, timeout: { ms: FILE_IDLE_MS, answer: errorLine(408, "Upload timeout") } };
+    return { upload, timeout: { ms: FILE_IDLE_MS, answer: error(408, "Upload timeout") } };
+  }
+
+  /**
+   * Whose files a storage request works on (files-api.mjs): undefined for a request that is not an app's; for an
+   * app's, the id of the app that runs, or null when none does.
+   */
+  storageApp(headers) {
+    return headers["x-busybar-fetch"] === "js" ? (this.running?.id ?? null) : undefined;
   }
 
   /** Handles one API request. `headers` are lower-case. Returns { status, headers, body }. */
@@ -1328,7 +1408,7 @@ export class Device {
       return this.screen.request(method, path, u.search.slice(1), body);
     }
     if (path.startsWith("storage/")) {
-      const response = storageApi(this, method, path.slice("storage/".length), u.searchParams, body);
+      const response = storageApi(this, method, path.slice("storage/".length), u.searchParams, body, this.storageApp(headers));
       if (response) return response;
     }
     if (path === "assets/upload") return assetsApi(this, method, u.searchParams, body);
@@ -1361,7 +1441,7 @@ export class Device {
         const value = q("value") ?? "";
         if (value !== "auto" && !(/^\d{1,3}$/.test(value) && Number(value) <= 100)) return error(400, "Bad Request");
         this.state.brightness = value === "auto" ? value : String(Number(value));
-        this.showLights(false);
+        this.lightsBrightnessSet();
         return ok();
       }
       case "GET audio/volume":

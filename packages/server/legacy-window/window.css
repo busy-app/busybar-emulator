@@ -54,6 +54,19 @@
   --s-6: 24px;
   --s-8: 32px;
   --topbar-h: 56px;
+  /* The buttons and fields (below, "The buttons and fields of the whole window"). */
+  --ctl-h: 40px;
+  --ctl-small: 32px;
+  --ctl-pad: 12px;
+  --ctl-r: 8px;
+  --ctl-icon: 16px;
+  --ctl-gap: 6px;
+  --field-pad: 16px;
+  /* The secondary plate: white at 6 % (10 % under the pointer, 13 % pressed), #222 on a card's #141414 as the BUSY
+     Bar's card has it (#2b2b2b, #333), and a step above whatever it stands on: a tile, a dialog. */
+  --ctl-bg: rgb(255 255 255 / 0.06);
+  --ctl-bg-hover: rgb(255 255 255 / 0.1);
+  --ctl-bg-active: rgb(255 255 255 / 0.13);
   color-scheme: dark;
 }
 
@@ -87,61 +100,106 @@ button { cursor: pointer; }
   padding: var(--s-4);
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; min-height: 32px; margin-bottom: 12px; }
-.head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--text-strong); }
 
+/* ---- The buttons and fields of the whole window, from the BUSY Bar's card (the owner, 17.11): one size, 40.
+   A button: 40 tall, 12 from its sides, 8 round, its icon 16 and 6 from its words, Inter Medium 14/20.
+   - secondary (.btn, .icon-btn): on #222 (--ctl-bg), words in the muted gray, white under the pointer;
+   - primary (.solid): white, words #171717;
+   - quiet (.quiet: the top bar's links, All apps, Prompt for AI, Show in Finder): no plate until the pointer is on it;
+   - an icon alone (.icon-btn): a square of 40, the 16 icon in its middle.
+   A field (.input, .ov-input, the folder's path, the BUSY Bar's address): 40 tall, 16 from its sides, 8 round, 14/20,
+   on the secondary plate.
+   The one smaller size, 32 square or tall with the same icon and words (.icon-btn.small), is for the console's dense
+   head and for icons inside a row of a dialog's list (window.css says where); a group of segments (.seg) is 40 outside,
+   its segments 36 inside a 2 inset, so that their words and icons stand where a 40 button's do. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--ctl-gap);
   flex: none;
-  height: 32px;
-  padding: 0 12px;
+  height: var(--ctl-h);
+  padding: 0 var(--ctl-pad);
   border: 0;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: var(--outline);
-  color: var(--text);
+  border-radius: var(--ctl-r);
+  background: var(--ctl-bg);
+  color: var(--muted);
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.12s, color 0.12s;
 }
-.btn:hover { background: var(--elevated); }
-.btn .bi { width: 16px; height: 16px; margin-left: -2px; }
-.btn.solid { background: #fff; box-shadow: none; color: #171717; }
-.btn.solid:hover { background: #e5e5e5; }
-.btn.soft { background: color-mix(in oklab, var(--primary-text) 12%, transparent); box-shadow: none; color: var(--primary-text); }
-.btn.soft:hover { background: color-mix(in oklab, var(--primary-text) 20%, transparent); }
+.btn .bi { width: var(--ctl-icon); height: var(--ctl-icon); }
+.btn:hover { background: var(--ctl-bg-hover); color: var(--text-strong); }
+.btn:active { background: var(--ctl-bg-active); color: var(--text-strong); }
+.btn.solid { background: #fff; color: #171717; }
+.btn.solid:hover, .btn.solid:active { background: #e5e5e5; color: #171717; }
+.btn.quiet { background: transparent; }
+.btn.quiet:hover { background: var(--ctl-bg); }
+.btn.quiet:active { background: var(--ctl-bg-hover); }
+.btn.soft { background: color-mix(in oklab, var(--primary-text) 12%, transparent); color: var(--primary-text); }
+.btn.soft:hover { background: color-mix(in oklab, var(--primary-text) 20%, transparent); color: var(--primary-text); }
 /* Not there to be pressed: an action the desktop app gives, a project the app does not have. Its tooltip says why. */
-.btn[aria-disabled="true"], .icon-btn[aria-disabled="true"] { opacity: 0.4; cursor: default; }
-.btn[aria-disabled="true"]:hover { background: transparent; }
-.btn.solid[aria-disabled="true"]:hover { background: #fff; }
+.btn[aria-disabled="true"], .btn:disabled, .icon-btn[aria-disabled="true"], .icon-btn:disabled { opacity: 0.4; cursor: default; }
+.btn:is([aria-disabled="true"], :disabled):is(:hover, :active) { background: var(--ctl-bg); color: var(--muted); }
+.btn.quiet:is([aria-disabled="true"], :disabled):is(:hover, :active) { background: transparent; }
+.btn.solid:is([aria-disabled="true"], :disabled):is(:hover, :active) { background: #fff; color: #171717; }
 
 .icon-btn {
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   padding: 0;
   border: 0;
-  border-radius: 8px;
-  background: transparent;
+  border-radius: var(--ctl-r);
+  background: var(--ctl-bg);
   color: var(--muted);
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.12s, color 0.12s;
 }
-.icon-btn:hover { background: var(--elevated); color: var(--text-strong); }
-.icon-btn[aria-disabled="true"]:hover { background: transparent; color: var(--muted); }
-.icon-btn .bi { width: 18px; height: 18px; }
-.icon-btn.outline { box-shadow: var(--outline); color: var(--text); }
+.icon-btn .bi { width: var(--ctl-icon); height: var(--ctl-icon); }
+.icon-btn:hover { background: var(--ctl-bg-hover); color: var(--text-strong); }
+.icon-btn:active { background: var(--ctl-bg-active); color: var(--text-strong); }
+.icon-btn[aria-disabled="true"]:hover, .icon-btn:disabled:hover { background: var(--ctl-bg); color: var(--muted); }
+.icon-btn:focus-visible { outline-offset: -2px; }
 .icon-btn.solid { background: #fff; color: #171717; }
 .icon-btn.solid:hover { background: #e5e5e5; color: #171717; }
-.icon-btn.small { width: 28px; height: 28px; }
-.icon-btn.small .bi { width: 16px; height: 16px; }
+/* The smaller size (32): a button inside a field, the console's head, an icon inside a row of a dialog's list. An icon
+   alone has no plate until the pointer is on it. */
+.btn.small { height: var(--ctl-small); }
+.icon-btn.small { width: var(--ctl-small); height: var(--ctl-small); background: transparent; }
+.icon-btn.small:hover { background: var(--ctl-bg); }
+.icon-btn.small[aria-disabled="true"]:hover, .icon-btn.small:disabled:hover { background: transparent; }
+/* Inside a field (the folder's path, the BUSY Bar's address), on the field's own plate: lit a step above it. */
+:is(.ac-path-row, .address-field, .folder) > .icon-btn.small:not([aria-disabled="true"], :disabled):hover { background: var(--ctl-bg-hover); }
+
+/* The fields. */
+.input, .ov-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--ctl-h);
+  padding: 0 var(--field-pad);
+  border: 0;
+  border-radius: var(--ctl-r);
+  background: var(--ctl-bg);
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 20px;
+  transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.input::placeholder, .ov-input::placeholder { color: var(--dimmed); }
+.input:focus-visible, .ov-input:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 0; }
+.input:disabled, .ov-input:disabled { opacity: 0.6; cursor: not-allowed; }
+textarea.input, textarea.ov-input { height: auto; min-height: 84px; padding: 10px var(--field-pad); resize: vertical; }
+select.input, select.ov-input { appearance: none; padding-right: 36px; cursor: pointer; }
+/* A field with a mistake: a red edge, the focus ring red too. Publish's How to use marks its chips, not its fields. */
+:is(.input.wrong, .publish-field.bad:not(.publish-howto) .input, .create-app-field.bad .input) { box-shadow: inset 0 0 0 1px var(--error); }
+:is(.input.wrong, .publish-field.bad:not(.publish-howto) .input, .create-app-field.bad .input):focus-visible { outline-color: var(--error); }
+
 /* Work under way on this app: the arrows turn. */
 .icon-btn.busy .bi { animation: turn 1s linear infinite; }
 @keyframes turn { to { transform: rotate(1turn); } }
@@ -233,14 +291,16 @@ h2 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-s
 
 body {
   --side: clamp(340px, 30vw, 400px);
+  /* The page's height: the window's, less the window's own title bar outside macOS (the title bar, below). */
+  --page-h: calc(100vh - var(--title-bar-h, 0px));
   display: grid;
   grid-template-columns: var(--side) minmax(0, 1fr);
   grid-template-rows: var(--topbar-h) minmax(0, 1fr);
   overflow: hidden;
 }
 
-/* ---- layout-v2: the top bar. The emulator's name on the left, the view's tools, the account and Publish on the
-   right. Plain on the ground, a hairline under it. */
+/* ---- layout-v2: the top bar. The emulator's logo on the left (no name beside it: "BUSY Bar Emulator" is the logo's
+   accessible name), the view's tools, the account and Publish on the right. Plain on the ground, a hairline under it. */
 .topbar {
   grid-column: 1 / -1;
   display: flex;
@@ -252,92 +312,75 @@ body {
 }
 .brand { display: flex; align-items: center; gap: 10px; flex: none; user-select: none; }
 .logo { flex: none; width: 24px; height: 24px; border-radius: 6px; }
-.brand-name { color: var(--text-strong); font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
-.top-tools { display: flex; align-items: center; gap: var(--s-4); flex: none; margin-left: var(--s-2); }
-.top-end { display: flex; align-items: center; gap: var(--s-2); flex: none; margin-left: auto; }
+/* Screenshot and 2D/3D stand in the middle of the room between the links and the account with Publish: the auto
+   margins share that room equally, so the group follows the window as it is resized. */
+.top-tools { display: flex; align-items: center; gap: var(--s-4); flex: none; margin: 0 auto; }
+.top-end { display: flex; align-items: center; gap: var(--s-2); flex: none; }
 
-/* A quiet button of the top bar: its words in the muted gray, lit under the pointer. */
-.top-btn {
+/* A segmented group: the screenshot's ticks and its buttons, the view. One plate of the surface, 40 tall (--seg-h), its
+   segments inside a 2 inset: 36 tall, 6 round, 10 from their sides, so that their words and icons stand where a 40
+   button's do (12 from the group's edge; an icon alone in the middle of its 36, as in a 40). */
+.seg { --seg-h: var(--ctl-h); display: flex; align-items: center; gap: 2px; height: var(--seg-h); padding: 2px; border-radius: var(--ctl-r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.seg > button {
   display: inline-flex;
   align-items: center;
-  gap: var(--s-2);
-  flex: none;
-  height: 40px;
-  padding: 0 12px;
+  gap: var(--ctl-gap);
+  height: calc(var(--seg-h) - 4px);
+  padding: 0 calc(var(--ctl-pad) - 2px);
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(var(--ctl-r) - 2px);
   background: transparent;
   color: var(--muted);
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.12s, color 0.12s;
 }
-.top-btn .bi { width: 18px; height: 18px; }
-.top-btn:hover { background: var(--surface-2); color: var(--text-strong); }
-.publish-entry { height: 32px; padding: 0 14px 0 12px; }
-
-/* A segmented group: the screenshot's ticks and its button, the view. One pill of the surface, its parts inside. */
-.seg { display: flex; align-items: center; gap: 2px; height: 40px; padding: 2px; border-radius: 8px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
-.seg > button {
-  height: 36px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  transition: background-color 0.15s, color 0.15s;
-}
+.seg > button .bi { width: var(--ctl-icon); height: var(--ctl-icon); }
+.seg > button:focus-visible { outline-offset: -2px; }
 .seg > button:hover { color: var(--text-strong); }
-.seg > button.on { background: var(--surface-3); color: var(--text-strong); }
+.seg > button:is([aria-pressed="true"], [aria-selected="true"]) { background: var(--ctl-bg); color: var(--text-strong); }
 .seg > button[aria-disabled="true"] { color: var(--dimmed); cursor: default; }
 .record-menu { min-width: 190px; }
 
-/* Screenshot: Front and Back ticked, then the camera. */
+/* Screenshot: Front and Back ticked, then the camera. A tick is a segment: its box where a button's icon is. */
 .shot-float { user-select: none; }
 .shot-tick {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 10px 0 9px;
-  border-radius: 999px;
+  gap: var(--ctl-gap);
+  height: calc(var(--seg-h) - 4px);
+  padding: 0 calc(var(--ctl-pad) - 2px);
+  border-radius: calc(var(--ctl-r) - 2px);
   color: var(--muted);
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color 0.12s;
 }
 .shot-tick input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
 .shot-tick:hover, .shot-tick:has(input:checked) { color: var(--text-strong); }
 .shot-tick:has(input:focus-visible) { outline: 2px solid var(--primary-text); outline-offset: -2px; }
-.shot-box { display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--dimmed); transition: background-color 0.15s, box-shadow 0.15s; }
+.shot-box { display: grid; place-items: center; width: var(--ctl-icon); height: var(--ctl-icon); border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--dimmed); transition: background-color 0.15s, box-shadow 0.15s; }
 .shot-box .bi { width: 12px; height: 12px; color: #fff; opacity: 0; transition: opacity 0.15s; }
 .shot-tick:has(input:checked) .shot-box { background: var(--primary); box-shadow: none; }
 .shot-tick:has(input:checked) .shot-box .bi { opacity: 1; }
 /* The only display ticked stays ticked: at least one is taken. */
 .shot-tick.last, .shot-tick.last input { cursor: default; }
-.seg > .shot-take { display: inline-flex; place-items: center; width: 36px; height: 36px; margin-left: 2px; padding: 0; border: 0; border-radius: 8px; background: var(--surface-3); color: var(--text); transition: background-color 0.15s, color 0.15s, opacity 0.15s; align-items: center; justify-content: center; line-height: 0; }
-.seg > .shot-take .bi { width: 16px; height: 16px; }
-.seg > .shot-take:hover { background: var(--accented); color: var(--text-strong); }
-.seg > .shot-take[aria-disabled="true"] { opacity: 0.4; cursor: default; }
-.seg > .shot-take[aria-disabled="true"]:hover { background: var(--surface-3); }
+/* The camera and Record: icons alone, squares of 36 on the buttons' plate. */
+.seg > .shot-take, .capture-tools .tool { display: inline-flex; align-items: center; justify-content: center; gap: var(--ctl-gap); min-width: calc(var(--seg-h) - 4px); height: calc(var(--seg-h) - 4px); padding: 0; border: 0; border-radius: calc(var(--ctl-r) - 2px); background: var(--ctl-bg); color: var(--text); transition: background-color 0.12s, color 0.12s, opacity 0.12s; }
+.seg > .shot-take { width: calc(var(--seg-h) - 4px); margin-left: 2px; line-height: 0; }
+.seg > .shot-take .bi, .capture-tools .tool .bi { display: block; width: var(--ctl-icon); height: var(--ctl-icon); }
+.seg > .shot-take:hover, .capture-tools .tool:hover { background: var(--ctl-bg-hover); color: var(--text-strong); }
+.seg > .shot-take[aria-disabled="true"], .capture-tools .tool[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.seg > .shot-take[aria-disabled="true"]:hover, .capture-tools .tool[aria-disabled="true"]:hover { background: var(--ctl-bg); }
 .seg > .shot-take.working { opacity: 0.6; cursor: progress; }
 
 /* Record: beside the camera, drawn as it is; recording, a red pill that counts the time, pressed again it stops. */
 .capture-tools { display: flex; margin-left: 2px; }
-.capture-tools .tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: var(--surface-3); color: var(--text); font-size: 12px; line-height: 16px; font-weight: 500; font-variant-numeric: tabular-nums; transition: background-color 0.15s, color 0.15s, opacity 0.15s; }
-.capture-tools .tool .bi { width: 16px; height: 16px; }
-.capture-tools .tool:hover { background: var(--accented); color: var(--text-strong); }
-.capture-tools .tool[aria-disabled="true"] { opacity: 0.4; cursor: default; }
-.capture-tools .tool[aria-disabled="true"]:hover { background: var(--surface-3); }
+.capture-tools .tool { font-size: 12px; line-height: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .capture-tools .tool.recording { padding: 0 10px 0 8px; background: #e60022; color: #fff; }
 .capture-tools .tool.recording:hover { background: #ff1a3c; }
 .capture-tools .tool.recording .bi { width: 12px; height: 12px; }
@@ -345,19 +388,24 @@ body {
 .rec-time { min-width: 2.6em; text-align: left; }
 
 /* A newer version: a quiet link in the top bar to its download page. */
-.update-note { display: flex; margin: 0; }
-.update-note .top-btn { color: var(--primary-text); }
+.update-note { display: flex; align-items: center; gap: var(--s-2); margin: 0; }
+.update-note .btn { color: var(--primary-text); }
 .update-note b { font-weight: 600; }
 /* The built-in update: Update to <version>, a thin bar while it downloads, then Restart to update. */
-.update-note { align-items: center; gap: var(--s-2); }
 .update-go { color: var(--primary-text); }
 .update-go b { font-weight: 600; }
+/* Failed: the short button in the warning color; its menu (.update-menu) says why, with Try again and the download page. */
+.update-note .update-go.failed, .update-note .update-go.failed:hover { color: var(--warning); }
+.row-menu.update-menu { width: 340px; max-width: calc(100vw - 16px); }
+.update-menu .menu-head { display: flex; flex-direction: column; gap: 2px; white-space: normal; overflow-wrap: anywhere; }
+.update-menu .menu-head b { color: var(--text); font-weight: 500; }
 .update-progress { display: inline-flex; align-items: center; gap: var(--s-2); padding: 0 8px; color: var(--dimmed); font-size: 12px; white-space: nowrap; }
 .update-track { position: relative; width: 96px; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
 .update-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 2px; background: var(--primary-text); transition: width 0.2s linear; }
 
 /* The GitHub account the emulator publishes with: a round mark with its first letter, the name, its menu. */
-.account { gap: var(--s-2); padding: 0 8px 0 4px; color: var(--text); }
+/* The avatar (24) 8 from the button's edge, as a 16 icon is 12 from it. */
+.account { padding: 0 var(--ctl-pad) 0 8px; color: var(--text); }
 .avatar { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-strong); font-size: 11px; line-height: 1; font-weight: 600; text-transform: uppercase; }
 .account .caret { width: 14px; height: 14px; color: var(--dimmed); }
 /* Signed out, the button opens Publish, not a menu: no caret. */
@@ -378,35 +426,39 @@ body {
   --lw-control-bg: rgb(38 38 38 / 0.75);
   --lw-control-border: #262626;
   --lw-control-edge: inset 0 1px 1px 0 rgb(250 250 250 / 0.1);
-  --lw-focus: #5599ff;
   --pane-pad: var(--s-6);
 }
 .pane { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: var(--pane-pad) var(--pane-pad) 0; border-radius: 24px; background: var(--surface); box-shadow: var(--glass); overflow: hidden; }
 
 /* All apps: the head, then the list, which scrolls. */
-.pane-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); flex: none; height: 32px; margin: 0 0 var(--s-3); }
+.pane-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); flex: none; height: var(--ctl-h); margin: 0 0 var(--s-3); }
 .pane-head h2 { font-size: 16px; line-height: 24px; }
 .count { margin-left: var(--s-2); color: var(--dimmed); font-weight: 400; font-variant-numeric: tabular-nums; }
 .count:empty { display: none; }
 .head-actions { display: flex; align-items: center; gap: var(--s-1); flex: none; }
-#create-app { height: 32px; padding: 0 14px 0 10px; }
 
 .apps { position: relative; flex: 1; display: flex; flex-direction: column; gap: 2px; min-height: 0; margin: 0 calc(-1 * var(--s-2)); padding: 0 var(--s-2) var(--s-4); list-style: none; overflow-y: auto; }
+/* An app's row: its icon, its name and note, and at its end what stands in the row's flow: "Running", or the row's
+   buttons while one of them is Retry (the note says why, and wraps beside it rather than under it). The other buttons
+   (the window's 40) stand over the row's end while they show, under the pointer or with the focus, on the row's own
+   color faded in from the left; hidden, they leave the name the whole row. With no pointer that hovers (touch), they
+   are always in the row's flow, and Stop says the app runs. */
 .apps li.app {
+  --row-cover: color-mix(in srgb, var(--surface), rgb(38 38 38) 75%); /* the row's --tile over the pane's surface */
   position: relative;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: center;
   gap: 0 var(--s-3);
   flex: none;
   min-height: 60px;
-  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-2);
+  padding: var(--s-2);
   border-radius: var(--r-md);
   cursor: pointer;
   transition: background-color 0.15s;
 }
-.apps li.app:hover, .apps li.app:focus-within { background: var(--tile); }
-.apps li.app.chosen { background: var(--tile); }
+.apps li.app:is(:hover, :focus-within, .chosen) { background: var(--tile); }
+.apps li.app:has(> .live-state, .row-retry) { grid-template-columns: 40px minmax(0, 1fr) auto; }
 /* An app's icon: its picture, pixel for pixel, on black, in a rounded square as the catalog shows it. */
 .app-icon { width: 40px; height: 40px; border-radius: var(--r-md); background: #000; box-shadow: inset 0 0 0 1px var(--line-strong); }
 img.app-icon { padding: 8px; object-fit: contain; image-rendering: pixelated; }
@@ -414,25 +466,29 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
 .app-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
 .app-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dimmed); font-size: 12px; line-height: 16px; }
-.row-actions { position: relative; display: flex; align-items: center; gap: 4px; }
-.row-actions .icon-btn { width: 28px; height: 28px; border-radius: 6px; box-shadow: none; }
-.row-actions .icon-btn .bi { width: 18px; height: 18px; }
-.row-actions .icon-btn.outline { box-shadow: none; color: var(--muted); }
-.row-actions .icon-btn.solid { background: transparent; color: var(--text-strong); }
-.row-actions .icon-btn:hover { background: var(--surface-3); color: var(--text-strong); }
-/* The row's buttons light as the icons in the folder field do. */
-.row-actions .icon-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: var(--text-strong); }
-.row-actions .icon-btn:active:not(:disabled) { background: rgb(255 255 255 / 0.16); color: var(--text-strong); }
-.row-actions .icon-btn:focus-visible { outline: 2px solid var(--primary-text); outline-offset: -2px; }
-/* The row's buttons show under the pointer or with the focus; a running app says so in their place. */
-.apps li.app .row-actions > :not(.row-retry) { opacity: 0; transition: opacity 0.15s, background-color 0.15s, color 0.15s; }
-.apps li.app:is(:hover, :focus-within, .menu-open) .row-actions > * { opacity: 1; }
-.apps li.app:not(:hover, :focus-within, .menu-open) .row-actions > :not(.row-retry) { pointer-events: none; }
-@media (hover: none) { .apps li.app .row-actions > * { opacity: 1; } }
-.live-state { position: absolute; right: var(--s-3); top: 50%; translate: 0 -50%; display: inline-flex; align-items: center; gap: 6px; color: var(--primary-text); font-size: 12px; line-height: 16px; font-weight: 500; pointer-events: none; transition: opacity 0.15s; }
+.row-actions { position: absolute; top: 50%; right: var(--s-2); display: flex; align-items: center; gap: 4px; padding-left: var(--s-6); translate: 0 -50%; }
+.apps li.app:is(:hover, :focus-within, .menu-open) .row-actions { background: linear-gradient(to right, transparent, var(--row-cover) var(--s-6)); }
+.apps li.app .row-actions > :not(.row-retry) { opacity: 0; pointer-events: none; transition: opacity 0.15s, background-color 0.15s, color 0.15s; }
+.apps li.app:is(:hover, :focus-within, .menu-open) .row-actions > * { opacity: 1; pointer-events: auto; }
+.apps li.app.menu-open .row-more { background: var(--ctl-bg-hover); color: var(--text-strong); }
+/* In the row's flow: with Retry, and always where nothing hovers. With Retry, the row's other buttons are out of its
+   flow too until they show, so that the reason beside Retry has the row's room. */
+.apps li.app:has(.row-retry) > .row-actions { position: static; padding-left: 0; translate: none; background: none; }
+@media (hover: hover) {
+  .apps li.app:has(.row-retry):not(:hover, :focus-within, .menu-open) .row-actions > :not(.row-retry) { display: none; }
+}
+@media (hover: none) {
+  .apps li.app { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .apps li.app > .row-actions { position: static; padding-left: 0; translate: none; background: none; }
+  .apps li.app .row-actions > * { opacity: 1; pointer-events: auto; }
+  .apps li.app > .live-state { display: none; }
+}
+/* "Running", at the row's end in its flow, in the state's style; under the pointer the buttons stand over it. With
+   Retry in the row, the row's end is Retry's (the note's trouble is the row's point). */
+.live-state { display: inline-flex; align-items: center; gap: 6px; margin-right: var(--s-3); color: var(--primary-text); font-size: 14px; line-height: 20px; font-weight: 400; white-space: nowrap; pointer-events: none; transition: opacity 0.15s; }
 .live-state::before, .facts .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .apps li.app:is(:hover, :focus-within, .menu-open) .live-state { opacity: 0; }
-.apps li.app.menu-open .row-more { background: var(--surface-3); color: var(--text-strong); }
+.apps li.app:has(.row-retry) > .live-state { display: none; }
 
 /* The account's menu: who is signed in, over its items. */
 .row-menu .menu-head { padding: 6px 10px 8px; color: var(--dimmed); font-size: 12px; line-height: 16px; }
@@ -452,26 +508,22 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
    work said; then the tabs, whose page scrolls. */
 .side[data-mode="app"] #apps-pane, .side[data-mode="all"] #app-pane { display: none; }
 .app-card { padding-top: var(--s-4); }
-.pane-nav { display: flex; align-items: center; justify-content: space-between; flex: none; height: 32px; margin: 0 calc(-1 * var(--s-1)) var(--s-3) calc(-1 * var(--s-2)); }
-.nav-back { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; line-height: 18px; font-weight: 500; transition: background-color 0.15s, color 0.15s; }
-.nav-back .bi { width: 16px; height: 16px; }
-.nav-back:hover { background: var(--tile); color: var(--text-strong); }
-.app-head { display: flex; align-items: flex-start; gap: var(--s-3); flex: none; min-width: 0; }
-.app-head-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 12px; background: #000; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+/* All apps (a quiet button, its icon where the pane's words start) and More. */
+.pane-nav { display: flex; align-items: center; justify-content: space-between; flex: none; height: var(--ctl-h); margin: 0 0 var(--s-3) calc(-1 * var(--ctl-pad)); }
+.app-head { display: flex; align-items: flex-start; gap: var(--s-4); flex: none; min-width: 0; margin-top: var(--s-3); }
+.app-head-icon { display: grid; place-items: center; flex: none; width: 56px; height: 56px; border-radius: 14px; background: #000; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
 .app-head-icon img { width: 32px; height: 32px; image-rendering: pixelated; }
 .app-head-icon.none { background: #000 repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.04) 6px 12px); }
-.app-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; padding-top: 1px; }
-.app-head h2 { font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
-.facts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px; margin: 0; color: var(--dimmed); font-size: 12px; line-height: 16px; flex-direction: column; }
-.facts .state { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; }
-.facts .live { display: inline-flex; align-items: center; gap: 6px; color: var(--primary-text); font-weight: 500; }
+.app-head-text { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; flex: 1; }
+/* The name at title size, two lines at most (.ac-name, below, cuts it); the state under it at body size, a word or two. */
+.app-head h2 { display: block; overflow: visible; font-size: 25px; line-height: 30px; font-weight: 500; letter-spacing: -0.01em; overflow-wrap: anywhere; white-space: normal; }
+.facts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px; margin: 0; color: var(--dimmed); font-size: 14px; line-height: 20px; flex-direction: column; }
+.facts .state { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.facts .live { display: inline-flex; align-items: center; gap: 6px; color: var(--primary-text); }
 
-.app-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); flex: none; margin-top: var(--s-5); }
-.app-actions .btn { width: auto; min-width: 0; height: 36px; padding: 0 8px; gap: 6px; font-size: 13px; }
-.app-actions .btn .bi { width: 14px; height: 14px; margin: 0; }
-.app-actions .btn > span { overflow: hidden; text-overflow: ellipsis; }
+.app-actions { flex: none; margin-top: var(--s-4); }
 .app-actions:empty { display: none; }
-.app-status { display: flex; flex-direction: column; gap: var(--s-2); flex: none; margin-top: var(--s-3); }
+.app-status { display: flex; flex-direction: column; gap: var(--s-2); flex: none; margin-top: var(--s-6); }
 .app-status:empty { display: none; }
 
 .tabs { display: flex; gap: var(--s-5); flex: none; margin: var(--s-5) 0 0; border-bottom: 1px solid var(--line); }
@@ -484,49 +536,25 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
 .app-empty { margin: auto; color: var(--dimmed); text-align: center; }
 
 /* The app's settings form in the side column: the local web's controls, in the column's quieter tiles and type. */
-.app-body .settings { gap: var(--s-2); }
-.app-body .field { gap: var(--s-3); padding: var(--s-3) 14px; border-radius: 9px; background: var(--tile); font-size: 14px; line-height: 20px; }
-.app-body .settings > .field:first-of-type { border-top-left-radius: 12px; border-top-right-radius: 12px; }
-.app-body .settings > .field:last-of-type { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-.app-body .group > .field { border-radius: 12px; }
+/* Its tiles 3 apart, as the groups of tiles everywhere in the column (the corners: .field, below). */
+.app-body .settings { gap: 3px; }
+.app-body .field { gap: var(--s-3); padding: var(--s-3) 14px; font-size: 14px; line-height: 20px; }
 .app-body .field-name b { font-weight: 500; }
 .app-body .field-name span { margin-top: 2px; color: var(--dimmed); font-size: 12px; line-height: 16px; }
 .app-body .group > h3 { padding: var(--s-2) 0 0; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 500; }
 .app-body .group > .group-about { padding: 0; color: var(--dimmed); font-size: 12px; line-height: 16px; }
-.app-body .settings .input { height: 34px; }
 .app-body .save { margin-top: var(--s-2); }
 
 /* ---- layout-v2: the opened app's pages. A page is groups 20 apart; a group is its label over its content. */
-.group-label { margin: 0 0 var(--s-2); color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 500; }
+.group-label { margin: 0 0 var(--s-2); color: var(--text); font-size: 14px; line-height: 20px; font-weight: 500; }
 .field-set { display: flex; flex-direction: column; gap: var(--s-4); }
 .ov-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ov-field > label, .ov-field > .label { color: var(--text); font-size: 14px; line-height: 20px; font-weight: 500; }
 .ov-field .hint { color: var(--dimmed); font-size: 12px; line-height: 16px; }
 .ov-field .hint.wrong { color: var(--error); }
-/* app-column: the local web's field, as the settings form has it (.settings .input): 34 high, 6 px round, a hairline,
-   --ui-bg-elevated at 75 % with a light edge on top, white 14 px words, a 2 px ring of --ui-primary with the focus. */
-.ov-input {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  padding: 6px 10px;
-  border: 1px solid var(--lw-control-border);
-  border-radius: 6px;
-  background: var(--lw-control-bg);
-  box-shadow: var(--lw-control-edge);
-  color: #fff;
-  font-size: 14px;
-  line-height: 20px;
-  transition: color 0.15s, background-color 0.15s, border-color 0.15s, outline-color 0.15s;
-}
-.ov-input:focus-visible { outline: 2px solid var(--lw-focus); outline-offset: 0; }
-.ov-input::placeholder { color: var(--dimmed); }
-textarea.ov-input { height: auto; min-height: 84px; resize: vertical; }
-select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 /* A choice: the field, and BUSY's chevron over its right end. */
 .ov-select { position: relative; display: block; }
-.ov-select .bi { position: absolute; right: 10px; top: 50%; width: 16px; height: 16px; translate: 0 -50%; color: var(--dimmed); pointer-events: none; }
-.ov-input:disabled { opacity: 0.75; cursor: not-allowed; }
+.ov-select .bi { position: absolute; right: 12px; top: 50%; width: var(--ctl-icon); height: var(--ctl-icon); translate: 0 -50%; color: var(--dimmed); pointer-events: none; }
 
 /* The icons: front and back side by side, each a tile with its picture and what it is. */
 .icon-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
@@ -556,18 +584,19 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .page-note .quiet-link { margin: 0; }
 
 /* The project's folder: one line, cut in the middle so that both its start and the folder's own name are read. */
-.folder { display: flex; align-items: center; gap: var(--s-1); min-width: 0; height: 44px; padding: 0 var(--s-1) 0 var(--s-3); border-radius: var(--r-md); background: var(--surface); }
+/* A field of the window (40, 16 from its start); its buttons inside it are of the smaller size, 4 from its end. */
+.folder { display: flex; align-items: center; gap: var(--s-1); min-width: 0; height: var(--ctl-h); padding: 0 4px 0 var(--field-pad); border-radius: var(--ctl-r); background: var(--ctl-bg); }
 .folder .bi { width: 16px; height: 16px; color: var(--muted); }
 .path { display: flex; flex: 1; min-width: 0; margin: 0 var(--s-1) 0 6px; font: 12px/20px var(--mono); color: var(--text); white-space: nowrap; }
 .path .head { flex: 0 1 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis; color: var(--dimmed); }
 .path .tail { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
-.folder .btn { height: 32px; padding: 0 12px; font-size: 12px; }
 .folder .btn .wide { display: none; }
-.folder.none { justify-content: space-between; gap: var(--s-2); color: var(--muted); font-size: 13px; line-height: 18px; }
 
 /* Files: the project's files as the public repository will have them; those that stay out, dimmed, after them. */
-.files-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.files-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: 40px; }
 .files-head .group-label { margin: 0; }
+/* Not published: next to its own list, apart from the one above. */
+.group-label.files-left-label { margin: var(--s-6) 0 var(--s-1); }
 .files { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .files li { display: flex; align-items: center; gap: var(--s-2); min-width: 0; height: 32px; padding: 0 var(--s-2); border-radius: var(--r-sm); color: var(--text); font: 12px/16px var(--mono); cursor: pointer; transition: background-color 0.15s; }
 .files li:hover { background: var(--tile); }
@@ -604,67 +633,78 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 
 /* ---- app-column: the opened app's folder, under its id: the path (from ~), Copy, Open in Finder; under them the
    white Copy prompt for AI across the column. Then the files-changed notice in the app's status. */
-.app-folder { container: app-folder / inline-size; display: flex; flex-direction: column; gap: var(--s-2); flex: none; margin-top: var(--s-5); }
+.app-folder { display: flex; flex-direction: column; gap: var(--s-2); flex: none; margin-top: var(--s-6); }
 .app-folder:empty { display: none; }
-.app-folder:not([hidden]):not(:empty) + .app-actions { margin-top: var(--s-2); }
-.folder-line { display: flex; align-items: center; gap: var(--s-1); min-width: 0; height: 44px; padding: 0 6px 0 var(--s-3); border-radius: 12px; background: var(--tile); }
+.app-folder:not([hidden]):not(:empty) + .app-actions { margin-top: var(--s-3); }
+/* An app without a project: where it came from, and Open project. */
+.folder-line { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-width: 0; height: var(--ctl-h); padding: 0 4px 0 var(--field-pad); border-radius: var(--ctl-r); background: var(--ctl-bg); color: var(--muted); font-size: 13px; line-height: 18px; }
 
-.folder-line .path { margin-right: 0; }
-.folder-line .btn { height: 30px; padding: 0 12px; font-size: 12px; }
+/* The folder: its path in one read-only field with Copy and Open in Finder (Show in Explorer) inside it, 4 from its
+   end. The path is in two parts (window.js, pathLine): the folders before the project's own, which give way with an
+   ellipsis at their end, and the project's folder, whole unless it alone is wider than most of the field. */
+.ac-path-row { display: flex; align-items: center; min-width: 0; height: var(--ctl-h); padding-right: 4px; border-radius: var(--ctl-r); background: var(--ctl-bg); }
+.ac-path-row:focus-within { box-shadow: inset 0 0 0 1px var(--dimmed); }
+.path.ac-path { flex: 1; align-items: center; height: 100%; margin: 0; padding: 0 4px 0 var(--field-pad); border-radius: var(--ctl-r) 0 0 var(--ctl-r); color: var(--muted); font: 14px/20px var(--mono); cursor: text; user-select: text; }
+.path.ac-path .head { color: inherit; }
+.ac-path:focus-visible { outline: none; color: var(--text); }
 
-.folder-line.none { justify-content: space-between; gap: var(--s-2); padding-right: 6px; color: var(--muted); font-size: 13px; line-height: 18px; }
-
-@media (max-height: 720px) { .side { --pane-pad: var(--s-5); } .app-folder { margin-top: var(--s-4); } }
-/* The column at its narrowest (316 px): a little less air in the card, and Run, Stop and Refresh by their words. */
+/* The column is 342 to 400 wide in the app (30 % of a window of at least 1140): its paddings change neither with its
+   width nor with the window's height (the app's page scrolls). */
 .side { container: side / inline-size; }
-@container side (width < 340px) {
-  .pane { --pane-pad: var(--s-5); }
-  .app-actions .btn .bi { display: none; }
-}
 
 /* ---------------------------------------------------------------- layout-v2: the stage
 
    The bar and its controls take what the bar's card and the console leave; the card and the console are as wide as
    each other, centred. */
-.stage { grid-row: 2; display: flex; flex-direction: column; align-items: center; gap: var(--s-3); min-width: 0; min-height: 0; padding: var(--s-2) var(--s-6) var(--s-4); }
-.stage > .card { width: min(100%, 1040px); flex: none; }
+/* Its gap and its foot follow the page's height smoothly (12 and 16 from a page of 640, 8 and 8 at 600 and under), so
+   that the BUSY Bar and its controls keep their room in the smallest window, with the Windows title bar too. */
+.stage { grid-row: 2; display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 8px + (var(--page-h) - 600px) * 0.1, 12px); min-width: 0; min-height: 0; padding: var(--s-2) var(--s-6) clamp(8px, 8px + (var(--page-h) - 600px) * 0.2, 16px); }
+.stage > .card { width: min(100%, 1040px); }
 
-/* The canvas: the bar's scene, straight on the ground. The bar in the middle of what the dock leaves above it; the
-   dock (the controls) at its foot; the camera's views at its right in 3D. */
+/* The canvas: the BUSY Bar's scene, straight on the ground, in the room the BUSY Bar's card and the console leave. The
+   BUSY Bar in the middle of the room above its controls; the controls (the dock) at its foot; the camera's views at its
+   right in 3D. A console dragged tall leaves it 252 (the console gives way first, .console-card); the smallest window
+   leaves it less, down to 160. */
 .canvas {
   position: relative;
   align-self: stretch;
-  flex: 1 1 0;
+  flex: 1 1 252px;
   min-width: 0;
   min-height: 160px;
   container-type: size;
 }
-/* The controls' scale, CSS pixels for one unit of their drawing (900 across): with the canvas, from 0.44 to 0.69. */
+/* The canvas's geometry, one set for 2D and 3D, from the canvas's own size (cqw, cqh):
+   - --u: the controls' scale, CSS pixels for one unit of their drawing (900 by 196 units), 0.40 to 0.83;
+   - the margins under the controls, between them and the BUSY Bar, and over it: 28, 24 and 24 from a canvas of 360
+     (a window of about 760), down to 12, 16 and 20 at 200 (the smallest window), smoothly, so that the BUSY Bar keeps
+     its size on a short window and nothing steps as the window's height changes;
+   - --room: what is left above the controls for the BUSY Bar, less those margins;
+   - --w: the BUSY Bar's width in 2D, as wide as the room lets it be, at most 900, at least 220. */
 .canvas > * {
-  --u: clamp(0.53px, min(100cqw / 1375, 100cqh / 550), 0.83px);
+  --u: clamp(0.40px, min(100cqw / 1375, 100cqh / 550), 0.83px);
   --dock-h: calc(196 * var(--u));
-  /* The bar: as wide as the canvas lets it be with the dock under it, at most 900;
-  the bar and the dock stand together
-     in the middle of the canvas, 24 apart. */
-  --w: max(220px, min(100cqw - 96px, (100cqh - var(--dock-h) - 40px) * 768 / 248, 900px));
-  --bar-h: calc(var(--w) * 248 / 768);
-  --free: max(0px, (100cqh - var(--bar-h) - 24px - var(--dock-h)) / 2);
+  --m-bottom: clamp(12px, 12px + (100cqh - 200px) * 0.1, 28px);
+  --m-gap: clamp(16px, 16px + (100cqh - 200px) * 0.05, 24px);
+  --m-top: clamp(20px, 20px + (100cqh - 200px) * 0.025, 24px);
+  --room: calc(100cqh - var(--dock-h) - var(--m-bottom) - var(--m-gap) - var(--m-top));
+  --w: max(220px, min(100cqw - 96px, var(--room) * 768 / 248, 900px));
 }
 .views { position: absolute; inset: 0; z-index: 1; }
 .canvas-tools { position: absolute; z-index: 3; display: flex; gap: var(--s-2); }
 .canvas-tools-right { top: var(--s-2); right: 0; flex-direction: column; align-items: flex-end; }
 
-/* busybar-device.png is 768×248; the overlays are placed in its coordinates. */
+/* busybar-device.png is 768×248; the overlays are placed in its coordinates. In 2D the BUSY Bar is in the middle of
+   the room above the controls. */
 .device-view {
   position: absolute;
   left: 50%;
-  top: calc(var(--free) + var(--bar-h) / 2);
+  top: calc(var(--m-top) + var(--room) / 2);
   width: var(--w);
   aspect-ratio: 768 / 248;
   transform: translate(-50%, -50%);
 }
-/* In depth, the scene is the whole canvas: the model is centred by its own camera, the controls at its foot. */
-.canvas:has(.stage3d) > .dock { bottom: 0; }
+/* In depth, the scene is the whole canvas: the model is centred by its own camera above the controls (fitCameraInset
+   in window.js), the controls at its foot as in 2D. */
 .device-view:has(> .stage3d) { inset: 0; width: auto; aspect-ratio: auto; transform: none; }
 .device-view > :not(.bar) { position: absolute; inset: 0; width: 100%; height: 100%; }
 .bar { position: absolute; inset: 0; user-select: none; }
@@ -714,38 +754,27 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .shot-thumb[hidden] { display: none; }
 @keyframes shot-in { from { transform: translateY(-6px) scale(0.98); } }
 @media (prefers-reduced-motion: reduce) { .capture-toast { animation: none !important; } }
-.btn.small { height: 28px; padding: 0 12px; font-size: 12px; line-height: 16px; }
 
 /* ---------------------------------------------------------------- the 3D view's camera
 
    Front, Back, Top, Side: a column of the canvas at its right (#canvas-tools-right), shown while the view is 3D, in
    the look of the 2D / 3D switch. */
-.canvas:has(> #canvas-tools-right) { position: relative; }
-/* Where the column stands is the layout's (.canvas-tools-right: under the row of the top tools, so that the 2D / 3D
-   switch never covers Front). */
-.canvas > #canvas-tools-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-.camera-views { display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 18px; background: var(--card); box-shadow: var(--glass); }
+/* A segmented group standing up (.seg's sizes): 2 inset, segments 36 tall, 6 round, 10 from their sides. */
+.camera-views { display: flex; flex-direction: column; gap: 2px; padding: 2px; border-radius: var(--ctl-r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
 .camera-views button {
-  min-width: 56px;
-  height: 28px;
-  padding: 0 10px;
+  height: calc(var(--ctl-h) - 4px);
+  padding: 0 calc(var(--ctl-pad) - 2px);
   border: 0;
-  border-radius: 999px;
+  border-radius: calc(var(--ctl-r) - 2px);
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.12s, color 0.12s;
 }
 .camera-views button:hover { color: var(--text-strong); }
-.camera-views button.on { background: var(--accented); box-shadow: var(--glass); color: var(--text-strong); }
+.camera-views button[aria-pressed="true"] { background: var(--ctl-bg); color: var(--text-strong); }
 
 /* ---------------------------------------------------------------- layout-v2: the controls, the top of the bar
 
@@ -754,7 +783,7 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
    position the bar's switch is at, the five named on an arc around its pivot; Start / Pause, a trapezoid, the two RGB
    LEDs along its slanted sides; Back, a small round key; the wheel, a large circle with a dot that turns with it and
    small ticks around it. The grays are the drawing's: #404040 edges, #222 faces, #6e6e6e words. */
-.dock { position: absolute; left: 50%; bottom: var(--free); z-index: 2; height: var(--dock-h); transform: translateX(-50%); }
+.dock { position: absolute; left: 50%; bottom: var(--m-bottom); z-index: 2; height: var(--dock-h); transform: translateX(-50%); }
 .strip { --face: #222; --edge: #404040; --ink: #6e6e6e; position: relative; width: calc(900 * var(--u)); height: calc(196 * var(--u)); user-select: none; }
 .strip > * { position: absolute; }
 
@@ -809,30 +838,19 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .key-start:focus-visible { outline: none; background: #2f2f2f; color: var(--primary-text); }
 
 /* The two RGB LEDs along its sides (controls/led-left.svg, led-right.svg): the drawing's gray while off; lit, their
-   color with a glow (renderLights in window.js; the glow is the outer box's, the shape the inner one's). Both show
+   color with a glow (drawLights in window.js; the glow is the outer box's, the shape the inner one's). Both show
    the same. */
 .led { top: calc(48.5 * var(--u)); width: calc(50.76 * var(--u)); height: calc(105.7 * var(--u)); pointer-events: none; }
-.led.left { left: calc(259 * var(--u)); }
-.led.right { left: calc(624.6 * var(--u)); }
+.led.left { left: calc(259 * var(--u)); --shape: url(/emulator/controls/led-left.svg); }
+.led.right { left: calc(624.6 * var(--u)); --shape: url(/emulator/controls/led-right.svg); }
 .led::before, .led-light { content: ""; position: absolute; inset: 0; -webkit-mask: var(--shape) center / 100% 100% no-repeat; mask: var(--shape) center / 100% 100% no-repeat; }
-.led.left { --shape: url(/emulator/controls/led-left.svg); }
-.led.right { --shape: url(/emulator/controls/led-right.svg); }
 .led::before { background: var(--edge); }
 /* Lit, the core is the LED's hue as the eye sees it, and its own light spreads round the shape in three drop shadows,
-   wider and stronger with the brightness (--led-filter, set by renderLights). */
-.led-light { background: var(--led, transparent); opacity: 0; transition: opacity 0.2s, background-color 0.2s; }
+   wider and stronger with the brightness (--led-filter). drawLights sets them at every step of the firmware's preset
+   (status-lights.mjs): the light changes at once, as the LED's does, with no transition of its own. */
+.led-light { background: var(--led, transparent); opacity: 0; }
 .led.lit { filter: var(--led-filter, none); }
 .led.lit .led-light { opacity: 1; }
-/* What the firmware's presets do over time (status_lights): blink at half a second, three blinks for a notification
-   and then dark, fade, and the rainbow. */
-.led.fade .led-light { animation: led-fade 2s ease-in-out infinite alternate; }
-.led.rainbow { animation: led-rainbow 4s linear infinite; }
-.led.blink .led-light, .led.notification .led-light { animation: led-blink-light 1s steps(1, end) infinite; }
-.led.notification .led-light { animation-iteration-count: 3; animation-fill-mode: forwards; }
-@keyframes led-blink-light { 50% { opacity: 0; } 100% { opacity: 0; } }
-@keyframes led-fade { from { opacity: 0.25; } }
-@keyframes led-rainbow { from { filter: var(--led-filter) hue-rotate(0deg); } to { filter: var(--led-filter) hue-rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .led.fade .led-light, .led.rainbow { animation: none; } }
 
 /* Back: a small round key with the back arrow (controls/back.svg). */
 .key-back { left: calc(656 * var(--u)); top: calc(14 * var(--u)); width: calc(56 * var(--u)); height: calc(56 * var(--u)); display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--face); color: var(--ink); touch-action: none; transition: background-color 0.1s, color 0.1s; }
@@ -862,100 +880,160 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .turn .bi { width: 14px; height: 14px; }
 .turn:focus-visible { opacity: 1; }
 
-/* A narrow or low canvas: the controls a little smaller. */
-@container (max-width: 640px) {
-  .canvas > * { --w: max(220px, min(100cqw - 32px, (100cqh - var(--dock-h) - 32px) * 768 / 248)); }
-}
-
 /* ---------------------------------------------------------------- layout-v2: the bar's card
 
-   Its back display at its own size on the left, what it is in the middle, its settings on the right, two by two. */
-.device-card { container: device / inline-size; display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 380px); align-items: stretch; gap: var(--s-5); padding: var(--s-3); border-radius: var(--r-xl); background: var(--surface); }
+   The owner's design (Figma, the BUSY Bar card at 992, 860 and 750, 17.11): one row at every width, 166 tall. On the
+   left the back display, as tall as the card's content (126), and what the BUSY Bar is: its name, its firmware (the
+   list of firmwares) and API at the top; Restart BUSY Bar and the uptime at the foot, with the firmware that waits for
+   the restart as the uptime's second line. On the right the controls, 340 wide: the address with Copy and Local Web,
+   the four settings two by two under them. The room left over goes between the two.
+
+   The card's own width decides (the card is the container `device`, its padding is .device-body's):
+   - 917 and wider: everything at full length. 917 = the padding 40, the back display 236, the gaps 48, the controls
+     340, and the 253 the foot needs: Restart BUSY Bar 162, 12, the uptime 79.
+   - 851 to 916: Restart says "Restart" (the foot needs 185, and the firmware's line 187).
+   - 744 to 850: the controls 233 wide; Wi-Fi and USB by their icons, Battery and Volume by their values (their names
+     and sliders are in the tiles' tooltips and in the local web).
+   - under 744: the back display goes (the 3D view's Back and the screenshot's Back still show it), the rest as from
+     744 to 850, down to a card of 484 (the padding 40, the firmware's line 187, 24, the controls 233). The app's
+     smallest window keeps the card at 750 (DEVICE_MIN_SIZE, packages/app/src/windows.mjs), but on a small screen the
+     shell lowers that minimum to what the screen has (fitToScreen), and in a browser the page is as wide as the
+     browser's window. */
+.device-card { container: device / inline-size; position: relative; flex: none; padding: 0; border-radius: var(--r-xl); background: var(--surface); }
+/* The BUSY Bar's card and the console: a fine edge that fades toward their foot. */
+:is(.device-card, .console-card)::before { content: ""; position: absolute; inset: 0; z-index: 0; padding: 1px; border-radius: inherit; background: linear-gradient(to bottom, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.04) 55%, rgb(255 255 255 / 0)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+.device-body { position: relative; display: flex; align-items: stretch; gap: var(--s-6); padding: var(--s-5); }
+
+/* The back display: 160 by 80 at 220 by 110 in a black frame 8 round it, pixels kept square. */
 .oled-frame { flex: none; padding: var(--s-2); border-radius: 14px; background: #000; box-shadow: inset 0 0 0 1px var(--line); }
-.oled { display: block; width: 160px; height: 80px; image-rendering: pixelated; background: #000; }
-.device-about { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
-.device-head { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
-.device-name { font-size: 18px; line-height: 24px; font-weight: 500; }
+.oled { display: block; width: 220px; height: 110px; image-rendering: pixelated; background: #000; }
+
+/* What the BUSY Bar is: its top (the name, the firmware's line) and its foot (Restart, the uptime), apart. */
+.device-about { display: flex; flex: 1 1 0; flex-direction: column; justify-content: space-between; min-width: 0; }
+.about-top { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.device-head { display: flex; align-items: baseline; gap: var(--s-3); min-width: 0; }
+.device-name { flex: none; font-size: 21px; line-height: 24px; font-weight: 500; }
 .link { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--dimmed); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; }
 .link::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--dimmed); }
 .link.live { color: var(--muted); }
 .link.live::before { background: #34c759; }
-.builds { display: flex; flex-wrap: wrap; gap: 0 var(--s-2); margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; cursor: default; }
-.builds.mono { color: var(--dimmed); font: 12px/16px var(--mono); }
-.builds span:empty { display: none; }
-.device-links { display: flex; align-items: center; gap: var(--s-1); margin-top: var(--s-2); }
-.device-links .btn .bi { width: 14px; height: 14px; }
-/* bar-address: the API version links to the bar's API documentation; the bar's address with Copy under it; Restart
-   bar turns while the bar restarts and says when it is back. */
-.builds .api-docs { color: inherit; text-decoration: underline dotted color-mix(in oklab, currentColor 50%, transparent); text-underline-offset: 3px; cursor: pointer; }
-.builds .api-docs:hover { color: var(--text-strong); text-decoration-style: solid; }
-/* The address shares the line of the uptime, so the card keeps its height; the serial number (always EMULATOR here)
-   is in the line's tooltip. */
-.builds.bar-address { flex-wrap: nowrap; align-items: center; gap: 0 var(--s-1); min-width: 0; height: 16px; }
-.builds.bar-address #device-uptime { flex: none; }
-.bar-address a { min-width: 0; overflow: hidden; color: var(--muted); font: 12px/16px var(--mono); text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
-.bar-address a:hover { color: var(--text-strong); text-decoration: underline; text-underline-offset: 3px; }
-.bar-address a:empty, .bar-address a:empty + .icon-btn { display: none; }
-.icon-btn.tiny { width: 20px; height: 20px; margin: -2px 0; }
-.icon-btn.tiny .bi { width: 14px; height: 14px; }
-#bar-address-copy.copied { color: #34c759; }
-#power-restart[aria-busy="true"] { cursor: progress; }
-#power-restart[aria-busy="true"] .bi { animation: turn 0.9s linear infinite; }
-#power-restart.done { color: #34c759; }
-@media (prefers-reduced-motion: reduce) { #power-restart[aria-busy="true"] .bi { animation: none; } }
-/* Three columns on a card under 930 px leave the middle one under 320 px: Restart BUSY Bar keeps its icon (its
-   tooltip and name say the rest) and the uptime steps aside for the address. */
-@media (min-width: 1141px) {
-  @container device (max-width: 930px) {
-    #power-restart .label { display: none; }
-    #power-restart { padding: 0 9px; }
-    #power-restart .bi { margin-left: 0; }
-    .builds.bar-address #device-uptime { display: none; }
-  }
-}
+/* The link to the emulator's server says nothing while it holds; it shows only while it is lost. */
+.device-card #link { overflow: hidden; text-overflow: ellipsis; font-size: 14px; line-height: 20px; font-weight: 400; }
+.device-card #link.live { display: none; }
+.device-card #link:not(.live) { color: var(--warning); }
+.device-card #link:not(.live)::before { background: var(--warning); }
 #speed-note { margin-left: auto; }
 
-.sets { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-1); }
-.set { display: flex; align-items: center; gap: 10px; min-width: 0; height: 40px; padding: 0 var(--s-3); border-radius: var(--r-md); background: var(--surface-2); cursor: pointer; }
+/* The firmware's line: the firmware, which opens the list, and the API, which links to the BUSY Bar's API
+   documentation; at body size, value style. */
+.builds { display: flex; align-items: center; gap: var(--s-2); min-width: 0; margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; font-weight: 400; }
+.builds .api-docs { flex: none; color: inherit; text-decoration: underline dotted color-mix(in oklab, currentColor 50%, transparent); text-underline-offset: 3px; }
+.builds .api-docs:hover { color: var(--text-strong); text-decoration-style: solid; }
+/* The firmware: the line's own text and a caret, 32 tall, the whole of it the click's; no plate of its own. Under the
+   pointer or open, the word and the caret turn white. */
+.fw-pick { display: inline-flex; flex: none; align-items: center; gap: 2px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
+.fw-pick .bi { width: 14px; height: 14px; color: var(--dimmed); transition: transform 0.15s; }
+.fw-pick:hover, .fw-pick[aria-expanded="true"], .fw-pick:hover .bi, .fw-pick[aria-expanded="true"] .bi { color: var(--text-strong); }
+.fw-pick[aria-expanded="true"] .bi { transform: rotate(180deg); }
+/* Not the latest: the label in the warning color, as the sound's speaker turns after a sound that was missed. */
+.fw-pick.behind, .fw-pick.behind .bi { color: var(--warning); }
+/* Switching: the label says so, with the pulsing dot of the window's working lines. */
+.fw-pick.working, .fw-pick.working:hover { gap: var(--s-2); color: var(--primary-text); cursor: progress; }
+.fw-pick.working .bi { display: none; }
+.fw-pick.working::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-text); animation: pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .fw-pick.working::before { animation: none; } }
+
+/* The foot: Restart BUSY Bar, the window's button (.btn), primary (white) while a firmware waits for it; beside it the uptime, and under the uptime that firmware in the error color. The two lines
+   are as tall as the button, so a choice does not change the card's height. */
+.device-links { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.restart .label-short { display: none; }
+.restart[aria-busy="true"] { cursor: progress; }
+.restart[aria-busy="true"] .bi { animation: turn 0.9s linear infinite; }
+.restart.done { color: #34c759; }
+@media (prefers-reduced-motion: reduce) { .restart[aria-busy="true"] .bi { animation: none; } }
+.device-uptime { container: uptime / inline-size; display: flex; flex: 1 1 0; flex-direction: column; justify-content: center; min-width: 0; height: var(--ctl-h); margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; white-space: nowrap; }
+.device-uptime > span { overflow: hidden; text-overflow: ellipsis; }
+.device-uptime > span:empty { display: none; }
+/* The firmware that waits, at full length where the room beside Restart takes it, by its number where it does not:
+   160 holds "Next: firmware 10.10.10" (about 150). Its tooltip is the whole sentence (window.js). */
+.fw-pending { color: var(--error); }
+.fw-pending-short { display: none; }
+@container uptime (width < 160px) {
+  .fw-pending-long { display: none; }
+  .fw-pending-short { display: inline; }
+}
+
+/* The controls: the address with Copy and Local Web, then the four settings two by two, 3 apart; the block's outer
+   corners rounded by the block itself. */
+.device-controls { display: flex; flex: none; flex-direction: column; gap: 3px; width: 340px; border-radius: 12px; overflow: clip; }
+/* The block clips its corners: the focus rings inside it are drawn inside their controls, so they are whole. */
+.device-controls :focus-visible { outline-offset: -2px; }
+.bar-address { display: flex; gap: 3px; min-width: 0; }
+.address-field { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; height: var(--ctl-h); margin: 0; padding: 0 4px 0 var(--field-pad); border-radius: var(--ctl-r); background: var(--ctl-bg); }
+.address-field a { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--text-strong); text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+.address-field a:hover { text-decoration: underline; text-underline-offset: 3px; }
+#bar-address-copy.copied { color: #34c759; }
+.sets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
+.set { display: flex; align-items: center; gap: 10px; min-width: 0; height: var(--ctl-h); padding: 0 var(--s-4); border-radius: 9px; background: var(--tile); font-size: 14px; line-height: 20px; font-weight: 500; cursor: pointer; }
 .set .bi { width: 18px; height: 18px; color: var(--muted); }
 .set > span:not(.icon):not(.value) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set.battery, .set.volume { cursor: default; }
 .set .slider { flex: 1; min-width: 40px; height: 6px; }
 .set .slider::-webkit-slider-thumb { width: 14px; height: 14px; border: 0; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.4); }
-.set .value { flex: none; width: 2.6em; color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+/* "100%" whole in tabular figures (41; Figma's 36.4 is its box, which cuts it), so the slider does not move with the value. */
+.set .value { flex: none; width: 41px; color: var(--muted); font-size: 14px; line-height: 20px; font-weight: 400; text-align: right; font-variant-numeric: tabular-nums; }
 .set .switch { margin-left: auto; }
 /* The sound: the volume's speaker, struck through until the window may play (a click anywhere lets it); the row's
    tooltip says so, and turns to the warning color when the bar played a sound that was not heard. */
 .set.sound:has(.missed) .bi { color: var(--warning); }
 
-/* A narrower stage: the settings go under the back display and what the bar is, the four in a row. */
-@media (max-width: 1140px) {
-  .device-card { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--s-3); }
-  .sets { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .set { gap: var(--s-2); padding: 0 10px; }
-  .set .value { width: 2.4em; }
+/* While the BUSY Bar switches firmware it is down: its controls and its settings cannot be used. */
+.switching .dock, .switching .sets { opacity: 0.4; pointer-events: none; }
+
+/* Under 917: Restart by its verb. While it restarts or says how it went, its words take the uptime's room: the uptime,
+   which a restart starts again, comes back with the BUSY Bar. */
+@container device (width < 917px) {
+  .restart:not([aria-busy="true"]):not(.said) .label { display: none; }
+  .restart:not([aria-busy="true"]):not(.said) .label-short { display: inline; }
+  .device-links:has(.restart[aria-busy="true"], .restart.said) #device-uptime { display: none; }
+}
+/* Under 851: the controls 233 wide; the tiles by their icons and values; the address field still fills its row, its
+   words 8 from its start (Figma: 16), so that an address with a five-digit port (about 143) is whole before Copy. */
+@container device (width < 851px) {
+  .device-controls { width: 233px; }
+  .address-field { padding-left: 8px; }
+  .set { justify-content: space-between; }
+  .set > span:not(.icon):not(.value), .set .slider { display: none; }
+}
+/* Under 744 (a small screen, a browser): the card keeps what the BUSY Bar is and its controls, not its back display. */
+@container device (width < 744px) {
+  .oled-frame { display: none; }
 }
 
 /* ---------------------------------------------------------------- layout-v2: the console
 
    Under the bar's card, as wide. Its head: the name and how many errors, All or Errors, the kinds of line (a menu), the
    terminal, Clear, collapse. Its lines straight on the card. The top edge resizes it (--console-h, kept). */
-.console-card { position: relative; display: flex; flex-direction: column; height: var(--console-h, clamp(112px, 100vh - 640px, 240px)); padding: 0; border-radius: var(--r-xl); background: var(--surface); container: console / inline-size; }
+/* Its height: the one the person dragged it to (--console-h, kept by window.js), or by the page's height, 112 to 240.
+   Where the stage has not the room, the console gives way first, down to 112 (its shrink weighs a thousand times the
+   canvas's), and then the canvas, down to its 160; dragged tall, it stops where the canvas has 252 (.canvas). */
+.console-card { position: relative; display: flex; flex-direction: column; flex: 0 1000 var(--console-h, clamp(112px, var(--page-h) - 640px, 240px)); min-height: 112px; padding: 0; border-radius: var(--r-xl); background: var(--surface); container: console / inline-size; }
 .console-card .card-head { display: flex; align-items: center; gap: var(--s-1); flex: none; height: 44px; margin: 0; padding: 0 var(--s-2) 0 var(--s-4); }
 .console-card h2 { flex: none; margin-right: auto; }
-.console-title { display: inline-flex; align-items: center; gap: var(--s-2); height: 28px; padding: 0; border: 0; background: transparent; color: var(--text-strong); font-size: 14px; line-height: 20px; font-weight: 600; }
+.console-title { display: inline-flex; align-items: center; gap: var(--s-2); height: var(--ctl-small); padding: 0; border: 0; background: transparent; color: var(--text-strong); font-size: 14px; line-height: 20px; font-weight: 600; }
 .error-count { margin: 0; padding: 0 6px; min-width: 18px; height: 18px; border-radius: 999px; background: color-mix(in oklab, var(--error) 18%, transparent); color: var(--error); font-size: 11px; line-height: 18px; font-weight: 600; text-align: center; }
 .filters { display: flex; align-items: center; gap: var(--s-1); flex: none; }
-.filters .seg { margin-right: var(--s-1); }
-.kinds { display: flex; align-items: center; gap: 2px; margin-right: var(--s-1); }
+/* The console's head is dense: its controls are of the smaller size, 32 (its segments 28 inside). */
+.filters .seg { --seg-h: var(--ctl-small); margin-right: var(--s-1); }
+.kinds { position: static; inset: auto; display: flex; align-items: center; gap: 2px; margin: 0 var(--s-1) 0 0; padding: 0; border: 0; background: none; color: inherit; overflow: visible; }
 .toggle { position: relative; display: inline-flex; cursor: pointer; }
 .toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
-.toggle span { padding: 4px 8px; border-radius: 999px; color: var(--dimmed); font-size: 12px; line-height: 16px; font-weight: 500; transition: background-color 0.15s, color 0.15s; }
+.toggle span { display: inline-flex; align-items: center; height: var(--ctl-small); padding: 0 10px; border-radius: calc(var(--ctl-r) - 2px); color: var(--dimmed); font-size: 12px; line-height: 16px; font-weight: 500; transition: background-color 0.15s, color 0.15s; }
 .toggle:hover span { color: var(--text); }
 .toggle input:checked + span { color: var(--text); background: var(--surface-2); }
 .toggle input:focus-visible + span { outline: 2px solid var(--primary-text); outline-offset: 2px; }
 .collapse .bi { transition: transform 0.15s; }
-.console-card.collapsed { height: auto; }
+.console-card.collapsed { flex: none; min-height: 0; }
 .console-card.collapsed .console, .console-card.collapsed .filters > :not(.collapse), .console-card.collapsed .console-grip { display: none; }
 .console-card.collapsed .collapse .bi { transform: rotate(180deg); }
 .console-grip { position: absolute; z-index: 2; top: -8px; left: 50%; width: 120px; height: 14px; translate: -50% 0; cursor: ns-resize; touch-action: none; }
@@ -976,23 +1054,32 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .console .system .text { color: var(--dimmed); }
 .console.hide-app .app, .console.hide-system .system, .console.hide-build .build { display: none; }
 .console.only-errors .line:not(.error, .warn) { display: none; }
-/* A narrow console: the kinds of line are a small menu behind the filter button. */
-.kinds-btn { display: none; }
-.filters { position: relative; }
+/* A narrow console: the kinds of line are a small pop-up behind the filter button (index.html: popover), under it, at
+   its right edge, or over it where the window has no room under it (anchor positioning). A resize of the window
+   closes it (window.js). */
+.kinds-btn { display: none; anchor-name: --console-kinds; }
 @container console (max-width: 600px) {
   .kinds-btn { display: grid; }
-  .kinds { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: none; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px; border-radius: var(--r-lg); background: #1f1f1f; box-shadow: var(--glass), 0 12px 32px rgb(0 0 0 / 0.5); }
-  .kinds.open { display: flex; }
+  .kinds:not(:popover-open) { display: none; }
+  .kinds { position: fixed; position-anchor: --console-kinds; position-try-fallbacks: flip-block; top: anchor(bottom); right: anchor(right); flex-direction: column; align-items: stretch; margin: 6px 0 0; padding: 6px; border-radius: var(--r-lg); background: #1f1f1f; box-shadow: var(--glass), 0 12px 32px rgb(0 0 0 / 0.5); }
   .kinds .toggle span { display: block; padding: 6px 10px; }
 }
 
 /* ---------------------------------------------------------------- layout-v2: smaller windows
 
-   Down to the shell's smallest window (880×600): the top bar's quiet words go first, then the account's name. */
-@media (max-width: 1180px) { #report-bug span, .top-doc span, .account-name, .account .caret { display: none; } #report-bug { padding: 0 7px; } }
-@media (max-width: 1000px) { .topbar { gap: var(--s-3); } .stage { padding: var(--s-2) var(--s-4) var(--s-3); } }
-@media (max-height: 720px) { .app-actions { margin-top: var(--s-4); } .tabs { margin-top: var(--s-4); } }
-@media (max-height: 640px) { .stage { gap: var(--s-2); padding-bottom: var(--s-2); } .device-card { padding: var(--s-2); } }
+   Down to the shell's smallest window (1140×600) the top bar keeps every word while no one is signed in: Report a Bug
+   and the two documentation links (the owner, 17.11; window-layout test). Signed in, every word needs more than a 1140
+   window has (about 1170 with an 11-letter login, 1225 with a name at its 140; the account-menu test says it): below
+   1180 the quiet words go and the account's name; below 1300 the documentation links show their icons alone. The rule
+   by width after them is for the page in a browser narrower than the app's window. */
+@media (max-width: 1180px) {
+  .topbar:has(#account:not([hidden])) :is(#report-bug span, .top-doc span, .account-name, .account .caret) { display: none; }
+  .topbar:has(#account:not([hidden])) #report-bug { padding: 0 7px; }
+}
+@media (max-width: 1300px) {
+  .topbar:has(#account:not([hidden])) .top-doc span { display: none; }
+}
+@media (max-width: 1000px) { .topbar { gap: var(--s-3); } .stage { padding-inline: var(--s-4); } }
 
 /* ---- the app's settings: our own form, drawn from the app's settings file, in the local web's look (its
    SettingsFields: Nuxt UI's InputNumber, Select, Switch and Input, dark theme). The values are the local web's own,
@@ -1006,7 +1093,6 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
   --lw-control-bg: rgb(38 38 38 / 0.75);
   --lw-control-border: #262626;
   --lw-control-edge: inset 0 1px 1px 0 rgb(250 250 250 / 0.1);
-  --lw-focus: #5599ff; /* --ui-primary */
   --lw-error: #eb334e; /* --ui-error */
   --lw-surface-card: #222;
 }
@@ -1038,56 +1124,19 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .group > .group-about { margin: 0; padding: 0 4px; color: var(--muted); font-size: 14px; line-height: 20px; }
 .group > h3 + :not(.group-about), .group > .group-about { margin-bottom: 4px; }
 
-/* Text, time and the stepper's number: the local web's field. */
-.settings .input {
-  width: 224px;
-  max-width: 100%;
-  height: 34px;
-  padding: 6px 10px;
-  border: 1px solid var(--lw-control-border);
-  border-radius: 6px;
-  background: var(--lw-control-bg);
-  box-shadow: var(--lw-control-edge);
-  backdrop-filter: blur(32px);
-  color: #fff;
-  font-size: 14px;
-  line-height: 20px;
-  transition: color 0.15s, background-color 0.15s, border-color 0.15s, outline-color 0.15s;
-}
-.settings .input::placeholder { color: var(--dimmed); }
-.settings .input:focus-visible { outline: 2px solid var(--lw-focus); outline-offset: 0; }
-.settings .input:disabled { opacity: 0.75; cursor: not-allowed; }
-.settings .input.wrong { border-color: var(--lw-error); }
-.settings .input.wrong:focus-visible { outline-color: var(--lw-error); }
+/* Text, time and the stepper's number: the window's field (.input), as wide as a setting needs. */
+.settings .input { width: 224px; max-width: 100%; }
 .settings .input[type="time"] { width: 144px; }
 .settings .input[type="time"]::-webkit-calendar-picker-indicator { cursor: pointer; }
 
 /* The stepper: − the value +, the buttons laid over the field's ends. */
 .field-input.integer { position: relative; width: 144px; }
-.field-input.integer .input { width: 100%; padding: 6px 36px; text-align: center; font-variant-numeric: tabular-nums; }
-.step {
-  position: absolute;
-  top: 50%;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-top: -16px;
-  padding: 6px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  transition: color 0.15s;
-  touch-action: none;
-}
+.field-input.integer .input { width: 100%; padding: 0 36px; text-align: center; font-variant-numeric: tabular-nums; }
+.step { position: absolute; top: 50%; margin-top: calc(var(--ctl-small) / -2); touch-action: none; }
 .step.down { left: 4px; }
 .step.up { right: 4px; }
-.step:hover, .step:active { color: var(--text); }
-.step:disabled { opacity: 0.75; color: var(--muted); cursor: not-allowed; }
-.step .bi { width: 20px; height: 20px; }
 /* The minus is the plus's crossbar: BUSY's set has no minus, and the local web's is that bar. */
-.step .minus { width: calc(20px * 14 / 24); height: calc(20px * 2 / 24); background: currentColor; }
+.step .minus { width: calc(var(--ctl-icon) * 14 / 24); height: calc(var(--ctl-icon) * 2 / 24); background: currentColor; }
 
 /* The switch: 44 by 24, a white knob that slides 20 px. */
 .settings .switch {
@@ -1112,25 +1161,23 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .select {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ctl-gap);
   max-width: 100%;
   min-width: 53px;
-  height: 28px;
-  padding: 4px 8px;
-  border: 1px solid var(--lw-control-border);
-  border-radius: 6px;
-  background: var(--lw-control-bg);
-  box-shadow: var(--lw-control-edge);
-  backdrop-filter: blur(32px);
-  color: #fff;
+  height: var(--ctl-h);
+  padding: 0 var(--ctl-pad) 0 var(--field-pad);
+  border: 0;
+  border-radius: var(--ctl-r);
+  background: var(--ctl-bg);
+  color: var(--text-strong);
   font-size: 14px;
-  line-height: 18px;
+  line-height: 20px;
   transition: color 0.15s, background-color 0.15s;
 }
-.select:focus-visible { outline: 2px solid var(--lw-focus); outline-offset: 0; }
+.select:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 0; }
 .select-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-chevron { display: flex; flex: none; color: var(--dimmed); }
-.select-chevron .bi { width: 12px; height: 12px; }
+.select-chevron .bi { width: var(--ctl-icon); height: var(--ctl-icon); }
 .select-list {
   position: fixed;
   z-index: 50;
@@ -1165,22 +1212,8 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 /* A color: a round outlined button with its swatch and its value. The color field under it is what it opens. */
 .field-input.color { position: relative; }
 .color-input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; pointer-events: none; }
-.color-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--accented);
-  color: var(--text);
-  font: 500 14px/20px var(--mono);
-  transition: background-color 0.15s;
-}
-.color-pill:hover, .color-pill:active { background: var(--elevated); }
-.color-pill .swatch { flex: none; width: 20px; height: 20px; border-radius: 6px; box-shadow: 0 0 0 1px #262626; }
+.color-pill { font-family: var(--mono); }
+.color-pill .swatch { flex: none; width: var(--ctl-icon); height: var(--ctl-icon); border-radius: 4px; box-shadow: 0 0 0 1px #3a3a3a; }
 
 /* The place: the local web's card, with what fixes the place under it. */
 .geo { display: flex; flex-direction: column; gap: 4px; font-size: 16px; line-height: 24px; }
@@ -1301,8 +1334,7 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
 .first-steps ol { display: flex; flex-direction: column; gap: 6px; margin: 0; padding-left: 20px; color: var(--text); }
 .first-steps li::marker { color: var(--muted); }
 .first-steps li:first-child { display: list-item; }
-.first-steps li:first-child .btn { height: 26px; margin-left: 8px; padding: 0 10px; font-size: 12px; vertical-align: middle; }
-.first-steps li:first-child .btn .bi { width: 14px; height: 14px; }
+.first-steps li:first-child .btn { margin-left: 8px; vertical-align: middle; }
 .first-steps code { font: 12px/16px var(--mono); color: var(--text-strong); }
 .first-steps li b { font-weight: 500; color: var(--text-strong); }
 
@@ -1326,7 +1358,6 @@ select.ov-input { appearance: none; padding-right: 32px; cursor: pointer; }
    Text is 14/20, hints and counts 12/16; what happens (working, done, failed, why Next is off) is said in one place,
    the footer's left. */
 
-.publish-entry { height: 32px; }
 body.publishing { overflow: hidden; }
 .publish-scrim { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 0.6); backdrop-filter: blur(6px); }
 .publish {
@@ -1353,10 +1384,10 @@ body.publishing { overflow: hidden; }
   align-items: center;
   gap: 12px;
   width: 100%;
-  height: 36px;
-  padding: 0 12px 0 8px;
+  height: var(--ctl-h);
+  padding: 0 var(--ctl-pad) 0 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--ctl-r);
   background: transparent;
   color: var(--muted);
   text-align: left;
@@ -1399,7 +1430,6 @@ body.publishing { overflow: hidden; }
 .publish-row .publish-muted { flex: 1; min-width: 200px; font-size: 12px; line-height: 16px; }
 .link-btn { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--primary-text); font-size: 13px; line-height: 20px; }
 .link-btn:hover { text-decoration: underline; }
-.btn.small { height: 28px; padding: 0 12px; font-size: 13px; }
 
 /* Fields, as the local web's and Create app's. */
 .publish-form { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -1410,24 +1440,7 @@ body.publishing { overflow: hidden; }
 .publish-field .count { color: var(--dimmed); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .publish-field .hint { min-height: 16px; margin-top: -4px; color: var(--dimmed); font-size: 12px; line-height: 16px; }
 .publish-field.bad .hint { color: var(--error); }
-.publish .input {
-  width: 100%;
-  height: 36px;
-  padding: 8px 12px;
-  border: 1px solid var(--lw-control-border, #262626);
-  border-radius: 8px;
-  background: var(--lw-control-bg, rgb(38 38 38 / 0.75));
-  box-shadow: var(--lw-control-edge, none);
-  color: #fff;
-  font-size: 14px;
-  line-height: 20px;
-}
-.publish .input::placeholder { color: var(--dimmed); }
-.publish .input:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 0; }
-.publish textarea.input { height: auto; resize: vertical; font: inherit; line-height: 20px; }
 .publish textarea.input.code { font: 13px/20px var(--mono); }
-.publish-field.bad .input { border-color: var(--error); }
-.publish-field.narrow .input { width: 100%; }
 
 /* Lists of things to look at: a file, a check; a dot says how much it matters. */
 .publish-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
@@ -1465,9 +1478,11 @@ body.publishing { overflow: hidden; }
 .publish-empty { display: grid; place-items: center; flex: 1; min-height: 80px; margin: 0; padding: 16px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--elevated); color: var(--dimmed); font-size: 13px; line-height: 20px; text-align: center; }
 
 /* README: the editor and the preview side by side, the preview as GitHub would show it, near enough. */
-.publish-tabs { display: inline-flex; flex: none; padding: 2px; border-radius: 999px; background: var(--elevated); }
-.publish-tabs button { height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 13px; line-height: 20px; font-weight: 500; }
-.publish-tabs button.on { background: var(--accented); box-shadow: var(--glass); color: var(--text-strong); }
+/* A segmented group (.seg's sizes): 40 outside, segments 36 inside a 2 inset. */
+.publish-tabs { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--ctl-r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.publish-tabs button { height: calc(var(--ctl-h) - 4px); padding: 0 calc(var(--ctl-pad) - 2px); border: 0; border-radius: calc(var(--ctl-r) - 2px); background: none; color: var(--muted); font-size: 14px; line-height: 20px; font-weight: 500; }
+.publish-tabs button:hover { color: var(--text-strong); }
+.publish-tabs button.on { background: var(--ctl-bg); color: var(--text-strong); }
 .publish-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; align-items: start; }
 .publish-preview-box { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .publish-caption { color: var(--dimmed); font-size: 12px; line-height: 16px; font-weight: 500; }
@@ -1522,7 +1537,7 @@ body.publishing { overflow: hidden; }
 .publish-choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .publish-choices .choice { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: 12px; background: var(--tile); box-shadow: none; cursor: pointer; transition: background-color 0.15s; }
 .publish-choices .choice:hover { background: var(--elevated); }
-.publish-choices .choice.on { background: var(--accented); box-shadow: var(--glass); }
+.publish-choices .choice:has(> input:checked) { background: var(--accented); box-shadow: var(--glass); }
 .publish-choices input { margin: 3px 0 0; accent-color: var(--primary); }
 .publish-choices .words { display: flex; flex-direction: column; gap: 2px; }
 .publish-choices .words b { color: var(--text-strong); font-size: 14px; line-height: 20px; font-weight: 500; }
@@ -1551,7 +1566,7 @@ body.publishing { overflow: hidden; }
 
 /* Copy: a tick and Copied for two seconds (copied() in publish.js). */
 .btn.copied, .icon-btn.copied { color: var(--primary-text); }
-.icon-btn.copied { display: inline-flex; align-items: center; width: auto; padding: 0 10px 0 8px; gap: 6px; font-size: 12px; line-height: 16px; font-weight: 500; }
+.icon-btn.copied { display: inline-flex; align-items: center; width: auto; padding: 0 var(--ctl-pad); gap: var(--ctl-gap); font-size: 14px; line-height: 20px; font-weight: 500; }
 .btn.copied .bi, .icon-btn.copied .bi { color: var(--primary-text); }
 
 /* Application Info: the field's line about it stands under its label, above the field; what is wrong stays below. */
@@ -1590,7 +1605,6 @@ body.publishing { overflow: hidden; }
 .control-chip img { display: block; height: 24px; width: auto; }
 .control-chip.none { color: var(--dimmed); border-style: dashed; }
 .publish-howto { padding: 16px; border-radius: 16px; background: var(--tile); }
-.publish-howto.bad .input { border-color: var(--lw-control-border, #262626); }
 .publish-howto .rows { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .publish-howto .rows:empty { display: none; }
 .publish-howto .howto-row { display: flex; align-items: center; gap: 8px; }
@@ -1615,38 +1629,9 @@ body.publishing { overflow: hidden; }
 .publish-ask > span { color: var(--muted); font-size: 13px; line-height: 20px; }
 .publish-ask .publish-row { margin-top: 4px; }
 
-/* ---- design-icon-block: the buttons of Publish and Create app are the BUSY Local Web's (its Nuxt UI Button as the
-   bar's local web themes it, values read from its computed styles): a pill, 36 px (size md; 40 px, size lg, in the
-   dialogs' footers), 14/20 at 500, a 20 px icon 6 px from the words. Primary: solid, the primary blue (--ui-primary
-   500), white words, 75 % under the pointer, a 2 px outline 2 px out for the focus. Secondary: neutral outline, a 1 px
-   ring of neutral 700, the default text, the elevated fill under the pointer, a 2 px white ring for the focus. Text:
-   the primary's lighter blue (--ui-primary), no fill, 75 % under the pointer. Off: 75 % opaque, not-allowed. */
-.publish, .create-app { --lw-primary: #2b7fff; --lw-primary-text: #5599ff; --lw-ring: #404040; --lw-text: #e5e5e5; --lw-elevated: #262626; }
-.publish .btn, .create-app .btn {
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--lw-ring);
-  color: var(--lw-text);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
-}
-.publish .btn .bi, .create-app .btn .bi { width: 20px; height: 20px; margin: 0; }
-.publish .btn:hover, .create-app .btn:hover { background: var(--lw-elevated); }
-.publish .btn:focus-visible, .create-app .btn:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #fff; }
-.publish .btn.solid, .create-app .btn.solid { background: var(--lw-primary); box-shadow: none; color: #fff; }
-.publish .btn.solid:hover, .create-app .btn.solid:hover { background: color-mix(in oklab, var(--lw-primary) 75%, transparent); }
-.publish .btn.solid:focus-visible, .create-app .btn.solid:focus-visible { outline: 2px solid var(--lw-primary); outline-offset: 2px; }
-.publish .btn[aria-disabled="true"], .create-app .btn[aria-disabled="true"] { opacity: 0.75; cursor: not-allowed; }
-.publish .btn[aria-disabled="true"]:hover, .create-app .btn[aria-disabled="true"]:hover { background: transparent; }
-.publish .btn.solid[aria-disabled="true"]:hover, .create-app .btn.solid[aria-disabled="true"]:hover { background: var(--lw-primary); }
-.publish .btn.small, .create-app .btn.small { height: 36px; padding: 0 12px; font-size: 14px; }
-.publish-foot .btn, .create-app-foot .btn { height: 40px; padding: 0 16px; }
+/* ---- design-icon-block: Publish and Create app use the window's buttons and fields (the system at the top of this
+   file); their text links keep the local web's lighter blue. */
+.publish, .create-app { --lw-primary-text: #5599ff; }
 .publish .link-btn, .create-app .link-btn {
   display: inline-flex;
   align-items: center;
@@ -1716,30 +1701,10 @@ body.creating-app { overflow: hidden; }
 .create-app-head h2 { margin: 0; color: var(--text-strong); font-size: 20px; line-height: 28px; font-weight: 500; }
 .create-app-close { position: absolute; top: 16px; right: 16px; }
 
-/* The ways: one segmented row in the middle. */
-.create-app-rail { flex: none; display: flex; align-self: center; gap: 4px; max-width: calc(100% - 48px); margin: 12px 24px 4px; padding: 4px; border-radius: 999px; background: rgb(255 255 255 / 0.04); box-shadow: var(--glass); overflow-x: auto; scrollbar-width: none; }
+/* The ways: one segmented group (.seg) in the middle, scrolled sideways where the dialog is narrow. */
+.create-app-rail { flex: none; align-self: center; max-width: calc(100% - 48px); margin: 12px 24px 4px; overflow-x: auto; scrollbar-width: none; }
 .create-app-rail::-webkit-scrollbar { display: none; }
-.create-app-way {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: background-color 0.15s, color 0.15s;
-}
-.create-app-way .bi { width: 18px; height: 18px; }
-.create-app-way:hover { background: var(--elevated); color: var(--text); }
-.create-app-way.on { background: var(--accented); box-shadow: var(--glass); color: var(--text-strong); }
-.create-app-way:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 1px; }
+.create-app-way { flex: none; white-space: nowrap; }
 
 .create-app-pane { flex: 1 1 auto; display: flex; flex-direction: column; gap: 24px; min-width: 0; min-height: 0; padding: 20px 32px 28px; overflow-y: auto; }
 .create-app-lead { margin: 0 auto; max-width: 600px; color: var(--muted); text-align: center; }
@@ -1786,31 +1751,13 @@ body.creating-app { overflow: hidden; }
 .create-app-field .count { color: var(--dimmed); font-size: var(--ca-small); line-height: var(--ca-small-lh); font-variant-numeric: tabular-nums; }
 .create-app-field .problem, .create-app-field .about { min-height: 20px; color: var(--dimmed); font-size: var(--ca-small); line-height: var(--ca-small-lh); }
 .create-app-field .problem { color: var(--error); }
-.create-app .input {
-  width: 100%;
-  height: 44px;
-  padding: 10px 14px;
-  border: 1px solid var(--lw-control-border, #262626);
-  border-radius: 8px;
-  background: var(--lw-control-bg, rgb(38 38 38 / 0.75));
-  box-shadow: var(--lw-control-edge, none);
-  color: #fff;
-  font-size: 15px;
-  line-height: 22px;
-}
-.create-app select.input { padding-right: 36px; }
-.create-app .input::placeholder { color: var(--dimmed); }
-.create-app .input:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 0; }
-.create-app .input:disabled { opacity: 0.6; cursor: not-allowed; }
-.create-app-field.bad .input { border-color: var(--error); }
 .create-app-field.narrow .input { width: 280px; max-width: 100%; }
 .create-app-id { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: -16px; color: var(--dimmed); font-size: var(--ca-small); line-height: var(--ca-small-lh); }
 .create-app-id code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--ca-small)/var(--ca-small-lh) var(--mono); color: var(--muted); }
-.create-app-id .create-app-advanced { margin-left: auto; height: 28px; padding: 0 10px; font-size: var(--ca-small); background: none; box-shadow: none; color: var(--muted); }
-.create-app-id .create-app-advanced .bi { width: 14px; height: 14px; }
+.create-app-id .create-app-advanced { margin-left: auto; }
 .create-app-advanced-box { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: -8px; padding: 16px; border-radius: 12px; background: var(--tile); }
 .create-app-advanced-box .create-app-field { align-self: stretch; }
-.create-app-place { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; padding: 6px 6px 6px 14px; border-radius: 8px; background: var(--tile); color: var(--muted); }
+.create-app-place { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: var(--ctl-h); padding: 4px 4px 4px var(--field-pad); border-radius: var(--ctl-r); background: var(--ctl-bg); color: var(--muted); }
 .create-app-place .bi { flex: none; width: 18px; height: 18px; }
 .create-app-place .path { display: block; flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font: var(--ca-small)/var(--ca-small-lh) var(--mono); }
 .create-app-place .path.none { color: var(--dimmed); font-family: inherit; }
@@ -1825,7 +1772,7 @@ body.creating-app { overflow: hidden; }
 /* ---- design-icon-block: the icon block (icon-block.js), in Application Info and Create app. Front and Back side by
    side, each a tile: its picture enlarged on the display's black, pixel-crisp; what it must be, a line each, ticked
    or turned into an error with its next step; its own buttons at the foot. One column when the room is narrow. */
-.icon-block { container-type: inline-size; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.icon-block { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .icon-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border-radius: 16px; background: var(--tile); }
 .icon-side .top { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .icon-side .tile { display: grid; place-items: center; flex: none; width: 88px; height: 88px; border-radius: 12px; background: #000; box-shadow: inset 0 0 0 1px var(--elevated); overflow: hidden; }
@@ -1855,7 +1802,6 @@ body.creating-app { overflow: hidden; }
 .icon-note { margin: -4px 0 0; color: var(--dimmed); font-size: 12px; line-height: 16px; }
 .icon-side .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: auto; }
 .icon-side .actions .link-btn { align-self: center; }
-@container (max-width: 520px) { .icon-block { grid-template-columns: minmax(0, 1fr); } }
 /* ---- end of the icon block ---- */
 
 /* Open existing: the choice, then what was found around it. */
@@ -1897,7 +1843,6 @@ body.creating-app { overflow: hidden; }
 }
 @media (max-width: 760px), (max-height: 560px) {
   .create-app-scrim { padding: 12px; }
-  .create-app-way { padding: 0 12px; }
 }
 
 /* ---------------------------------------------------------------- the row's menu and Delete (apps-delete)
@@ -1906,10 +1851,6 @@ body.creating-app { overflow: hidden; }
    glass card at the pointer; Delete… is red. The dialog is the window's: a card over a dimmed window, Cancel first,
    the destructive button red. */
 
-.apps li.app .row-more { opacity: 0; transition: opacity 0.15s, background-color 0.15s, color 0.15s; }
-.apps li.app:hover .row-more, .apps li.app:focus-within .row-more, .apps li.app.menu-open .row-more { opacity: 1; }
-.apps li.app.menu-open .row-more { background: var(--elevated); color: var(--text-strong); }
-@media (hover: none) { .apps li.app .row-more { opacity: 1; } }
 
 .row-menu {
   position: fixed;
@@ -1973,7 +1914,7 @@ body.deleting { overflow: hidden; }
 .delete-choices { display: flex; flex-direction: column; gap: 6px; }
 .delete-choices .choice { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 12px; background: var(--tile); box-shadow: none; cursor: pointer; transition: background-color 0.15s; }
 .delete-choices .choice:hover { background: var(--elevated); }
-.delete-choices .choice.on { background: var(--accented); box-shadow: var(--glass); }
+.delete-choices .choice:has(> input:checked) { background: var(--accented); box-shadow: var(--glass); }
 .delete-choices input { margin: 3px 0 0; accent-color: var(--primary); }
 .delete-choices .words { display: flex; flex-direction: column; gap: 2px; }
 .delete-choices .choice > .words { color: inherit; font-size: inherit; line-height: inherit; }
@@ -1990,10 +1931,39 @@ body.deleting { overflow: hidden; }
 .delete-said.working::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--primary-text); animation: pulse 1.2s ease-in-out infinite; }
 .delete-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
+/* ---- EMU-322: the firmware's list (the window's row menu, with two-line items), an app that needs a newer firmware
+   (its row's chip, its Run's dialog), and what the window says of the firmware (the screenshot's card). */
+.row-menu.fw-menu { width: 360px; max-width: calc(100vw - 16px); }
+.row-menu.fw-menu .menu-head { white-space: normal; }
+.row-menu .menu-item.fw { height: auto; align-items: flex-start; padding: var(--s-2) 10px; white-space: normal; text-align: left; }
+.row-menu .menu-item.fw .bi { margin-top: 2px; }
+.row-menu .menu-item.fw .slot { flex: none; width: 16px; }
+.row-menu .menu-item.fw .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.row-menu .menu-item.fw .words b { color: var(--text-strong); font-weight: 500; }
+.row-menu .menu-item.fw .words span { color: var(--muted); font-size: 12px; line-height: 16px; }
+.row-menu .menu-item.fw .words .fw-state { color: var(--dimmed); }
+.row-menu .menu-item.fw .words .fw-state.pending { color: var(--error); }
+.row-menu .menu-item.fw.current { cursor: default; }
+.row-menu .menu-item.fw.current .bi { color: var(--text-strong); }
+.apps li.app.with-chip { grid-template-areas: "icon meta" "icon chip"; row-gap: var(--s-1); }
+.apps li.app.with-chip:has(> .live-state, .row-retry) { grid-template-areas: "icon meta end" "icon chip chip"; }
+.apps li.app.with-chip > .live-state, .apps li.app.with-chip:has(.row-retry) > .row-actions { grid-area: end; }
+/* With the mark under the name, the row's buttons stand by the name's line, clear of the mark. */
+.apps li.app.with-chip > .row-actions { top: var(--s-2); translate: none; }
+.apps li.app.with-chip > .app-icon { grid-area: icon; align-self: center; }
+.apps li.app.with-chip > .app-meta { grid-area: meta; }
+.apps li.app > .fw-chip { grid-area: chip; justify-self: start; max-width: 100%; height: 20px; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; }
+.fw-scrim { z-index: 62; }
+.run-alt { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); margin-top: var(--s-2); padding-top: var(--s-4); border-top: 1px solid var(--line); }
+.run-alt p { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; }
+.run-alt code { font-family: var(--mono); color: var(--text); }
+.run-alt .btn { flex: none; }
+.capture-toast.fw-toast { padding-right: var(--s-2); }
+.capture-toast.fw-toast .said { -webkit-line-clamp: 3; }
+
 /* ---- create-offline: dependencies that did not come (the row's Retry, the section's line), and a name already taken */
 .app-note.trouble, .chosen .app-note.trouble { color: var(--error); }
-.row-actions .row-retry { height: 28px; padding: 0 10px; font-size: 12px; }
-.job.deps .deps-retry { align-self: flex-start; height: 28px; padding: 0 12px; font-size: 13px; }
+.job.deps .deps-retry { align-self: flex-start; }
 /* The reason is the row's point: it wraps rather than being cut, and so does npm's line in the section. */
 .app-note.trouble { white-space: normal; overflow: visible; }
 .job.deps pre { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -2120,20 +2090,6 @@ body.reporting-bug { overflow: hidden; }
 .report-bug .label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
 .report-bug .label b { font-weight: 500; color: var(--text); }
 .report-bug .label .about { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dimmed); font-size: 12px; line-height: 16px; }
-.report-bug-input {
-  width: 100%;
-  padding: 7px 10px;
-  border: 1px solid #262626;
-  border-radius: 8px;
-  background: rgb(38 38 38 / 0.75);
-  box-shadow: inset 0 1px 1px 0 rgb(250 250 250 / 0.1);
-  color: #fff;
-  font: inherit;
-  line-height: 20px;
-}
-textarea.report-bug-input { resize: vertical; min-height: 64px; }
-.report-bug-input::placeholder { color: var(--dimmed); }
-.report-bug-input:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 0; }
 
 /* The ticks: a round-cornered box with BUSY's checkmark, its words beside it; the screenshot's picture at the end. */
 .report-bug-ticks { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
@@ -2152,17 +2108,18 @@ textarea.report-bug-input { resize: vertical; min-height: 64px; }
 
 /* What GitHub gets: the title, then the text as it will stand, in the window's monospace, scrolled in its own box. */
 .report-bug-preview { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
-.report-bug-issue-title { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--bg); box-shadow: var(--outline); color: var(--text-strong); font-weight: 500; overflow-wrap: anywhere; }
+/* Shown, not typed: wells a step below the dialog with a hairline, apart from the fields on the left. */
+.report-bug-issue-title { margin: 0; padding: 10px var(--field-pad); border-radius: var(--ctl-r); background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); color: var(--text-strong); font-weight: 500; overflow-wrap: anywhere; }
 .report-bug-issue-title.empty { color: var(--dimmed); font-weight: 400; }
 .report-bug-text {
   flex: 1;
   min-height: 160px;
   max-height: 420px;
   margin: 0;
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: 12px var(--field-pad);
+  border-radius: var(--ctl-r);
   background: var(--bg);
-  box-shadow: var(--outline);
+  box-shadow: inset 0 0 0 1px var(--line);
   color: var(--text);
   font: 12px/18px var(--mono);
   white-space: pre-wrap;
@@ -2181,7 +2138,6 @@ textarea.report-bug-input { resize: vertical; min-height: 64px; }
 .report-bug-said.working::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--primary-text); animation: pulse 1.2s ease-in-out infinite; }
 .report-bug-said.done { color: var(--text); }
 .report-bug-said.failed { color: var(--error); }
-.report-bug-foot .btn { height: 36px; padding: 0 16px; }
 
 /* A narrow or low window: one column, the text under the fields; the card scrolls as one. */
 @media (max-width: 860px) {
@@ -2210,7 +2166,7 @@ textarea.report-bug-input { resize: vertical; min-height: 64px; }
 .publish-bar.waiting span { width: 30%; animation: publish-bar-wait 1.4s ease-in-out infinite; }
 @keyframes publish-bar-wait { from { left: -30%; } to { left: 100%; } }
 .publish-checklist .words b { font-weight: 400; color: var(--text); }
-.publish-checklist .choice.on .words b { color: var(--text-strong); }
+.publish-checklist .choice:has(> input:checked) .words b { color: var(--text-strong); }
 .publish-checklist code, .publish-choices .words code { font: 12px/16px var(--mono); color: var(--text-strong); }
 .publish-inline-link { color: var(--primary-text); text-decoration: underline; text-underline-offset: 2px; }
 
@@ -2262,42 +2218,57 @@ ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; t
 .update-popup-foot { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-1); }
 .update-popup-foot a.btn { text-decoration: none; }
 
-/* ---------------------------------------------------------------- the opened app's column and the dashboard
+/* ---------------------------------------------------------------- the opened app's column
 
-   One type system in the column and the dashboard: title 25/30 500 (the app's name; the BUSY Bar's 18/24), body 14/20
-   500 (names, tabs, every button with words), value 14/20 400 (what is set), caption 12/16 400 (descriptions, the heap).
-   Quiet buttons: icons and words without a plate, their area lit on hover (8 %) and press (16 %). Groups of tiles 3 px
-   apart, inner corners 9, the group's outer ones 12. */
+   One type system in the column: title 25/30 500 (the app's name), body 14/20 500 (names, tabs, every button with
+   words), value 14/20 400 (what is set, the app's state), caption 12/16 400 (descriptions, the heap). Groups of tiles
+   3 px apart, inner corners 9, the group's outer ones 12. */
 
 /* The hover descriptor (window.js, tip): a title and a line of detail, on the window's popover surface. */
 .ac-tip { position: fixed; z-index: 100; display: flex; flex-direction: column; gap: 2px; max-width: 264px; padding: 8px 10px; border-radius: 10px; background: #1f1f1f; box-shadow: var(--glass), 0 8px 24px rgb(0 0 0 / 0.5); color: var(--text); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; pointer-events: none; }
 .ac-tip b { color: var(--text-strong); font-weight: 500; }
 .ac-tip span { color: var(--muted); }
+/* Copied in the descriptor: a tick before the word. */
+.ac-tip b.done { display: inline-flex; align-items: center; gap: 6px; }
+.ac-tip b.done .bi { width: 14px; height: 14px; color: var(--primary-text); }
 
-/* The state under the name; the errors the app wrote while it runs. */
+/* The name: two lines at most; its id on hover or focus, a click copies it. */
+.ac-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; overflow-wrap: anywhere; cursor: copy; text-decoration: underline dotted transparent; text-underline-offset: 5px; transition: text-decoration-color 0.15s; }
+.ac-name:hover, .ac-name:focus-visible { text-decoration-color: var(--dimmed); }
+
+/* The state under the name; the errors the app wrote while it runs, at the state's size. */
 .ac-facts-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); min-width: 0; max-width: 100%; }
 .ac-facts-line .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dimmed); }
 .ac-facts-line .state.ac-crashed { color: var(--error); }
 .ac-facts-line .state.ac-crashed::before { background: var(--error); }
 
-.ac-errors { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 0; border-radius: 999px; background: color-mix(in oklab, var(--error) 16%, transparent); color: var(--error); font-size: 12px; line-height: 16px; font-weight: 500; }
+.ac-errors { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 0; border-radius: 999px; background: color-mix(in oklab, var(--error) 16%, transparent); color: var(--error); font-size: 14px; line-height: 20px; font-weight: 400; }
 .ac-errors:hover { background: color-mix(in oklab, var(--error) 24%, transparent); }
 
-/* The actions' row. */
-.app-actions { display: block; margin-top: var(--s-4); }
-
-.app-actions .btn .bi { display: block; }
-.ac-row { display: flex; gap: 6px; min-width: 0; }
-.ac-run { flex: 1; height: 40px; }
-.ac-stop { width: 40px; height: 40px; color: var(--text); }
-.ac-prompt { flex: 1; min-width: 0; height: 40px; }
-.ac-prompt > span { overflow: hidden; text-overflow: ellipsis; }
+/* The row, left to right: Copy prompt for AI (quiet), then at the far end Stop and Run or Refresh (white), the
+   window's buttons, 4 apart: so "Prompt for AI" is whole beside them in the narrowest column (342, the smallest
+   window). Its whole label needs about 335 px beside Stop and Refresh: below a 400 px column it says "Prompt for AI". */
+.ac-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ac-stop { margin-left: auto; }
+.ac-run { flex: none; min-width: 0; }
+/* The prompt's button holds its label and "Copied" in one cell of a grid, the one not said hidden, so that it is as
+   wide as the wider of the two and does not move while it says Copied. */
+.ac-prompt { display: inline-grid; flex: 0 1 auto; min-width: 0; }
+.ac-prompt > span { display: inline-flex; grid-area: 1 / 1; align-items: center; justify-content: center; gap: var(--ctl-gap); min-width: 0; }
+.ac-prompt span > span { overflow: hidden; text-overflow: ellipsis; }
+.ac-prompt:not([data-copied]) > .ac-prompt-done, .ac-prompt[data-copied] > .ac-prompt-label { visibility: hidden; }
+.ac-prompt-done .bi { color: var(--primary-text); }
+.ac-prompt .narrow { display: none; }
+@container side (width < 400px) {
+  .ac-prompt .wide { display: none; }
+  .ac-prompt .narrow { display: inline; }
+}
 
 /* What happened: a crash, the files that changed, the heap. */
 .ac-crash { display: flex; flex-direction: column; align-items: stretch; gap: var(--s-2); min-width: 0; padding: 10px 10px 10px var(--s-3); border-radius: 12px; background: color-mix(in oklab, var(--error) 10%, var(--surface-2)); }
 .ac-crash-words { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .ac-crash-words code { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; color: var(--text); font: 12px/16px var(--mono); }
-.ac-crash .btn { flex: none; align-self: flex-start; height: 28px; padding: 0 12px; font-size: 12px; }
+.ac-crash .btn { align-self: flex-start; }
 .ac-stale { display: flex; align-items: center; gap: var(--s-2); color: var(--text); font-size: 13px; line-height: 18px; }
 .ac-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-text); }
 .ac-heap { display: flex; flex-direction: column; gap: 6px; border-radius: 4px; color: var(--dimmed); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; cursor: default; }
@@ -2305,19 +2276,13 @@ ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; t
 .ac-heap.warn { color: var(--warning); }
 .ac-heap.warn .heap .now { background: var(--warning); }
 
-/* Open in Local Web, at the end of Settings. */
-.ac-local-web { height: 28px; padding: 0 10px; font-size: 12px; }
-.ac-local-web .bi { width: 14px; height: 14px; }
-
-/* Catalog: how much is ready and Publish; a row a field, as the local web's grouped settings, opened in place. */
+/* Catalog: how much is ready and Publish; a row a field, as the local web's grouped settings, opened in place. The
+   group rounds its outer corners by clipping them (the focus rings inside it are drawn inside their rows). */
 .ac-fold-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
 .ac-fold-count { border-radius: 4px; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 500; cursor: default; }
-.ac-fold-head .btn { height: 30px; padding: 0 12px; font-size: 12px; }
-.ac-fold-head .btn .bi { width: 14px; height: 14px; }
-.ac-folds { display: flex; flex-direction: column; gap: 3px; }
+.ac-folds { display: flex; flex-direction: column; gap: 3px; border-radius: 12px; overflow: clip; }
+.ac-folds :focus-visible { outline-offset: -2px; }
 .ac-fold { border-radius: 9px; background: var(--tile); }
-.ac-fold:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
-.ac-fold:last-child { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
 .ac-fold-row { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; height: 44px; padding: 0 var(--s-3); border: 0; border-radius: inherit; background: transparent; font-size: 13px; line-height: 18px; text-align: left; }
 .ac-fold-label { color: var(--text); font-weight: 500; white-space: nowrap; }
 .ac-fold-value { overflow: hidden; color: var(--muted); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
@@ -2333,256 +2298,11 @@ ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; t
 .ac-fold-body .ov-field > label, .ac-fold-body .group-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ac-fold-body .ov-field .hint, .ac-fold-body .page-note { margin-top: 6px; }
 
-/* Below 1240 the dashboard takes its two-row form, so that its name, address and buttons keep their room beside a
-   column of 360. */
-@media (max-width: 1240px) {
-  .device-card { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--s-3); }
-  .sets { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .set { gap: var(--s-2); padding: 0 10px; }
-}
-#app-pane :is(.btn, .icon-btn, .nav-back) { border-radius: 8px; }
-#app-pane .btn { height: 32px; padding: 0 10px; gap: 6px; font-size: 13px; line-height: 18px; }
-#app-pane .btn .bi { width: 14px; height: 14px; margin: 0; }
-#app-pane .icon-btn.outline { width: 32px; height: 32px; }
-#app-pane .icon-btn.outline .bi { width: 16px; height: 16px; }
-.app-folder { margin-top: var(--s-4); }
-
-/* The row, left to right: Copy prompt for AI (no plate), a gap, Stop on a gray plate as tall as Run, Run or Refresh in
-   white. */
-#app-pane .ac-prompt.ac-prompt-c { flex: 0 1 auto; min-width: 0; height: 36px; padding: 0 14px 0 11px; justify-content: center; border: 0; background: transparent; box-shadow: none; color: var(--muted); transition: background-color 0.12s, color 0.12s; }
-#app-pane .ac-prompt.ac-prompt-c:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: var(--text); }
-#app-pane .ac-prompt.ac-prompt-c:active:not(:disabled) { background: rgb(255 255 255 / 0.16); color: var(--text); }
-
-#app-pane .icon-btn.ac-stop-c:hover:not(:disabled) { background: rgb(255 255 255 / 0.14); }
-#app-pane .icon-btn.ac-stop-c:active:not(:disabled) { background: rgb(255 255 255 / 0.22); }
-#app-pane .icon-btn.ac-stop-c:disabled { opacity: 0.4; }
-
-/* The name: two lines at most; its id on hover or focus, a click copies it. */
-.app-head h2 { display: block; overflow: visible; }
-.ac-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; overflow-wrap: anywhere; cursor: copy; text-decoration: underline dotted transparent; text-underline-offset: 5px; transition: text-decoration-color 0.15s; }
-.ac-name:hover, .ac-name:focus-visible { text-decoration-color: var(--dimmed); }
-
-/* The folder: its path in one read-only field with Copy and Open in Finder (Show in Explorer) inside it. */
-.ac-path-row { display: flex; align-items: center; gap: 2px; min-width: 0; height: 32px; padding-right: 2px; border-radius: 8px; background: var(--tile); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.ac-path-row:focus-within { box-shadow: inset 0 0 0 1px var(--dimmed); }
-.ac-path { flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 10px; border: 0; border-radius: 8px 0 0 8px; background: transparent; color: var(--muted); font: 12px/16px var(--mono); }
-.ac-path:focus-visible { outline: none; color: var(--text); }
-
-#app-pane .ac-path-btn .bi { width: 16px; height: 16px; }
-#app-pane .ac-path-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: var(--text); }
-#app-pane .ac-path-btn:active:not(:disabled) { background: rgb(255 255 255 / 0.16); color: var(--text); }
-#app-pane .ac-path-btn:focus-visible { outline: 2px solid var(--primary-text); outline-offset: -2px; }
-
-/* Settings: a description in two lines at most, a press opens it all; Open in Local Web at the end. */
+/* Settings: a description in two lines at most; where it is cut (window.js measures it again as the column's width
+   changes), a press opens it all. Open in Local Web at the end. */
 .ac-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.ac-desc.open { display: block; overflow: visible; }
+.ac-desc[aria-expanded="true"] { display: block; overflow: visible; }
 .ac-desc[data-clamped="yes"] { border-radius: 4px; cursor: pointer; transition: color 0.15s; }
 .ac-desc[data-clamped="yes"]:hover { color: var(--text); }
 .ac-settings-foot { display: flex; align-items: center; gap: var(--s-3); padding-top: var(--s-1); color: var(--dimmed); font-size: 12px; line-height: 16px; }
 .ac-settings-foot > span { flex: 1; min-width: 0; }
-
-.ac-prompt .narrow { display: none; }
-
-/* The column's type, by the system above. */
-#app-pane :is(.btn, .nav-back, .tabs button, .field-name b, .menu-item) { font-size: 14px; line-height: 20px; font-weight: 500; }
-#app-pane .field-name > :not(b) { font-size: 12px; line-height: 16px; font-weight: 400; }
-#app-pane :is(.btn.small) { font-size: 14px; line-height: 20px; }
-#app-pane :is(input, select, textarea, .select, .select-label) { font-size: 14px; line-height: 20px; font-weight: 400; }
-#app-pane :is(.ac-facts-line, .ac-facts-line *, .live, .ac-heap-text, .field-help, .ac-desc, .ac-settings-foot) { font-size: 12px; line-height: 16px; font-weight: 400; }
-
-/* The head and the actions: the name at title size, the state apart from it, the folder field and the buttons 40
-   and 44 tall; the heap away from the buttons. */
-#app-pane .app-head-icon { width: 56px; height: 56px; border-radius: 14px; }
-
-#app-pane :is(h2, .ac-name) { font-weight: 500; font-size: 25px; line-height: 30px; letter-spacing: -0.01em; }
-#app-pane .app-folder { margin-top: var(--s-6); }
-#app-pane .ac-path-row { height: 40px; padding-right: 4px; border-radius: 10px; }
-#app-pane .ac-path { font-weight: 400; padding-left: 12px; border-radius: 10px 0 0 10px; }
-#app-pane .ac-path-btn { transition: background-color 0.12s, color 0.12s; color: var(--muted); box-shadow: none; background: transparent; border: 0; padding: 0; flex: none; width: 32px; height: 32px; border-radius: 7px; }
-.app-folder:not([hidden]):not(:empty) + .app-actions { margin-top: var(--s-3); }
-#app-pane .icon-btn.ac-stop-c { transition: background-color 0.12s; color: var(--text); box-shadow: none; background: rgb(255 255 255 / 0.08); border: 0; flex: none; width: 44px; height: 44px; border-radius: 10px; }
-
-#app-pane .app-status { margin-top: var(--s-6); }
-/* The state at body size: a word or two, never a sentence. */
-#app-pane :is(.ac-facts-line, .ac-facts-line *, .live) { font-size: 14px; line-height: 20px; font-weight: 400; }
-#app-pane .app-head-text { padding-top: 0; gap: var(--s-1); }
-/* The prompt keeps its label: the gap gives way first, then Refresh's own padding. */
-#app-pane .ac-row-c .ac-gap { flex: 1 1 0; min-width: 0; }
-#app-pane .ac-prompt.ac-prompt-c { border-radius: 10px; height: 44px; flex: 0 1 auto; }
-#app-pane .ac-row-c { align-items: center; gap: 6px; }
-/* The whole label needs about 335 px beside Stop and Refresh: below a 400 px column it says "Prompt for AI". */
-@container side (width < 400px) {
-  .ac-prompt .wide { display: none; }
-  .ac-prompt .narrow { display: inline; }
-}
-/* The narrowest column (340 px at a 900 px window): a little less padding, so "Prompt for AI" still fits whole. */
-@container side (width < 360px) {
-  #app-pane .ac-prompt.ac-prompt-c { padding: 0 12px 0 9px; }
-  #app-pane .icon-btn.ac-stop-c { width: 40px; }
-}
-/* Run or Refresh as wide as its word. */
-#app-pane .ac-run { flex: none; height: 44px; min-width: 0; padding: 0 14px; border-radius: 10px; }
-
-/* Copied in the descriptor: a tick before the word. */
-.ac-tip b.done { display: inline-flex; align-items: center; gap: 6px; }
-.ac-tip b.done .bi { width: 14px; height: 14px; color: var(--primary-text); }
-
-/* The top bar's buttons as tall as its tools (40), toward Run's 44. */
-.topbar .btn.solid { height: 40px; }
-
-/* The controls stand 28 above the dashboard, in 2D as in 3D; in 2D the BUSY Bar is centered in the room above them. */
-.canvas > .dock, .canvas:has(.stage3d) > .dock { bottom: 28px; }
-
-/* The dashboard and the console: a fine edge that fades toward their foot. */
-:is(.device-card, .console-card) { position: relative; }
-:is(.device-card, .console-card)::before { content: ""; position: absolute; inset: 0; z-index: 0; padding: 1px; border-radius: inherit; background: linear-gradient(to bottom, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.04) 55%, rgb(255 255 255 / 0)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
-
-/* The camera's and Record's icons in the middle of their buttons. */
-.seg > .shot-take .bi, .capture-tools .tool .bi { display: block; }
-
-/* The opened app's head a little lower, away from All apps; what is under it moves with it. */
-#app-pane .app-head { gap: var(--s-4); margin-top: var(--s-3); }
-
-/* Files: the group names at body size; Show in Finder without a plate, its area lit on hover and press; Not published
-   next to its own list, apart from the one above. */
-#app-pane .group-label { color: var(--text); font-size: 14px; line-height: 20px; font-weight: 500; }
-#app-pane .files-head { min-height: 40px; }
-#app-pane .btn.files-reveal { height: 36px; padding: 0 10px; border: 0; background: transparent; box-shadow: none; color: var(--muted); border-radius: 8px; transition: background-color 0.12s, color 0.12s; }
-#app-pane .btn.files-reveal:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
-#app-pane .btn.files-reveal:active { background: rgb(255 255 255 / 0.16); color: var(--text); }
-#app-pane .files-left-label { margin: var(--s-6) 0 var(--s-1); }
-
-.row-actions .icon-btn { width: 36px; height: 36px; border-radius: 8px; }
-
-/* The cards of Settings, in the groups' rhythm. */
-#app-body .settings { gap: 3px; }
-#app-body .settings > .field { border-radius: 9px; }
-#app-body .settings > .field:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
-#app-body .settings > .field:last-of-type { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-
-/* Running in the list: in the state's style, 20 from the row's edge. */
-.apps li.app .live-state { right: var(--s-5); font-size: 14px; line-height: 20px; font-weight: 400; }
-
-/* ---- the dashboard: the back display, what the BUSY Bar is, its two buttons; the four tiles. */
-.device-card { gap: var(--s-6); padding: var(--s-5); }
-
-.device-card .link { font-size: 14px; line-height: 20px; font-weight: 400; }
-.device-card .builds:not(.mono) { font-size: 12px; line-height: 16px; font-weight: 400; }
-.device-card .builds.bar-address { height: 40px; margin-top: var(--s-2); padding: 0 4px 0 12px; border-radius: 10px; background: var(--tile); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.device-card .bar-address a { flex: 1; color: var(--muted); }
-.device-card #bar-address-copy { width: 32px; height: 32px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--muted); }
-.device-card #bar-address-copy .bi { width: 16px; height: 16px; }
-.device-card #bar-address-copy:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
-.device-card #bar-address-copy:active { background: rgb(255 255 255 / 0.16); }
-.device-card .device-links { gap: var(--s-1); margin: var(--s-2) 0 0 calc(-1 * 10px); }
-
-.device-card .device-links .btn:hover { background: rgb(255 255 255 / 0.08); color: var(--text); }
-.device-card .device-links .btn:active { background: rgb(255 255 255 / 0.16); color: var(--text); }
-.device-card .device-links .btn .bi { width: 16px; height: 16px; }
-
-.device-card .set:nth-child(1) { border-top-left-radius: 12px; }
-.device-card .set:nth-child(2) { border-top-right-radius: 12px; }
-.device-card .set:nth-child(3) { border-bottom-left-radius: 12px; }
-.device-card .set:nth-child(4) { border-bottom-right-radius: 12px; }
-.device-card .set .value { font-size: 14px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
-/* The link to the emulator's server says nothing while it holds; it shows only while it is lost. */
-.device-card #link.live { display: none; }
-.device-card #link:not(.live) { color: var(--warning); }
-.device-card #link:not(.live)::before { background: var(--warning); }
-
-/* The name and its address on one line (the address plain, Copy beside it); the builds a little apart under them; the
-   two buttons last. */
-.device-card .device-head { flex-wrap: nowrap; align-items: baseline; gap: var(--s-3); }
-.device-card .device-head .builds.bar-address { flex: 0 1 auto; height: auto; margin: 0; padding: 0; background: none; box-shadow: none; align-items: center; align-self: center; gap: 2px; }
-
-.device-card .device-head #bar-address-copy { width: 28px; height: 28px; }
-.device-card .device-about > .builds:not(.mono) { margin-top: var(--s-2); }
-
-/* The buttons 36 tall, so the text is as tall as the back display beside it. */
-.device-card .device-links { margin-top: var(--s-2); }
-.device-card .device-links .btn { transition: background-color 0.12s, color 0.12s; font-weight: 500; line-height: 20px; font-size: 14px; color: var(--muted); box-shadow: none; background: transparent; border-radius: 8px; border: 0; padding: 0 10px; height: 36px; }
-/* The builds and the uptime at body size, value style. */
-.device-card .device-about > .builds:not(.mono), .device-card .device-about > .builds:not(.mono) * { font-size: 14px; line-height: 20px; font-weight: 400; }
-.device-card .device-about > .builds:not(.mono) #device-uptime { font-family: inherit; }
-/* The address beside the name in the body face too, value style. */
-.device-card .device-head .bar-address a { color: var(--muted); flex: 0 1 auto; font: 400 14px/20px Inter, system-ui, sans-serif; }
-
-/* The back display at 200 by 100; the name and the builds at the top, the buttons at the foot; the four tiles share
-   the height in two rows. */
-.device-card .oled { width: 200px; height: 100px; }
-.device-card .oled-frame { align-self: center; }
-.device-card .device-about { justify-content: flex-start; gap: 0; }
-.device-card .device-about > .device-links { margin-top: auto; padding-top: var(--s-2); }
-.device-card .sets { gap: 3px; grid-template-rows: 1fr 1fr; align-self: stretch; }
-.device-card .set { font-weight: 500; line-height: 20px; font-size: 14px; background: var(--tile); border-radius: 9px; padding: 0 var(--s-4); height: auto; min-height: 48px; }
-
-/* Below 1240 the four tiles are one row under the back display and the text, of their own height, with the row's
-   outer corners. */
-@media (max-width: 1240px) {
-  .device-card .sets { grid-template-rows: auto; }
-  .device-card .set { min-height: 48px; border-radius: 9px; }
-  .device-card .set:nth-child(1) { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
-  .device-card .set:nth-child(4) { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
-}
-/* The BUSY Bar's width from the room above the controls: 24 between them and 24 over its top. */
-.device-view:not(:has(> .stage3d)) { top: calc(24px + (100cqh - var(--dock-h) - 28px - 24px - 24px) / 2); }
-/* A short window: the controls may shrink further, and the margins round the BUSY Bar tighten, so the BUSY Bar keeps
-   its size first. */
-.canvas > * { --w: max(220px, min(100cqw - 96px, (100cqh - var(--dock-h) - 28px - 24px - 24px) * 768 / 248, 900px)); --u: clamp(0.40px, min(100cqw / 1375, 100cqh / 550), 0.83px); }
-@media (max-height: 760px) {
-  .canvas > .dock, .canvas:has(.stage3d) > .dock { bottom: 12px; }
-  .canvas > * { --w: max(220px, min(100cqw - 96px, (100cqh - var(--dock-h) - 12px - 16px - 20px) * 768 / 248, 900px)); }
-  .device-view:not(:has(> .stage3d)) { top: calc(20px + (100cqh - var(--dock-h) - 12px - 16px - 20px) / 2); }
-}
-/* Restart BUSY Bar keeps its words at every width, as Open in Local Web does. */
-#power-restart .label { display: inline !important; }
-
-/* A narrow window (under 1060, a card under ~620 wide): the back display at 160 by 80 beside the name, the address
-   (on its own line when it does not fit) and the builds; the two buttons under them; the four tiles two by two. */
-@media (max-width: 1060px) {
-  .device-card { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "oled head" "oled builds" "links links" "sets sets"; row-gap: 0; column-gap: var(--s-5); }
-  .device-card .oled { width: 160px; height: 80px; }
-  .device-card .oled-frame { grid-area: oled; align-self: start; }
-  .device-card .device-about { display: contents; }
-  .device-card .device-head { grid-area: head; flex-wrap: wrap; row-gap: 0; align-self: end; min-width: 0; }
-  .device-card .device-head .builds.bar-address { min-width: 0; max-width: 100%; }
-  .device-card .device-about > .builds:not(.mono) { grid-area: builds; align-self: start; margin-top: var(--s-1); }
-  .device-card .device-about > .device-links { grid-area: links; margin: var(--s-3) 0 0 -10px; padding: 0; }
-  .device-card .sets { grid-area: sets; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; margin-top: var(--s-3); }
-  .device-card .set { border-radius: 9px; }
-  .device-card .set:nth-child(1) { border-radius: 12px 9px 9px 9px; }
-  .device-card .set:nth-child(2) { border-radius: 9px 12px 9px 9px; }
-  .device-card .set:nth-child(3) { border-radius: 9px 9px 9px 12px; }
-  .device-card .set:nth-child(4) { border-radius: 9px 9px 12px 9px; }
-}
-/* Narrow and short (900 by 650 and the like): the four tiles in one row again, Wi-Fi and USB by their icons alone
-   (their names are in the descriptor), so the card stays low and the BUSY Bar keeps its size. */
-@media (max-width: 1060px) and (max-height: 760px) {
-  .device-card .sets { grid-template-columns: 0.8fr 0.8fr 1.2fr 1.2fr; }
-  .device-card .set { min-height: 44px; padding: 0 var(--s-3); }
-  .device-card .set:not(.battery):not(.volume) > span:not(.icon):not(.value) { display: none; }
-  .device-card .set:not(.battery):not(.volume) { justify-content: space-between; }
-  .device-card .set:nth-child(1) { border-radius: 12px 9px 9px 12px; }
-  .device-card .set:nth-child(2), .device-card .set:nth-child(3) { border-radius: 9px; }
-  .device-card .set:nth-child(4) { border-radius: 9px 12px 12px 9px; }
-  .device-card .device-about > .device-links { margin-top: var(--s-2); }
-}
-/* The smallest windows (under 600 tall): the dashboard tighter, so the BUSY Bar and its controls keep their room. */
-@media (max-width: 1060px) and (max-height: 600px) {
-  .device-card { padding: var(--s-3) var(--s-4); }
-  .device-card .set { min-height: 40px; }
-  .device-card .device-about > .device-links { margin-top: 0; }
-  .device-card .sets { margin-top: var(--s-2); }
-}
-/* With the window's own title bar (Windows) the page is 36 shorter: the back display at 120 by 60, less padding. */
-@media (max-width: 1060px) and (max-height: 600px) {
-  .has-title-bar .device-card { padding-top: var(--s-1); padding-bottom: var(--s-1); }
-  .has-title-bar .device-card .oled { width: 120px; height: 60px; }
-  .has-title-bar .device-card .device-links .btn { height: 28px; }
-  .has-title-bar .device-card .set { min-height: 36px; }
-}
-/* With the account button the top bar needs about 1260: below 1300 the two documentation links show their icons alone
-   (their names are in the descriptor), as they do below 1180 without it. */
-@media (max-width: 1300px) {
-  .topbar:has(#account:not([hidden])) .top-doc span { display: none; }
-}

@@ -446,8 +446,8 @@ export function listWindowsProcesses({ start, windowsDir, timeoutMs = 20_000 }) 
 export function wordsFor(e) {
   const code = e?.code ?? "failed";
   const said = {
-    network: ["The update could not be downloaded: no connection to GitHub, or it broke off.", "Check the connection and press Update again; it goes on from where it stopped."],
-    stopped: ["The download was stopped.", "Press Update to go on."],
+    network: ["The update could not be downloaded: no connection to GitHub, or it broke off.", "Check the connection and try again; the download goes on from where it stopped."],
+    stopped: ["The download was stopped.", "Try again to go on."],
     not_found: ["GitHub has no update files for this version yet.", "Try again in a few minutes, or download the new version by hand."],
     no_signature: ["The update was refused: it has no signature.", "Download the new version from the release page instead."],
     bad_signature: ["The update was refused: its signature does not match the release's key.", "Download the new version from the release page instead, and tell the emulator's team."],
@@ -455,11 +455,11 @@ export function wordsFor(e) {
     other_app: ["The update was refused: it is of another program.", "Download the new version from the release page instead."],
     other_version: ["The update was refused: it is of another version than the one offered.", "Download the new version from the release page instead."],
     not_newer: ["The update was refused: it is not newer than this version.", "Nothing to do; you have the newest version."],
-    bad_file: ["The update was refused: the downloaded file is not the one the release signed.", "Press Update to download it again, or download it from the release page."],
+    bad_file: ["The update was refused: the downloaded file is not the one the release signed.", "Try again to download it once more, or download it from the release page."],
     bad_host: ["The update was refused: GitHub sent the download to a place that is not GitHub's.", "Download the new version from the release page instead."],
     too_large: ["The update was refused: the file is larger than the release says.", "Download the new version from the release page instead."],
     bad_bundle: ["The update was refused: the new app is not a BUSY Bar Emulator of this kind, or its signature is broken.", "Download the new version from the release page instead."],
-    disk: ["The update could not be written to the disk.", "Free some space (an update needs about 1 GB while it installs) and press Update again."],
+    disk: ["The update could not be written to the disk.", "Free some space (an update needs about 1 GB while it installs) and try again."],
     busy: ["Not now: the emulator is busy.", "Wait until it is done, then press Restart to update."],
   }[code] ?? ["The update failed.", "Download the new version from the release page instead."];
   return { message: said[0], hint: said[1] };
@@ -781,7 +781,7 @@ export function createUpdater({ current, kind, platform, arch, allowed, base, pu
     settings.update({ updatePending: null });
     const why = result?.message ?? "The update did not finish.";
     log(`[shell] update: the update to ${pending.to} did not happen: ${why}`);
-    set({ state: "failed", version: pending.to, page: `https://github.com/busy-app/busybar-emulator/releases/tag/v${pending.to}`, code: result?.code ?? "failed", message: `The update to ${pending.to} did not finish: ${why}`, hint: result?.hint ?? "Press Update to try again, or download the new version from the release page." });
+    set({ state: "failed", version: pending.to, page: `https://github.com/busy-app/busybar-emulator/releases/tag/v${pending.to}`, code: result?.code ?? "failed", message: `The update to ${pending.to} did not finish: ${why}`, hint: result?.hint ?? "Try again, or download the new version from the release page." });
     cleanLeftovers(null);
   }
 

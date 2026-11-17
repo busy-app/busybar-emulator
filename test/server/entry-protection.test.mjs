@@ -286,7 +286,8 @@ test("the app window's origin is the emulator's own on the management address; a
   const preflight = await call(`${emulator.control.url}/_emu/press?key=ok`, { method: "OPTIONS", headers: { Origin: "app://window", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization" } });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers["access-control-allow-origin"], "app://window");
-  assert.equal(preflight.headers["access-control-allow-headers"], "Authorization");
+  // Content-Type for the JSON that POST /_emu/firmware takes.
+  assert.equal(preflight.headers["access-control-allow-headers"], "Authorization, Content-Type");
   // The event stream carries the header too.
   const events = await new Promise((done, fail) => {
     const req = http.get(`${emulator.control.url}/_emu/events`, { agent: false, headers: { Origin: "app://window", ...key } }, (res) => {
@@ -463,7 +464,8 @@ test("both addresses are taken and let go of together; a management port in use 
 test("the GET answers of the management address and of the bar are the same old paths: a hash of the state agrees", async (t) => {
   const emulator = await start(t);
   const key = emulator.controlHeaders();
-  const strip = (state) => ({ ...state, clock: null });
+  // What moves by itself between the two reads: the clock, and how long the status lights' preset has run.
+  const strip = (state) => ({ ...state, clock: null, lights: { ...state.lights, elapsed: null } });
   const a = strip((await call(`${emulator.url}/_emu/state`)).json());
   const b = strip((await call(`${emulator.control.url}/_emu/state`, { headers: key })).json());
   assert.equal(createHash("sha256").update(JSON.stringify(a)).digest("hex"), createHash("sha256").update(JSON.stringify(b)).digest("hex"));
@@ -481,7 +483,7 @@ test("no other page may embed what the bar's address gives: not as a script, a p
   const pick = (headers) => Object.fromEntries(Object.keys(embedding).map((name) => [name, headers[name]]));
   assert.equal((await call(`${emulator.url}/api/storage/write?path=/ext/leak.js`, { method: "POST", body: "window.leak = 1;" })).status, 200);
   // The API, a file of the storage, the local web and its fallback, the old paths, a 404, a method the bar refuses.
-  for (const [method, path] of [["GET", "/api/version"], ["GET", "/api/storage/read?path=/ext/leak.js"], ["GET", "/api/screen?display=0"], ["GET", "/"], ["GET", "/apps"], ["GET", "/_nuxt/entry-7c2bd48.js"], ["GET", "/_emu/state"], ["GET", "/_emu/status"], ["GET", "/nowhere/x.js"], ["POST", "/api/version"]]) {
+  for (const [method, path] of [["GET", "/api/version"], ["GET", "/api/storage/read?path=/ext/leak.js"], ["GET", "/api/screen?display=0"], ["GET", "/"], ["GET", "/apps"], ["GET", `/_nuxt/${readdirSync(join(emulator.firmware.web, "_nuxt")).find((name) => /^entry-\w+\.js$/.test(name))}`], ["GET", "/_emu/state"], ["GET", "/_emu/status"], ["GET", "/nowhere/x.js"], ["POST", "/api/version"]]) {
     const answer = await call(`${emulator.url}${path}`, { method });
     assert.deepEqual(pick(answer.headers), embedding, `${method} ${path}`);
   }
@@ -494,9 +496,11 @@ test("no other page may embed what the bar's address gives: not as a script, a p
 });
 
 test("the local web's state stream worker comes from the bar's address, so it connects with that origin", async (t) => {
-  for (const [n, firmware] of [[0, "1.3.1"], [2, "dev"]]) {
+  for (const [n, firmware] of [[0, "1.4.1"], [2, "1.3.1"]]) {
     const emulator = await start(t, { firmware }, n);
-    const script = (await call(`${emulator.url}/_nuxt/wifiStore-7c2bd48.js`)).text;
+    // The script's name carries the local web's build: wifiStore-<hash>.js.
+    const store = readdirSync(join(emulator.firmware.web, "_nuxt")).find((name) => /^wifiStore-\w+\.js$/.test(name));
+    const script = (await call(`${emulator.url}/_nuxt/${store}`)).text;
     assert.ok(script.includes(`"${WORKER_PATH}"`), firmware);
     assert.doesNotMatch(script, /data:application\/javascript;base64,/);
     const worker = await call(`${emulator.url}${WORKER_PATH}`);

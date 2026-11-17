@@ -1,10 +1,10 @@
 {
   "$comment": "Written by tools/notices/refresh.mjs from the firmware checkout and the Emscripten SDK; do not edit. What the app's license summary (tools/notices/notices.mjs) says about the firmware inside the emulator: for each firmware build, the commits and versions of the libraries compiled into its modules, every path the engine's build takes and whose it is, the local web and its fonts; the licenses of the app assets and of the copies of firmware files; the license texts in texts/.",
   "firmwareRepository": "https://github.com/busy-app/busybar-firmware",
-  "default": "1.3.1",
+  "default": "1.4.1",
   "firmware": {
-    "1.3.1": {
-      "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
+    "1.4.1": {
+      "commit": "28c175b3b5c8cda231582d07b276690eaf94a136",
       "libraries": {
         "jerryscript": {
           "commit": "738156942113034cbe2103ed470222da65c2dbb2",
@@ -75,7 +75,7 @@
           ]
         },
         "internal-images": {
-          "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
+          "commit": "28c175b3b5c8cda231582d07b276690eaf94a136",
           "in": "the firmware's own tree",
           "license": "CC-BY-SA-4.0",
           "copyright": [
@@ -102,6 +102,7 @@
         "applications/services/gui/scene_manager.c": "firmware",
         "applications/services/gui/widget.c": "firmware",
         "applications/services/js_runner": "firmware",
+        "applications/services/js_runner/js_fetch_request.c": "firmware",
         "applications/services/js_runner/js_runner.h": "firmware",
         "applications/services/js_runner/js_runner_i.h": "firmware",
         "applications/services/mqtt/mqtt_config.c": "firmware",
@@ -110,6 +111,7 @@
         "applications/services/supervisor/supervisor.c": "firmware",
         "applications/services/web_server/http_api/api_": "firmware",
         "applications/services/web_server/http_api/api_display.c": "firmware",
+        "applications/services/web_server/http_api/api_root.c": "firmware",
         "applications/services/web_server/http_api/http_api.h": "firmware",
         "applications/services/web_server/openapi/openapi.yaml": "firmware",
         "applications/services/wifi/wifi_util.c": "firmware",
@@ -133,6 +135,7 @@
         "lib/anim_file/components": "firmware",
         "lib/cjson/cJSON.c": "cjson",
         "lib/http/http_headers.c": "firmware",
+        "lib/http/http_method.c": "firmware",
         "lib/http/http_response.c": "firmware",
         "lib/jerryscript": "jerryscript",
         "lib/jerryscript.scons": "firmware",
@@ -191,7 +194,7 @@
       },
       "web": {
         "from": "assets/frontend-build/public",
-        "tree": "c55a464d1b22123f90722bbe52ab9eae4bb33149",
+        "tree": "4628c64248377242cfccc653c882c92c045f1ba4",
         "files": 120,
         "source": "assets/frontend",
         "license": "GPL-2.0-or-later",
@@ -200,7 +203,7 @@
         ],
         "fonts": [
           {
-            "file": "_nuxt/Inter-7c2bd48.ttf",
+            "file": "_nuxt/Inter-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/Inter.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -208,7 +211,7 @@
             ]
           },
           {
-            "file": "_nuxt/Inter-Italic-7c2bd48.ttf",
+            "file": "_nuxt/Inter-Italic-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/Inter-Italic.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -216,7 +219,7 @@
             ]
           },
           {
-            "file": "_nuxt/LanaPixel-7c2bd48.ttf",
+            "file": "_nuxt/LanaPixel-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/LanaPixel.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -224,7 +227,7 @@
             ]
           },
           {
-            "file": "_nuxt/busy_bold_10px-7c2bd48.ttf",
+            "file": "_nuxt/busy_bold_10px-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/busy_bold_10px.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -234,7 +237,7 @@
             "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
           },
           {
-            "file": "_nuxt/busy_bold_7px-7c2bd48.ttf",
+            "file": "_nuxt/busy_bold_7px-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/busy_bold_7px.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -244,7 +247,7 @@
             "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
           },
           {
-            "file": "_nuxt/busy_regular_5px-7c2bd48.ttf",
+            "file": "_nuxt/busy_regular_5px-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/busy_regular_5px.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -254,7 +257,7 @@
             "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
           },
           {
-            "file": "_nuxt/busy_regular_7px-7c2bd48.ttf",
+            "file": "_nuxt/busy_regular_7px-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/busy_regular_7px.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -264,7 +267,7 @@
             "note": "The firmware's REUSE.toml gives the busy_* fonts OFL-1.1 (Ark Pixel by TakWolf, and Flipper FZCO) at paths that match no file (assets/frontend/assets/fonts/ttf/busy_*.ttf, assets/frontend/assets/fonts/busy_*.font); the fonts' own files declare the SIL Open Font License 1.1. This summary follows the font files."
           },
           {
-            "file": "_nuxt/busy_regular_9px-7c2bd48.ttf",
+            "file": "_nuxt/busy_regular_9px-53bb54d.ttf",
             "source": "assets/frontend/assets/fonts/busy_regular_9px.ttf",
             "license": "OFL-1.1",
             "copyright": [
@@ -453,8 +456,8 @@
         ]
       }
     },
-    "dev": {
-      "commit": "4d1c24ac38e4f745231713c9cdfaaef5669362ae",
+    "1.3.1": {
+      "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
       "libraries": {
         "jerryscript": {
           "commit": "738156942113034cbe2103ed470222da65c2dbb2",
@@ -525,7 +528,7 @@
           ]
         },
         "internal-images": {
-          "commit": "4d1c24ac38e4f745231713c9cdfaaef5669362ae",
+          "commit": "8edd2da42ed2facbab73796c456746e7dcbed2e7",
           "in": "the firmware's own tree",
           "license": "CC-BY-SA-4.0",
           "copyright": [
@@ -552,6 +555,7 @@
         "applications/services/gui/scene_manager.c": "firmware",
         "applications/services/gui/widget.c": "firmware",
         "applications/services/js_runner": "firmware",
+        "applications/services/js_runner/js_fetch_request.c": "firmware",
         "applications/services/js_runner/js_runner.h": "firmware",
         "applications/services/js_runner/js_runner_i.h": "firmware",
         "applications/services/mqtt/mqtt_config.c": "firmware",
@@ -560,6 +564,7 @@
         "applications/services/supervisor/supervisor.c": "firmware",
         "applications/services/web_server/http_api/api_": "firmware",
         "applications/services/web_server/http_api/api_display.c": "firmware",
+        "applications/services/web_server/http_api/api_root.c": "firmware",
         "applications/services/web_server/http_api/http_api.h": "firmware",
         "applications/services/web_server/openapi/openapi.yaml": "firmware",
         "applications/services/wifi/wifi_util.c": "firmware",
@@ -583,6 +588,7 @@
         "lib/anim_file/components": "firmware",
         "lib/cjson/cJSON.c": "cjson",
         "lib/http/http_headers.c": "firmware",
+        "lib/http/http_method.c": "firmware",
         "lib/http/http_response.c": "firmware",
         "lib/jerryscript": "jerryscript",
         "lib/jerryscript.scons": "firmware",
@@ -910,7 +916,7 @@
       "copyright": [
         "2024-2026 Flipper FZCO"
       ],
-      "files": 217,
+      "files": 218,
       "sources": [
         "assets/animations/apps_menu",
         "assets/animations/ble_settings",
@@ -979,7 +985,7 @@
     },
     {
       "file": "packages/server/legacy-window/busybar-device.png",
-      "source": "assets/frontend-build/public/_nuxt/busybar-device-7c2bd48.png",
+      "source": "assets/frontend-build/public/_nuxt/busybar-device-53bb54d.png",
       "license": "GPL-2.0-or-later",
       "copyright": [
         "2024-2026 Flipper FZCO"

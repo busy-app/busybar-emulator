@@ -17,7 +17,7 @@ import { launch } from "./harness.mjs";
 const skip = !HAS_REAL_SERVER && "the server is not beside this package";
 const SHOTS = process.env.APP_COLUMN_SHOTS || null;
 const EMULATOR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const SIZES = [[1440, 900], [1200, 800], [900, 650]];
+const SIZES = [[1440, 900], [1300, 800], [1200, 800], [1150, 800], [1140, 650]];
 const ID = "app.example.meeting_cost";
 
 /** A stand-in for the project's busy-cli: build writes the package's file, the rest does nothing; all end with 0. */
@@ -136,7 +136,7 @@ test("the opened app: its folder over Copy prompt for AI, Stop and Run; the prom
     const at = (el) => [...document.querySelectorAll("#app-pane *")].indexOf(el);
     const path = document.querySelector("#app-folder .ac-path");
     return { name: at(document.querySelector("#app-title")), folder: at(document.querySelector("#app-folder")), actions: at(document.querySelector("#app-actions")), tabs: at(document.querySelector("#app-tabs")),
-      path: path.dataset.tipDetail, readOnly: path.readOnly, shown: path.value,
+      path: path.dataset.tipDetail, readOnly: path.getAttribute("aria-readonly") === "true", shown: path.textContent,
       icons: [...document.querySelectorAll("#app-folder .ac-path-btn")].map((b) => b.ariaLabel),
       row: [...document.querySelectorAll("#app-actions button")].map((b) => b.ariaLabel || b.textContent.trim()),
       run: getComputedStyle(document.querySelector("#app-run")).backgroundColor,
@@ -165,9 +165,17 @@ test("the opened app: its folder over Copy prompt for AI, Stop and Run; the prom
   assert.match(text, /^Work with me on my BUSY Bar app "Meeting Cost" \(app\.example\.meeting_cost\)\./);
   if (call) assert.ok(text.includes(`by its full path: ${call}\n`) && text.includes(`1. ${call} dev --once`), text);
   assert.match(text, /Ask me before you publish/);
-  await until(async () => (await page(`document.querySelector("#copy-prompt").textContent`)) === "Copied", "the button says Copied");
+  // What the button shows: its label, or Copied for two seconds in the label's place, at the label's width.
+  const promptShows = `(() => {
+    const button = document.querySelector("#copy-prompt");
+    const seen = [...button.querySelectorAll(":scope > span")].filter((part) => getComputedStyle(part).visibility !== "hidden");
+    return { words: seen.map((part) => [...part.querySelectorAll("span")].filter((s) => getComputedStyle(s).display !== "none").map((s) => s.textContent).join("")), width: Math.round(button.getBoundingClientRect().width) };
+  })()`;
+  const idle = await page(promptShows);
+  await until(async () => (await page(promptShows)).words.join() === "Copied", "the button says Copied");
+  assert.equal((await page(promptShows)).width, idle.width, "Copied in the label's place, the button as wide");
   await sleep(2200);
-  assert.match(await page(`document.querySelector("#copy-prompt").textContent`), /Copy prompt for AI|Prompt for AI/);
+  assert.match((await page(promptShows)).words.join(), /^(Copy prompt for AI|Prompt for AI)$/);
 
   await app.click("#app-folder .ac-path-btn");
   await until(() => app.run((shell) => shell.offScreen.copied.length > 0), "the path copied");

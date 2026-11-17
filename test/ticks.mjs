@@ -1,7 +1,7 @@
 // The tick meter: how many of the GUI's ticks the screen module gets per second of real time, how late they come
 // and what the server's process costs meanwhile. The budget is in emulator/docs/quality.md: 125 ticks a second.
 //
-//   node emulator/test/ticks.mjs --port 8701 --data <dir> [--firmware dev] [--fast]
+//   node emulator/test/ticks.mjs --port 8701 --data <dir> [--firmware 1.3.1] [--fast]
 //                                [--seconds 60] [--load idle|app|app+requests|app+http] [--json <file>] [--expect]
 //
 // It starts the server in its own process (the same options as packages/server/index.mjs; the port and the data

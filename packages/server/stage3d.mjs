@@ -2,7 +2,8 @@
 // with a policy of their own. The device window shows them in a sandboxed <iframe> (legacy-window/stage3d/mount.js):
 // the frame draws the bar with the Tride player and talks to the window by messages only.
 //
-//   GET /emulator/stage3d/frame/<file>   a file of the frame: its page, its scripts, the player, the scene
+//   GET /emulator/stage3d/frame/<file>   a file of the frame: its page, its scripts, the player, the scene; and the
+//                                        modules of the window it shares (FROM_WINDOW)
 //
 // The frame has no origin: its sandbox leaves it scripts and nothing else, so its own requests for its own files come
 // with "Origin: null". The entry guard lets those in for GET and HEAD of the files it lists, STAGE_FRAME_FILES, alone
@@ -32,6 +33,7 @@ export const STAGE_POLICY =
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
+  ".mjs": "text/javascript",
   ".css": "text/css",
   ".wasm": "application/wasm",
   ".json": "application/json",
@@ -42,6 +44,13 @@ const MIME = {
 const here = dirname(fileURLToPath(import.meta.url));
 /** packages/stage/frame, beside packages/server in the source tree and in the app alike. */
 export const STAGE_FRAME_DIR = resolve(here, "..", "stage", "frame");
+/**
+ * The window's own modules the frame loads as files of its own, by name: the firmware's timeline of the status lights
+ * and how a lit LED looks (legacy-window/status-lights.mjs), which the flat view and the server go by too, so that the
+ * 3D view shows the same at the same moment. It imports nothing and says nothing of the bar or of this computer. The
+ * 3D view depends on it; nothing of the server depends on the 3D view.
+ */
+export const FROM_WINDOW = Object.freeze({ "status-lights.mjs": resolve(here, "legacy-window", "status-lights.mjs") });
 
 /**
  * Answers a request for a file of the frame.
@@ -72,8 +81,8 @@ export function serveStageFrame(req, res, url, root = STAGE_FRAME_DIR) {
   } catch {
     return fail(404, "Not found");
   }
-  // A file of the frame's folder by its real path (path-boundary.mjs).
-  const file = insideFolder(root, name);
+  // A file of the frame's folder by its real path (path-boundary.mjs), or one the frame shares with the window.
+  const file = Object.hasOwn(FROM_WINDOW, name) ? FROM_WINDOW[name] : insideFolder(root, name);
   const type = MIME[extname(name)] ?? "application/octet-stream";
   let body;
   try {

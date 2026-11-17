@@ -23,10 +23,11 @@ import path from "node:path";
 import { busyCliScript } from "../../projects/node-tools.mjs";
 import { oneAtATime, watchProject } from "../../projects/watch.mjs";
 import { appEvent, engineFailed, followConsole } from "../bar-console.mjs";
+import { packageRefusal } from "../firmware.mjs";
 import { blockedNetwork, emulatorStatus, ready } from "../lifecycle.mjs";
 import { fontWarnings, fontWarningText } from "../../projects/font-check.mjs";
 import { asciiJson, CliError } from "../output.mjs";
-import { again, buildFailureHint, commandFor, ensureDependencies, fixBusyCli, installedFromProject, projectAt, remember, requireTrust, requireValidSettings, runTool, shown, toolFailed, TRUST_OPTION } from "../project.mjs";
+import { again, barApiVersion, buildFailureHint, commandFor, ensureDependencies, fixBusyCli, installedFromProject, projectAt, remember, requireTrust, requireValidSettings, runTool, shown, toolFailed, TRUST_OPTION } from "../project.mjs";
 
 /** How long --once looks at the app after its start, and how often. */
 const LOOK_MS = 1000;
@@ -58,6 +59,9 @@ function shownEvent(event) {
     case "build_failed":
     case "install_failed":
     case "run_failed":
+      if (event.code === "api_mismatch") {
+        return [line("failed", event.message), event.hint, ...(event.watching ? [line("watch", "still watching: save a file to try again. The app on the BUSY Bar is as it was.")] : [])].join("\n");
+      }
       return [
         line("failed", `${event.tool} failed${event.exit_code === null || event.exit_code === undefined ? "" : ` with exit code ${event.exit_code}`}${event.message && !event.output ? `: ${event.message}` : ":"}`),
         ...(event.output ? [event.output] : []),
@@ -182,7 +186,7 @@ export default {
       say("build_started", { cycle, changed });
       try {
         // As build does: a settings file the bar would refuse fails the round, with the field at fault.
-        requireValidSettings(ctx, project);
+        requireValidSettings(ctx, project, await barApiVersion(ctx, sys));
         await ensureDependencies(ctx, sys, project, progress);
         fixBusyCli(ctx, project);
       } catch (e) {
@@ -204,6 +208,13 @@ export default {
       const fonts = fontWarnings(project.dir);
       const warnings = fonts.length ? [{ code: "font_not_bundled", message: fontWarningText(fonts), places: fonts }] : [];
       for (const warning of warnings) say("build_warning", { cycle, ...warning });
+
+      // A package for a newer API than the firmware's: the BUSY Bar would refuse it; said with both ways out.
+      const refusal = await packageRefusal(ctx, sys, status, project);
+      if (refusal) {
+        say("install_failed", { cycle, tool: "busy-emulator", code: refusal.code, exit_code: null, message: refusal.message, output: "", hint: refusal.hint, watching: !options.once });
+        return { ok: false, error: refusal };
+      }
 
       quiet = true;
       try {

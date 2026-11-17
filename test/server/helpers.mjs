@@ -23,7 +23,7 @@ const children = new Set();
 // The children each test started (node below). A test's folders are removed only once they have ended: node:test runs
 // a test's `after` hooks in the order they were added, a test makes a server's data folder before it starts the
 // server, and the folder was removed while the server still wrote there (EMU-294, the gate of 13.11 on a loaded
-// machine: cli.test.mjs, ENOTEMPTY on bar/1.3.1/ext with an app running).
+// machine: cli.test.mjs, ENOTEMPTY on bar/ext with an app running).
 const childrenOf = new WeakMap(); // test context -> Set of children
 // A child that is still writing can make a folder again or keep a file in it open (Windows): try a few times.
 const removeFolder = (dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });

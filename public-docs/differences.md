@@ -78,9 +78,19 @@ The emulator notes some mistakes of an app in its log (`busy-emulator logs`) tha
 
 ## Other differences we know of
 
-- **The BUSY Bar's speed is a model.** Your app's JavaScript takes the time it would take on a BUSY Bar, counted from the work
-  it does (the instructions it runs, the memory it takes) at the rates measured on a BUSY Bar with firmware 1.3.1, not
-  from your computer's speed.
+- **Two firmwares, both ways.** On a BUSY Bar, the firmware changes with an update. The emulator has 1.4.1 and 1.3.1
+  and switches between them in either direction while it runs. Your apps stay, as after an update
+  ([firmwares](README.md#firmwares)).
+- **The BUSY Bar's speed is a model.** Your app's JavaScript takes the time it would take on a BUSY Bar. The time is
+  counted from the work the app does (the instructions it runs, the memory it takes), not from your computer's speed.
+  Each firmware has its own rates, measured on the same BUSY Bar on USB: 1.3.1 on 9 November 2026, 1.4.1 on 16
+  November 2026. On 1.4.1 a step of JavaScript took 1.5 % less, building a string the same, a draw of a short text the
+  same, and a draw of a full 72x16 frame 13 % less (39.5 ms against 45.3 ms): its API costs less per byte of the request.
+  The model also has a fitted term for what a frame of an animating app takes beyond its JavaScript and its draw,
+  12.5 ms on 1.3.1 and 25 ms on 1.4.1: the app's JavaScript right after a draw's answer is held back by up to that
+  much. Its cause is not established: the BUSY Bar redrawing its display at a higher priority than the app's JavaScript
+  is one candidate, but the firmwares redraw the same way and the term doubled. 1.4.1's rates are fitted to one run. An app runs at the rates of the firmware the emulator runs at that moment. The time a
+  request to the internet takes was measured on 1.3.1 only.
 - **When the computer is very busy.** The emulated BUSY Bar keeps time with your computer's clock. When something holds
   up the emulator (a computer under heavy load, a laptop waking from sleep, a debugger), the BUSY Bar catches up on at
   most half a second at once. After a longer hold-up its clock jumps with the computer's: the firmware's ticks and

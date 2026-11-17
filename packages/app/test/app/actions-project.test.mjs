@@ -62,7 +62,8 @@ test("create where the person chose, list, refresh after an edit, a broken edit,
   assert.equal(created.error, undefined, JSON.stringify(created.error));
   const dir = realpathSync(chosen);
   const project = created.value;
-  assert.deepEqual({ ...project, id: typeof project.id, name: typeof project.name }, { id: "string", name: "string", folder: dir, exists: true, unavailable: false, trusted: true, built: false, installed: false, running: false, dependencies: { state: "installed", reason: null, message: null, retry: false }, shownFolder: dir, stale: false, job: null });
+  assert.deepEqual({ ...project, id: typeof project.id, name: typeof project.name }, { id: "string", name: "string", folder: dir, exists: true, unavailable: false, trusted: true, built: false, installed: false, running: false, dependencies: { state: "installed", reason: null, message: null, retry: false }, shownFolder: dir, stale: false, manifest: path.join(dir, "src", "appmeta", "manifest.json"), api_version: project.api_version, job: null });
+  assert.match(project.api_version, /^\d+\.\d+\.\d+$/, "the API its manifest asks for");
   const id = project.id;
   assert.deepEqual((await act("window.emulatorActions.projects.list()")).value.map((one) => [one.id, one.folder]), [[id, dir]], "the list shows the app with its project's folder");
   // The folder is the project and nothing else: what create writes, and nothing of the emulator's own beside it.

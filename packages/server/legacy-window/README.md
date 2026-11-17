@@ -20,12 +20,15 @@ window only. In a plain browser there is no bridge.
 
 - `available()` → `{ shell: boolean }`. True only in the app's main window. In a plain browser it is false, and every
   action below rejects with an `Error` whose `message` says so (`code: "no_shell"`).
-- `projects.list()` → `Promise<[{ id, name, folder, shownFolder, exists, unavailable, trusted, built, installed, running, dependencies, job }]>`.
+- `projects.list()` → `Promise<[{ id, name, folder, shownFolder, exists, unavailable, trusted, built, installed, running, dependencies, manifest, api_version, job }]>`.
   The app projects the emulator has worked with, the latest first. `folder` is the project's folder (a full path),
   `shownFolder` the same from `~` on macOS. `dependencies`: `{ state, reason, message, retry }`, `state` one of
   `installed`, `missing` (never installed: a clone), `installing`, `failed` and `interrupted` (an install was cut off);
   for the last two `reason` says why in a few words ("no network", "no answer from the npm registry") and `retry`
   whether it is the network's, which `retryDependencies()` tries again.
+  `manifest`: the project's manifest file (`src/appmeta/manifest.json`, or `appmeta/manifest.json`), and `api_version`
+  the API it asks for, read from it (no link on the way under the project's folder, a file of at most 64 KiB); nulls
+  where there is none.
   `installed` and `running`: its app is on the emulated BUSY Bar, and runs now. `job`: the kind of the job that runs on
   it now, or `null`. An app on the BUSY Bar whose id is in no project was installed from an archive: it has no project.
 - `projects.examples()` → `Promise<[{ name, summary, title, icon, front }]>`. The example apps a new project can start
@@ -117,6 +120,18 @@ window only. In a plain browser there is no bridge.
 - `publish.package(folder, { build })` → the checks, then `submission/` (`publish package`); the project must be built
   first (`projects.build`), or `build: true` builds it first in the same action (Build and package); a failed build
   answers with `step: "build"`.
+- `firmware.use({ version, when, run })` → the BUSY Bar's firmware (EMU-322), through the server's management address,
+  whose key the desktop app holds. `when: "restart"` chooses `version` for the BUSY Bar's next restart and answers at
+  once, `{ ok: true, firmware, pending, changed }` (the one that runs clears the choice); `when: "now"` (the default)
+  switches and answers once the BUSY Bar is up on it, `{ ok: true, firmware, from, changed, ms }`. With `"now"`, `run`
+  is what the person asked for when the window's dialog came up, done in the same action once the switch is over:
+  `{ folder }` a Refresh of that project of the list (refused before the switch when it is no such project), `{ id }`
+  a start of that app on the BUSY Bar, `{ refused: true }` the install of the package that `projects.installPackage`
+  refused with `api_mismatch` (kept for this one install; the install asks its question as always); its answer is
+  `ran`. A refusal is the server's own, `{ ok: false, code, message, hint }` (`firmware_switching`,
+  `firmware_unknown`, `firmware_start_failed`), or `unavailable`, `no_answer`.
+- `firmware.forget()` → `{ forgotten }`. The dialog's Cancel: the package an `api_mismatch` kept is let go. No click
+  needed (it only lets go). A new install lets it go too.
 - `reveal(path)` → `Promise<boolean>`. Show in Finder or Explorer: a project's folder, something inside one, or
   inside the emulator's data folder. A folder is opened, its files in view; a file is selected in its folder.
   Anything else is `false`.
@@ -232,10 +247,41 @@ round its pivot, 20° apart (a click on a name, a drag round the knob, the arrow
 the two RGB LEDs (`#led-left`, `#led-right`) along its slanted sides; Back a small round key; the wheel a large
 circle with a dot that turns a detent a click and small ticks round it, OK in its middle.
 
-The RGB LEDs follow the event `lights` of `/_emu/events`, `{ preset, color, brightness }`: `preset` is the firmware's
-status-lights preset, one of `off`, `static`, `fade`, `rainbow`, `blink`, `notification`; `color` is `"#rrggbb"`;
-`brightness` 0 to 1 (a notification is at full brightness). Until it comes they are off. The emulator does not send
-it yet: its firmware build takes the status lights' calls and only logs their color.
+The RGB LEDs follow the event `lights` of `/_emu/events`, `{ preset, color, brightness, elapsed, set? }`: `preset` is the
+firmware's status-lights preset, one of `off`, `static`, `fade`, `rainbow`, `blink`, `notification`; `color` is
+`"#rrggbb"`; `brightness` 0 to 1, the level the firmware runs them at (0.05 to 0.9 by the brightness setting, 1 for a
+notification); `elapsed` the whole ms the preset had run when the event was sent. A brightness set during a
+notification dims the blink it comes in, as the firmware's status_lights_do_set_brightness does, until the next one:
+while that blink lasts, `brightness` is the new level and `set` the ms into the notification it came at. The server
+sends the event when the firmware starts a preset, when the brightness changes, when the lights go out with the
+system, and to every window as it connects; `/_emu/state` has the same under `lights`. A notification that is over is
+`off`, with `elapsed` counted from when it went dark; the end itself is not sent. Until the event comes the LEDs are
+off; a message without `elapsed` starts the preset at once.
+
+What the LEDs show from moment to moment is `status-lights.mjs`: the firmware's timeline of each preset
+(`applications/services/status_lights`: the periods, the run counts, the integer steps of the fade and the rainbow)
+as plain functions of the event's state and the ms since the preset started, and `statusLedLook`, how a lit LED looks
+on screen. The server (`device.mjs`), this view (`window.js`, which draws each step as it comes, on a timer) and the
+3D view (`packages/stage/frame/stage.js`, served the same file at `/emulator/stage3d/frame/status-lights.mjs`) all go
+by it, so all three show the same step at the same moment. With `prefers-reduced-motion: reduce` both views hold the
+fade and the rainbow on one step; the blinks go on. A page out of sight gets its timers late; back in sight, both views
+draw the step at once. The lights keep the computer's real time, not the emulated BUSY
+Bar's clock: `busy-emulator time advance` and `time set` do not move them (`device.mjs`, the status lights).
+
+The BUSY Bar's firmware (EMU-322; the epic `docs/backlog/E12-firmware.md`, its section on the window) comes from
+`/_emu/events`: the `hello` carries `{ firmware, notice, firmwares, pending, switching }`, as GET `/_emu/firmware`
+has them, so that a window loaded again shows a choice that waits for the restart; the event `firmware` says what
+changes after (`pending`, `switching`, `ready`, `failed`; a failed one carries the server's `hint`, which the toast
+says after the error). "Firmware 1.4.1" under the BUSY Bar's name opens the list
+(`.row-menu.fw-menu`); a choice there is `firmware.use` with `when: "restart"`, and Restart BUSY Bar turns primary with
+the red line `#fw-pending` over it. While it switches, `#stage` has the class `switching`: the dock and the settings are
+inert, Local Web and the keys wait. A firmware that is not the latest marks the label (`.behind`). An app whose
+`api_version` is newer than the running firmware's API has the chip "Needs firmware X" in its row (its project's
+manifest, or the copy on the BUSY Bar), and what runs decides the dialog: Run and Refresh build from the manifest,
+Start starts the installed copy (`api_version` of `/api/apps/list`). The dialog switches now and runs, or opens the
+manifest (`open`); the emulator never edits a manifest; its Cancel calls `firmware.forget`. Create app's Install a package asks through
+`window.emulatorFirmware.ask({ name, api_version })`, true when the dialog opened. The server's `notice` (a kept
+firmware that is gone) shows once a window in the toast `#fw-toast`.
 
 ## The rules behind it
 

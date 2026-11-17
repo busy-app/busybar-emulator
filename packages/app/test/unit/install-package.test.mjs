@@ -19,12 +19,13 @@ let n = 0;
 
 const FACTS = { ok: true, id: "app.you.clock", name: "Clock", version: "1.2.0", api_version: "0.1.0", notes: [], installed: false };
 
-function setup({ looked = () => FACTS, said = ["yes"], bar = () => ({ status: 200, body: '{"result":"OK"}' }), file = null, github = null } = {}) {
+function setup({ looked = () => FACTS, said = ["yes"], bar = () => ({ status: 200, body: '{"result":"OK"}' }), file = null, github = null, control = null } = {}) {
   const dataDir = path.join(root, `data-${n++}`);
   mkdirSync(dataDir, { recursive: true });
   const calls = [];
   const asked = [];
   const sent = [];
+  const reads = [];
   const seenBytes = [];
   const startCli = (args) => {
     const words = args.filter((word) => word !== "--json" && word !== "--progress");
@@ -50,15 +51,18 @@ function setup({ looked = () => FACTS, said = ["yes"], bar = () => ({ status: 20
     platform: process.platform,
     home: root,
     confirm: async (question) => (asked.push(question), said.shift() ?? "no"),
-    bar: { send: async (method, pathname, body) => (sent.push([method, pathname, body]), bar(method, pathname, body)) },
+    // What goes to the bar; the read of its API version (GET /api/version, EMU-322: a package for a newer API is
+    // refused before the question) is kept apart, as `reads`.
+    bar: { send: async (method, pathname, body) => ((method === "GET" ? reads : sent).push([method, pathname, body]), bar(method, pathname, body)) },
     ...(github ? { github } : {}),
+    ...(control ? { control } : {}),
   });
   const call = async (name, arg) => {
     const answer = await actions.call(name, arg);
     return answer.ok ? answer.value : { rejected: answer.error };
   };
   const leftovers = () => (existsSync(path.join(dataDir, "tmp")) ? readdirSync(path.join(dataDir, "tmp")) : []);
-  return { call, calls, asked, sent, seenBytes, leftovers, dataDir };
+  return { call, calls, asked, sent, reads, seenBytes, leftovers, dataDir };
 }
 
 const stagedBar = (method, pathname) => (pathname === "/api/apps/stage" ? { status: 200, body: JSON.stringify({ result: "OK", install_key: 77, staged: { id: "app.you.clock", version: "1.2.0" } }) } : { status: 200, body: '{"result":"OK"}' });
@@ -69,7 +73,7 @@ test("a package the person chose: looked at, asked about with its file, app and 
   const file = path.join(downloads, "clock.tgz");
   const bytes = Buffer.from("a package's bytes");
   writeFileSync(file, bytes);
-  const { call, calls, asked, sent, seenBytes, leftovers } = setup({ file, bar: stagedBar });
+  const { call, calls, asked, sent, reads, seenBytes, leftovers } = setup({ file, bar: stagedBar });
   const done = await call("projects.package.install");
   assert.deepEqual([done.ok, done.id, done.version, done.running, done.message, done.file], [true, "app.you.clock", "1.2.0", true, "Clock 1.2.0 is installed and running on the emulated BUSY Bar.", shownAs(path.join(root, "Downloads", "clock.tgz"), root)]);
   assert.deepEqual(calls[0].slice(0, 1).concat(calls[0].slice(2)), ["install", "--check"], "only a look, never an install by the command line");
@@ -82,6 +86,7 @@ test("a package the person chose: looked at, asked about with its file, app and 
   assert.doesNotMatch(detail, /[\u00b7\u2022]/);
   assert.deepEqual(sent.map(([method, pathname]) => `${method} ${pathname}`), ["POST /api/apps/stage", "POST /api/apps/install?install_key=77", "POST /api/apps/launch?app_id=app.you.clock"]);
   assert.deepEqual(sent[0][2], bytes, "the bytes looked at");
+  assert.deepEqual(reads.map(([method, pathname]) => `${method} ${pathname}`), ["GET /api/version"], "the BUSY Bar's API, read before the question");
   assert.deepEqual(leftovers(), [], "the copy removed");
 });
 
@@ -136,4 +141,47 @@ test("a release's package from GitHub: downloaded into the data folder's tmp/, t
   assert.deepEqual([refused.code, refused.message], ["no_package", "github.com/octo/docs has no app project (no src/appmeta/manifest.json), and it has no releases. There is nothing to install."]);
   assert.equal(none.asked.length, 0);
   assert.deepEqual(none.leftovers(), []);
+});
+
+test("a package for a newer API than the BUSY Bar's is refused before the question, with the app for the window's dialog (EMU-322)", async () => {
+  const file = path.join(root, "newer.tgz");
+  writeFileSync(file, "x");
+  const newer = setup({ file, looked: () => ({ ...FACTS, api_version: "27.15.0" }), bar: (method, pathname) => (pathname === "/api/version" ? { status: 200, body: JSON.stringify({ api_semver: "27.14.0" }) } : { status: 200, body: "{}" }) });
+  const refused = await newer.call("projects.package.install");
+  assert.deepEqual([refused.ok, refused.code, refused.message, refused.app], [false, "api_mismatch", "Clock needs API 27.15.0, newer than the emulated BUSY Bar's (27.14.0).", { id: "app.you.clock", name: "Clock", api_version: "27.15.0" }]);
+  assert.deepEqual([newer.asked.length, newer.sent.length], [0, 0], "nobody asked, nothing sent");
+  assert.deepEqual(newer.leftovers(), []);
+});
+
+test("a package the firmware itself refuses (api_mismatch at the upload) is kept too: Switch and run installs it; Cancel lets it go (EMU-322)", async () => {
+  const file = path.join(root, "refused.tgz");
+  writeFileSync(file, "the refused package");
+  let api = "old";
+  const control = { send: async (_method, _pathname, json) => ((api = "new"), { status: 200, body: JSON.stringify({ firmware: { version: json.version }, changed: true }) }) };
+  // The BUSY Bar does not say its API here: the firmware's own refusal at the upload is what tells.
+  const bar = (method, pathname) =>
+    pathname === "/api/apps/stage"
+      ? api === "old"
+        ? { status: 400, body: JSON.stringify({ error: "API version mismatch", error_code: "api_mismatch" }) }
+        : { status: 200, body: JSON.stringify({ result: "OK", install_key: 5, staged: { id: "app.you.clock" } }) }
+      : { status: 200, body: "{}" };
+  const kept = setup({ file, bar, control, said: ["yes", "yes"] });
+  const refused = await kept.call("projects.package.install");
+  assert.deepEqual([refused.code, refused.app], ["api_mismatch", { id: "app.you.clock", name: "Clock", api_version: "0.1.0" }]);
+  const switched = await kept.call("firmware.use", { version: "1.4.1", run: { refused: true } });
+  assert.equal(switched.ran.ok, true, JSON.stringify(switched.ran));
+  assert.deepEqual(kept.sent.filter(([method]) => method === "POST").map(([, pathname]) => pathname), ["/api/apps/stage", "/api/apps/stage", "/api/apps/install?install_key=5", "/api/apps/launch?app_id=app.you.clock"]);
+  assert.deepEqual(kept.leftovers(), []);
+
+  // Cancel in the dialog: the kept package is let go, and a Switch and run after it installs nothing.
+  api = "old";
+  const canceled = setup({ file, bar, control });
+  assert.equal((await canceled.call("projects.package.install")).code, "api_mismatch");
+  assert.deepEqual(await canceled.call("firmware.forget"), { forgotten: true });
+  assert.deepEqual(await canceled.call("firmware.forget"), { forgotten: false });
+  // Nothing kept: refused before the switch, and the firmware is not switched for nothing.
+  const nothing = await canceled.call("firmware.use", { version: "1.4.1", run: { refused: true } });
+  assert.equal(nothing.code, "usage");
+  assert.equal(api, "old", "the firmware was not switched");
+  assert.equal(canceled.sent.filter(([method]) => method === "POST").length, 1, "only the first upload");
 });

@@ -22,6 +22,11 @@ test("a failure before the answer and one in its middle say what the app gets in
   const middle = networkErrorNote({ method: "GET", url: "https://slow.example/", message: "Inactivity timeout", afterHead: true, bytes: 2048 });
   assert.match(middle, /ended after 2048 bytes of its body with "Inactivity timeout"/);
   assert.match(middle, /a reader of res\.body gets \{ done: true, value: "Inactivity timeout" \}, not an error, and reader\.closed rejects with "cancelled"$/);
+  // From 1.4.1 (API 27.15.0) a failure rejects with a TypeError, and reader.closed with TypeError("Stream error").
+  const typedBefore = networkErrorNote({ method: "GET", url: "https://slow.example/", message: "socket error", afterHead: false, bytes: 0, typeError: true });
+  assert.match(typedBefore, /fetch\(\) rejects with a TypeError with this message$/);
+  const typedMiddle = networkErrorNote({ method: "GET", url: "https://slow.example/", message: "Inactivity timeout", afterHead: true, bytes: 10, typeError: true });
+  assert.match(typedMiddle, /res\.json\(\) and res\.text\(\) reject with a TypeError with this message; a reader of res\.body gets \{ done: true, value: "Inactivity timeout" \}, not an error, and reader\.closed rejects with TypeError\("Stream error"\)$/);
   const tls = networkErrorNote({ method: "GET", url: "https://old.example/", message: "Failed to establish TLS connection", afterHead: false, bytes: 0 });
   assert.match(tls, /The BUSY Bar trusts only the certificate authorities in its firmware's list/);
   const other = networkErrorNote({ method: "POST", url: "http://x.example/", message: "something new", afterHead: false, bytes: 0 });

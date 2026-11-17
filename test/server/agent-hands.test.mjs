@@ -6,7 +6,8 @@
 // - press: an app's input handler gets the button, the wheel's click, and a long press with --hold;
 // - settings get/set/reset: what the command saved through the bar's API is what the app reads after --restart;
 // - a settings file the firmware refuses: the bar's own parser (the firmware's code, in the screen module) says the
-//   same words about the same field as the emulator's check that `build` uses; `run` is a failure, not "launched";
+//   same words about the same field as the emulator's check that `build` uses, on each firmware by its rules; `run`
+//   is a failure, not "launched";
 // - POST /_emu/trust and `busy-emulator trust`: only a program with the server's key may ask, never a page; the
 //   answer is the app's (a stand-in for its dialog here) and nothing else; a yes is remembered; after a no the same
 //   folder is not asked about again for a while (here a fraction of a second, 30 s in the app); a name the person
@@ -23,6 +24,7 @@ import { spawnProgram } from "../../packages/engine/programs.mjs";
 import { checkSettingsSchema, problemText } from "../../packages/server/projects/settings-schema.mjs";
 import { BROKEN } from "../../packages/server/projects/test/settings-cases.mjs";
 import { isTrusted, trustProject, TRUST_PATH } from "../../packages/server/projects/trust.mjs";
+import { loadFirmware } from "../../packages/server/firmware.mjs";
 import { startServer } from "../../packages/server/server.mjs";
 import { targz } from "../package.mjs";
 import { finish, get, node, port, request, serverModule, tempDir, until } from "./helpers.mjs";
@@ -95,11 +97,11 @@ async function cli(t, args, cwd = data, at = { data, port: emulator.port }) {
 const manifest = (id) => JSON.stringify({ format_version: 1, id, name: id, version: "0.1.0", api_version: "27.0.0" });
 
 /** Puts an app on the bar: its script, and its settings file when it has one (text as it is). */
-async function install(id, script, settings = null) {
+async function install(id, script, settings = null, server = emulator) {
   const files = { [`${id}/appmeta/manifest.json`]: manifest(id), ...(settings === null ? {} : { [`${id}/appmeta/settings.json`]: settings }), [`${id}/scripts/main.js`]: script };
-  const staged = await request("POST", `${emulator.url}/api/apps/stage`, targz(files));
+  const staged = await request("POST", `${server.url}/api/apps/stage`, targz(files));
   assert.equal(staged.status, 200, staged.text);
-  const installed = await request("POST", `${emulator.url}/api/apps/install?install_key=${staged.json().install_key}`);
+  const installed = await request("POST", `${server.url}/api/apps/install?install_key=${staged.json().install_key}`);
   assert.equal(installed.status, 200, installed.text);
 }
 const launch = (id) => request("POST", `${emulator.url}/api/apps/launch?app_id=${id}`);
@@ -210,25 +212,45 @@ test("settings: a value saved with the command is what the app reads after --res
 
 // --------------------------------------------------------------------------- a settings file the firmware refuses
 
-test("the firmware's own parser says of each broken settings file what the emulator's check says, about the same field", async () => {
+// On each firmware, its own parser against the emulator's check by that firmware's rules (the BUSY Bar's API version):
+// a case refused only on some firmwares (settings-cases.mjs) is launched on the others. This file's emulator runs the
+// default firmware; the others get an emulator of their own here.
+test("the firmware's own parser says of each broken settings file what the emulator's check says, about the same field, on each firmware", async (t) => {
   const id = "app.hands.broken";
   const mismatches = [];
-  for (const [fields, field, problem] of BROKEN) {
-    const text = JSON.stringify({ format_version: 1, version: 1, fields });
-    const own = checkSettingsSchema(text);
-    assert.equal(own.ok, false);
-    await install(id, "setInterval(function () {}, 1000);", text);
-    const from = lines.length;
-    // The bar answers the launch with OK and shows "Settings file is invalid." (js_app_launcher_error.c).
-    await launch(id);
-    const logged = await until(`the firmware's word on ${field}: ${problem}`, () => lines.slice(from).find((line) => line.includes("[JsAppSettings] ")), 5000).catch(() => null);
-    const firmware = logged?.split("[JsAppSettings] ")[1] ?? "(the firmware said nothing)";
-    if (firmware !== `Field '${field}': ${problem}`) mismatches.push(`${text}\n  firmware: ${firmware}\n  emulator: ${problemText(own)}`);
-    assert.equal(await running(), null, "the app was not started");
-    // And the bar's API refuses the schema, as a bar's does.
-    const api = await get(`${emulator.url}/api/apps/settings?app_id=${id}`);
-    assert.equal(api.status, 503, text);
-    await quit();
+  for (const firmware of loadFirmware().versions) {
+    const own = firmware === loadFirmware().name;
+    const log = own ? lines : [];
+    const server = own
+      ? emulator
+      : await startServer({ port: port(0) ? port(2) : 0, controlPort: port(0) ? port(3) : 0, dataDir: realpathSync(mkdtempSync(join(realpathSync(tempDir(t)), "data-"))), firmware, barSpeed: false, log: (line) => log.push(line) });
+    try {
+      const api = (await get(`${server.url}/api/version`)).json().api_semver;
+      for (const [fields, field, problem, only] of BROKEN) {
+        const text = JSON.stringify({ format_version: 1, version: 1, fields });
+        const refused = !only || only.includes(firmware);
+        const check = checkSettingsSchema(text, { api });
+        assert.equal(check.ok, !refused, `${firmware}: ${text}`);
+        await install(id, "setInterval(function () {}, 1000);", text, server);
+        const from = log.length;
+        // The bar answers the launch with OK and shows "Settings file is invalid." (js_app_launcher_error.c).
+        await request("POST", `${server.url}/api/apps/launch?app_id=${id}`);
+        if (refused) {
+          const logged = await until(`the firmware's word on ${field}: ${problem}`, () => log.slice(from).find((line) => line.includes("[JsAppSettings] ")), 5000).catch(() => null);
+          const said = logged?.split("[JsAppSettings] ")[1] ?? "(the firmware said nothing)";
+          if (said !== `Field '${field}': ${problem}`) mismatches.push(`${firmware}: ${text}\n  firmware: ${said}\n  emulator: ${problemText(check)}`);
+          assert.equal((await get(`${server.url}/_emu/state`)).json().running, null, `${firmware}: the app was not started`);
+          // And the bar's API refuses the schema, as a bar's does.
+          assert.equal((await get(`${server.url}/api/apps/settings?app_id=${id}`)).status, 503, `${firmware}: ${text}`);
+        } else {
+          await until(`${firmware} to start the app with ${text}`, async () => (await get(`${server.url}/_emu/state`)).json().running?.id === id, 5000);
+          assert.equal((await get(`${server.url}/api/apps/settings?app_id=${id}`)).status, 200, `${firmware}: ${text}`);
+        }
+        await request("POST", `${server.url}/api/apps/quit`);
+      }
+    } finally {
+      if (!own) await server.stop();
+    }
   }
   assert.deepEqual(mismatches, [], mismatches.join("\n"));
 });

@@ -12,6 +12,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { after, test } from "node:test";
 
 import { resolveContext } from "../../packages/server/cli/context.mjs";
+import { FORMAT } from "../../packages/server/data-folder.mjs";
 import { targz } from "../package.mjs";
 import { finish, get, node, port, request, serverDir, tempDir, until } from "./helpers.mjs";
 
@@ -160,10 +161,10 @@ test("without --data the data lives in the user's data folder, and after a day's
   else await end(cli);
 
   // Everything went to the data folder, laid out as architecture.md section 4 says.
-  assert.equal(readFileSync(join(folder, "format"), "utf8"), "1\n");
-  assert.ok(existsSync(join(folder, "bar", "1.3.1", "ext", "user_assets", "app.test.tree", "appmeta", "manifest.json")));
-  assert.ok(existsSync(join(folder, "bar", "1.3.1", "ext", "apps_data", "jsrunner", "app.test.tree.settings.json")));
-  assert.ok(existsSync(join(folder, "bar", "1.3.1", "ext", "log.txt")));
+  assert.equal(readFileSync(join(folder, "format"), "utf8"), `${FORMAT}\n`);
+  assert.ok(existsSync(join(folder, "bar", "ext", "user_assets", "app.test.tree", "appmeta", "manifest.json")));
+  assert.ok(existsSync(join(folder, "bar", "ext", "apps_data", "jsrunner", "app.test.tree.settings.json")));
+  assert.ok(existsSync(join(folder, "bar", "ext", "log.txt")));
   // A terminated process leaves its lock (Windows); one that was asked to stop does not.
   if (!windows) assert.ok(!existsSync(join(folder, "run", "server.lock")));
   // Nothing in the emulator's tree, and the machine's real data folder as it was.
@@ -186,7 +187,7 @@ test("a home named in letters outside Latin, deep enough that the data folder's 
   const first = await cli.ready;
   assert.ok(first.includes(`data ${folder})`), first);
   await installWithSettings(baseOf(first), "app.test.deep");
-  const manifest = join(folder, "bar", "1.3.1", "ext", "user_assets", "app.test.deep", "appmeta", "manifest.json");
+  const manifest = join(folder, "bar", "ext", "user_assets", "app.test.deep", "appmeta", "manifest.json");
   assert.ok(manifest.length > 260, `${manifest.length} characters`);
   assert.equal(JSON.parse(readFileSync(manifest, "utf8")).id, "app.test.deep");
   await end(cli);
@@ -259,7 +260,7 @@ test("the folder of earlier versions, emulator/.data, is left as it was, and the
     cli.lines()[5],
     new RegExp(
       `^\\d\\d:\\d\\d:\\d\\d The emulator keeps its data in ${escape(folder)} now\\. The folder ${escape(legacy)} of earlier versions is left as it was and is not read\\. ` +
-        `To keep its apps, stop the emulator and move ${escape(join(legacy, "ext"))} to ${escape(join(folder, "bar", "1.3.1", "ext"))}\\.$`,
+        `To keep its apps, stop the emulator and move ${escape(join(legacy, "ext"))} to ${escape(join(folder, "bar", "ext"))}\\.$`,
     ),
   );
   assert.deepEqual((await get(`${baseOf(cli.lines()[0])}/api/apps/list`)).json().apps, [], "nothing is read from it");

@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { execProgram } from "../packages/engine/programs.mjs";
-import { ALLOWED_SKIPS, lockIsStale, machineSkipsOf, partialScope, sortSkips, stillRunning, tallyEvents, tallyTap, tallyTotals, verdictOf } from "./gate-lib.mjs";
+import { ALLOWED_SKIPS, lockIsStale, machineSkipsOf, NO_REASON, partialScope, sortSkips, stillRunning, tallyEvents, tallyTap, tallyTotals, verdictOf } from "./gate-lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -122,14 +122,38 @@ test("what a test prints that looks like the summary does not count: the runner'
 });
 
 test("a comparison suite's totals: its last line of them", () => {
-  assert.deepEqual(tallyTotals("# totals pass=1 fail=0 skip=0\nmore\n# totals pass=27 fail=1 skip=0\n"), { pass: 27, fail: 1, skip: 0 });
+  assert.deepEqual(tallyTotals("# totals pass=1 fail=0 skip=0\nmore\n# totals pass=27 fail=1 skip=0\n"), { pass: 27, fail: 1, skip: 0, reasons: new Map() });
   assert.ok(Number.isNaN(tallyTotals("all checks passed\n").pass));
+});
+
+test("a comparison suite's skips without a reason count as such, and no allowed reason takes them", () => {
+  const c = tallyTotals("# skip 1 a reason\n# totals pass=3 fail=0 skip=4\n");
+  assert.deepEqual(c.reasons, new Map([["a reason", 1], [NO_REASON, 3]]));
+  assert.deepEqual(sortSkips(new Map([[NO_REASON, 3]])).unexpected, [[NO_REASON, 3]]);
+  assert.deepEqual(sortSkips(new Map([[NO_REASON, 3]]), { exported: true }).unexpected, [[NO_REASON, 3]]);
+  // The api suite's skip without a recording, and the settings walks the public tree leaves out (there only).
+  const api = "no recording of a BUSY Bar's API answers in test/api/ (node emulator/test/api.mjs --bar --record)";
+  assert.equal(sortSkips(new Map([[api, 1]])).allowed[0].layer, "the recording of a BUSY Bar's API answers");
+  const unpublished = "a recording left out of the public tree (test/unpublished.json)";
+  assert.deepEqual(sortSkips(new Map([[unpublished, 1]])).unexpected, [[unpublished, 1]]);
+  assert.deepEqual(sortSkips(new Map([[unpublished, 1]]), { exported: true }).unexpected, []);
+});
+
+test("a comparison suite's skips with a reason are sorted like a test's", () => {
+  const why = "the engine is built by hand: EMU_FIRMWARE_REPO is not set";
+  const c = tallyTotals(`  skip one\n# skip 2 ${why}\n# totals pass=15 fail=0 skip=2\n`);
+  assert.deepEqual(c, { pass: 15, fail: 0, skip: 2, reasons: new Map([[why, 2]]) });
+  const sorted = sortSkips(c.reasons);
+  assert.deepEqual(sorted.unexpected, []);
+  assert.equal(sorted.allowed[0].layer, "the engine's build");
+  // A reason no allowed layer names is not allowed.
+  assert.deepEqual(sortSkips(new Map([["awaiting a recording of a bar", 1]])).unexpected, [["awaiting a recording of a bar", 1]]);
 });
 
 test("a run that is not the whole gate is named; the Windows gate's own two skips are not partial", () => {
   assert.equal(partialScope({}), null);
   assert.equal(partialScope({ only: ["board"] }), "--only board");
-  assert.equal(partialScope({ comparison: true, firmware: ["dev"] }), "--comparison; --firmware dev");
+  assert.equal(partialScope({ comparison: true, firmware: ["1.3.1"] }), "--comparison; --firmware 1.3.1");
   assert.equal(partialScope({ skip: ["golden"] }), "skipped on request: golden");
   assert.equal(partialScope({ skip: ["app", "export"], expectedSkips: ["app", "export"] }), null);
   assert.equal(partialScope({ skip: ["app", "export", "golden"], expectedSkips: ["app", "export"] }), "skipped on request: golden");

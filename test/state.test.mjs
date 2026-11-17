@@ -1,6 +1,6 @@
 // The emulator against a BUSY Bar's recorded answers to requests that change its state (EMU-232). A server is
-// started in this process on firmware 1.3.1, the recorded requests are sent to it in their order, and each answer —
-// status, body and, where the recording has them, both displays' frames — must be the bar's. No bar is needed.
+// started in this process on the recording's firmware, the recorded requests are sent to it in their order, and each
+// answer — status, body and, where the recording has them, both displays' frames — must be the bar's. No bar is needed.
 //
 //   node --test emulator/test/state.test.mjs       [EMU_TEST_PORTS=8801-8809] the ports to use; free ones by default
 //                                                  [EMU_STATE_FRAMES=<folder>] PNGs of frames that differ go there
@@ -11,6 +11,8 @@
 //                              settings read, written and refused, input, quit; brightness, volume, name, time zone
 //   bar-state-1.3.1-more.json  2026-11-11 night, a stock bar on 1.3.1: drawing from outside (display/draw, DELETE)
 //                              and the BUSY timer (busy/snapshot, busy/profiles), the timer started, paused, stopped
+//   bar-state-1.4.1.json       the stock bar on 1.4.1, by state/record.mjs: the app requests of the first, answers
+//                              byte for byte and frames in full; after a short Back the app's screen stays (4d1c24ac)
 //
 // What is not compared, and why:
 //   - values that are the time or chance of the moment: install_key, snapshot_timestamp_ms, profile_timestamp_ms;
@@ -103,9 +105,9 @@ function pixelsApart(name, bar, emu, masks = []) {
 const hash = (frame) => createHash("sha1").update(frame).digest("hex").slice(0, 10);
 
 /** The replay of one recording on a server of its own. Returns the list of differences. */
-async function replay(t, file, portIndex) {
+async function replay(t, file, portIndex, firmware = "1.3.1") {
   const rec = recording(file);
-  const emulator = await startServer({ port: port(portIndex), dataDir: tempDir(t), firmware: "1.3.1", barSpeed: false });
+  const emulator = await startServer({ port: port(portIndex), dataDir: tempDir(t), firmware, barSpeed: false });
   t.after(() => emulator.stop());
   // No wait after the server is ready: a drawing from outside right away reaches both displays (EMU-253).
   const base = emulator.url;
@@ -221,5 +223,10 @@ test("the 10.11 recording: an app's install, launch, settings and input; brightn
 
 test("the night's recording: drawing from outside, the BUSY timer and its profiles", async (t) => {
   const { problems, count } = await replay(t, "bar-state-1.3.1-more.json", 1);
+  assert.deepEqual(problems, [], `${problems.length} of ${count} answers are not the bar's`);
+});
+
+test("1.4.1: an app's install, launch, settings and input; a short Back keeps the app's screen", async (t) => {
+  const { problems, count } = await replay(t, "bar-state-1.4.1.json", 2, "1.4.1");
   assert.deepEqual(problems, [], `${problems.length} of ${count} answers are not the bar's`);
 });

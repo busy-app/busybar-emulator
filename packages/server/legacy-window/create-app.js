@@ -484,6 +484,8 @@
       setTimeout(() => mine === opened && close(), 1500);
       return;
     }
+    // An app for a newer firmware: the window's dialog offers to switch, then install (EMU-322).
+    if (result?.code === "api_mismatch" && result.app && globalThis.emulatorFirmware?.ask?.(result.app)) return close();
     state.said = result?.code === "declined" ? { text: "Nothing was installed." } : { failed: true, text: [result?.message ?? "It was not installed.", result?.hint].filter(Boolean).join(" ") };
     render();
   }
@@ -586,18 +588,18 @@
     else if (gh.failed || !gh.configured) words.textContent = gh.failed ?? "GitHub CLI is not in this build: clone the repository yourself and open it in Open existing.";
     else if (state.github.signing) {
       words.textContent = `Enter ${state.github.signing.userCode} on github.com/login/device`;
-      const open = button("btn small", "Open GitHub", () => actions().github.openCodePage().catch(() => {}));
+      const open = button("btn", "Open GitHub", () => actions().github.openCodePage().catch(() => {}));
       open.dataset.focus = "open-code";
-      row.append(open, button("btn small", "Cancel", () => actions().github.cancelSignIn().catch(() => {})));
+      row.append(open, button("btn", "Cancel", () => actions().github.cancelSignIn().catch(() => {})));
     } else if (gh.signedIn) words.textContent = `Reads as ${gh.login}, your GitHub account in the emulator`;
     else {
       words.textContent = "Importing reads the repository as your GitHub account";
       for (const one of (gh.accounts ?? []).slice(0, 3)) {
-        const use = button("btn small", `Use ${one.login}`, () => useAccount(one.login), { title: "GitHub CLI's account on this computer" });
+        const use = button("btn", `Use ${one.login}`, () => useAccount(one.login), { title: "GitHub CLI's account on this computer" });
         use.dataset.focus = `use-${one.login}`;
         row.append(use);
       }
-      const sign = button("btn small", (gh.accounts ?? []).length ? "Another account" : "Sign in to GitHub", signIn);
+      const sign = button("btn", (gh.accounts ?? []).length ? "Another account" : "Sign in to GitHub", signIn);
       sign.dataset.focus = "sign-in";
       row.append(sign);
     }
@@ -707,7 +709,7 @@
   }
   const focusables = () => [...(dialog.querySelectorAll?.("button, input, select, textarea, [tabindex='0']") ?? [])].filter((el) => !el.hidden && !el.disabled && el.offsetParent !== null);
   function focusFirst() {
-    const tab = dialog.querySelector?.(".create-app-way.on");
+    const tab = [...(dialog.querySelectorAll?.(".create-app-way") ?? [])].find((one) => one.getAttribute("aria-selected") === "true");
     tab?.focus?.();
   }
 
@@ -732,12 +734,12 @@
     head.append(title, shut);
 
     // The ways, one row of tabs in the middle; what the chosen one offers below them.
-    const rail = make("div", "create-app-rail");
+    const rail = make("div", "create-app-rail seg");
     rail.setAttribute("role", "tablist");
     rail.setAttribute("aria-orientation", "horizontal");
     rail.setAttribute("aria-label", "Ways to start");
     WAYS.forEach((way, i) => {
-      const tab = make("button", `create-app-way${way.id === state.way ? " on" : ""}`);
+      const tab = make("button", "create-app-way");
       tab.type = "button";
       tab.id = `create-app-way-${way.id}`;
       tab.dataset.way = way.id;
@@ -864,7 +866,7 @@
       const note = make("p", "create-app-exists");
       note.append(make("span", "", `You already have ${twin.name} in ${twin.shown ?? twin.folder}. `));
       if (typeof state.context.openExisting === "function") {
-        const openIt = button("btn small", "Open it", () => {
+        const openIt = button("btn", "Open it", () => {
           const { openExisting } = state.context;
           close();
           openExisting(twin.id);
@@ -892,7 +894,7 @@
 
     const idRow = make("div", "create-app-id");
     idRow.append(make("span", "", "Id"), make("code", "", id));
-    const advanced = button("btn small create-app-advanced", "Advanced", () => {
+    const advanced = button("btn quiet small create-app-advanced", "Advanced", () => {
       f.advanced = !f.advanced;
       if (f.advanced && !f.idEdited) f.id = id;
       render();
@@ -915,7 +917,7 @@
       const box = make("div", "create-app-advanced-box");
       const from = state.place?.author?.from === "github" ? `: the author is your GitHub login, ${state.place.author.name}.` : ", made from the author and the name.";
       box.append(field("App id", idInput, { problem: check.id, about: `app.<author>.<name>${from} Unique on the BUSY Bar and in the catalog: lower-case Latin letters, digits, _, - and two dots or more. It cannot change once the app is published.` }));
-      if (f.idEdited) box.append(button("btn small", "Make it from the name", () => ((f.idEdited = false), render())));
+      if (f.idEdited) box.append(button("btn", "Make it from the name", () => ((f.idEdited = false), render())));
       parts.push(box);
     }
 
@@ -1070,7 +1072,7 @@
       where.append(path);
       const busyNow = state.finding || Boolean(state.busy);
       const chooser = (label, pick, title) => {
-        const one = button("btn small", label, () => chooseExisting(pick), { title, disabled: busyNow ? "Wait a moment" : null });
+        const one = button("btn", label, () => chooseExisting(pick), { title, disabled: busyNow ? "Wait a moment" : null });
         one.dataset.focus = `choose-${pick}`;
         one.dataset.part = `choose-${pick}`;
         return one;

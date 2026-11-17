@@ -44,6 +44,6 @@ for (const scenario of ["", "restart"]) {
     assert.ok(memory.after < memory.before + 4, `the memory is given back: ${JSON.stringify(memory)}`);
     t.diagnostic(`memory outside the JS heap, MB: ${memory.before.toFixed(1)} before, ${memory.running.toFixed(1)} running, ${memory.after.toFixed(1)} after the stop; the whole run took ${Date.now() - started} ms`);
     // The app the child installed is all that stays, in the data folder.
-    assert.deepEqual(readdirSync(join(dataDir, "bar", "1.3.1", "ext", "user_assets")), ["app.test.lifecycle"]);
+    assert.deepEqual(readdirSync(join(dataDir, "bar", "ext", "user_assets")), ["app.test.lifecycle"]);
   });
 }

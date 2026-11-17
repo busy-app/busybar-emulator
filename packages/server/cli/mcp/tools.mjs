@@ -253,6 +253,29 @@ export const TOOLS = [
     words: () => ["restart-bar"],
   },
   {
+    name: "firmware_get",
+    timeout: 30_000,
+    parallel: true,
+    title: "Which firmware the BUSY Bar runs",
+    description:
+      "The firmware the emulated BUSY Bar runs (firmware: version, api, alias), the others (firmwares) and pending, the one chosen for its next restart. An app whose api_version is newer than the running firmware's API is refused (api_mismatch). Without the emulator running: the firmware it starts on (running: false). Read only.",
+    inputSchema: NONE,
+    annotations: READ_ONLY,
+    words: () => ["firmware"],
+  },
+  {
+    name: "firmware_use",
+    timeout: 90_000,
+    title: "Switch the BUSY Bar to another firmware",
+    description:
+      "Switch the emulated BUSY Bar to another firmware now; answers when it is back (from, firmware, ms). Apps and their settings stay; the running app stops; the emulator keeps this firmware after restarts. Touches no real BUSY Bar. version: latest, previous or one from firmware_get. To check an app on the older firmware: firmware_use previous, refresh, a few seconds later logs, then firmware_use latest; tell the person that you switched. Errors: firmware_unknown, firmware_switching (retry shortly), firmware_start_failed (the old firmware stays), not_running.",
+    inputSchema: { type: "object", properties: { version: { type: "string", minLength: 1, description: "latest, previous, or a version that firmware_get lists, as 1.3.1." } }, required: ["version"], additionalProperties: false },
+    // The running app stops, as at a restart; asking for the firmware that runs changes nothing.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    // After "--" the version is an argument, even one that starts with "-".
+    words: (input) => ["firmware", "use", "--", input.version],
+  },
+  {
     name: "settings_get",
     timeout: 60_000,
     parallel: true,

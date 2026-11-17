@@ -1439,9 +1439,9 @@
           const state = one.published ? (one.keptIn ? "Published on purpose." : "Would be published.") : "Kept out.";
           words.append(make("b", "", one.path), make("span", "", `${one.kinds.join("; ")}. ${state}`));
           item.append(words);
-          if (one.published) item.append(button("btn small", "Keep it out", () => planFiles({ write: true, keepOut: one.path })));
+          if (one.published) item.append(button("btn", "Keep it out", () => planFiles({ write: true, keepOut: one.path })));
           // Kept out by default: the person may publish it on purpose.
-          else if (one.byDefault) item.append(button("btn small", "Publish it anyway", () => planFiles({ write: true, keepIn: one.path })));
+          else if (one.byDefault) item.append(button("btn", "Publish it anyway", () => planFiles({ write: true, keepIn: one.path })));
           list.append(item);
         }
         parts.push(section("Looks like a secret", list));
@@ -1608,7 +1608,7 @@
         showPlan(planned);
       });
       if (w?.mode === "taken" && w.suggestion && w.name === flow.repoName) {
-        const use = button("btn small", `Use ${w.suggestion}`, () => {
+        const use = button("btn", `Use ${w.suggestion}`, () => {
           flow.repoName = w.suggestion;
           render();
           void planName();
@@ -1698,10 +1698,10 @@
       item.append(words);
       const to = STEP_OF_CHECK[one.step];
       // The build's and the types' failures (stale-check): the file and line they name, opened in the editor.
-      if (typeof one.file === "string" && /^[^/\\][^\\]*$/.test(one.file) && !one.file.split("/").includes("..")) item.append(button("btn small", `Open ${one.file.split("/").pop()}`, () => openFile(one.file), { title: `Opens ${one.file}${one.line ? `, line ${one.line}` : ""}` }));
-      else if (to) item.append(button("btn small", `Go to ${steps.stepTitle(to)}`, () => go(to)));
-      else if (one.step === "manifest") item.append(button("btn small", "Open manifest.json", () => openFile("src/appmeta/manifest.json")));
-      else if (one.step === "icons" || one.step === "folder") item.append(button("btn small", `Show in ${FILE_MANAGER}`, () => reveal(one.step === "icons" ? "src/appmeta" : "")));
+      if (typeof one.file === "string" && /^[^/\\][^\\]*$/.test(one.file) && !one.file.split("/").includes("..")) item.append(button("btn", `Open ${one.file.split("/").pop()}`, () => openFile(one.file), { title: `Opens ${one.file}${one.line ? `, line ${one.line}` : ""}` }));
+      else if (to) item.append(button("btn", `Go to ${steps.stepTitle(to)}`, () => go(to)));
+      else if (one.step === "manifest") item.append(button("btn", "Open manifest.json", () => openFile("src/appmeta/manifest.json")));
+      else if (one.step === "icons" || one.step === "folder") item.append(button("btn", `Show in ${FILE_MANAGER}`, () => reveal(one.step === "icons" ? "src/appmeta" : "")));
       list.append(item);
     }
     return list;
@@ -1727,7 +1727,7 @@
       }
       steps.append(item);
     }
-    const copyAll = button("btn small", "Copy the commands", () => copied(copyAll, all.join("\n"), { wide: true }), { picture: "copy" });
+    const copyAll = button("btn", "Copy the commands", () => copied(copyAll, all.join("\n"), { wide: true }), { picture: "copy" });
     const box = section(null, steps, copyAll);
     box.classList.add("publish-by-hand");
     return box;
@@ -1845,7 +1845,7 @@
 
   /** A tick of the sign-out's, kept in the flow until Sign out. */
   function tickBox(key, title, about) {
-    const label = make("label", `choice${flow[key] ? " on" : ""}`);
+    const label = make("label", "choice");
     const tick = make("input");
     tick.type = "checkbox";
     tick.checked = flow[key] === true;
@@ -1947,7 +1947,7 @@
       list.setAttribute("role", "radiogroup");
       list.ariaLabel = "GitHub accounts";
       const card = (value, title, about) => {
-        const label = make("label", `choice${flow.pick === value ? " on" : ""}`);
+        const label = make("label", "choice");
         const radio = make("input");
         radio.type = "radio";
         radio.name = "publish-account";
@@ -2070,7 +2070,7 @@
     }
     const top = make("div", "publish-row");
     const late = u?.phase === "check";
-    const stop = button("btn small", flow.canceling ? "Stopping" : "Cancel", async () => {
+    const stop = button("btn", flow.canceling ? "Stopping" : "Cancel", async () => {
       flow.canceling = true;
       drawUpload();
       await act(() => actions().github.cancel());
@@ -2159,7 +2159,7 @@
       pick.setAttribute("role", "radiogroup");
       pick.ariaLabel = "AI usage";
       for (const one of options) {
-        const card = make("label", `choice${flow.ai === one.id ? " on" : ""}`);
+        const card = make("label", "choice");
         const radio = make("input");
         radio.type = "radio";
         radio.name = "publish-ai";
@@ -2185,7 +2185,7 @@
       if (block.kind === "box") {
         if (!boxes) group.nodes.push((boxes = make("div", "publish-choices one publish-checklist")));
         const on = flow.ticks.has(block.text);
-        const label = make("label", `choice${on ? " on" : ""}`);
+        const label = make("label", "choice");
         const tick = make("input");
         tick.type = "checkbox";
         tick.checked = on;
@@ -2221,7 +2221,7 @@
     const confirmed = other && flow.otherCatalog === list.catalog;
     if (other) {
       const warn = make("p", "publish-warn", `${list.catalog} is not BUSY's catalog. Apps for BUSY Bar go to busy-app/busy-apps-catalog; whoever keeps ${list.catalog} gets this request, from your account.`);
-      const label = make("label", `choice${confirmed ? " on" : ""}`);
+      const label = make("label", "choice");
       const tick = make("input");
       tick.type = "checkbox";
       tick.checked = confirmed;
@@ -2322,7 +2322,7 @@
     } else if (e.higher === false) {
       blocked = `Raise the version above ${p.version}`;
       const row = make("div", "publish-row");
-      row.append(make("p", "publish-said failed", `The catalog has version ${p.version}, and this package is ${e.version}: an update needs a higher version. Raise version in src/appmeta/manifest.json, then build and package, and publish to GitHub again.`), button("btn small", "Open manifest.json", () => openFile("src/appmeta/manifest.json")));
+      row.append(make("p", "publish-said failed", `The catalog has version ${p.version}, and this package is ${e.version}: an update needs a higher version. Raise version in src/appmeta/manifest.json, then build and package, and publish to GitHub again.`), button("btn", "Open manifest.json", () => openFile("src/appmeta/manifest.json")));
       nodes.push(row);
     } else if (e.higher === null) nodes.push(muted("The published version could not be read: the catalog's checks compare the two."));
     const area = make("textarea", "input");
@@ -2375,7 +2375,7 @@
         flow.deleteOthers = tick.checked;
         render();
       });
-      const label = make("label", `choice${tick.checked ? " on" : ""}`);
+      const label = make("label", "choice");
       const w2 = make("span", "words");
       const names = extra.slice(0, 5).join(", ") + (extra.length > 5 ? `, and ${extra.length - 5} more` : "");
       w2.append(make("b", "", `Also delete the ${extra.length === 1 ? "file" : `${extra.length} files`} the project doesn't have`), make("span", "", `${names}. Unless you tick this, ${extra.length === 1 ? "it stays" : "they stay"}.`));
@@ -2394,6 +2394,5 @@
     return box;
   }
 
-  // copied: the same feedback on a button of the window (app-column: the opened app's Copy prompt for AI, its path).
-  globalThis.emulatorPublish = Object.freeze({ open, close, isOpen: () => !root.hidden, copied });
+  globalThis.emulatorPublish = Object.freeze({ open, close, isOpen: () => !root.hidden });
 })();

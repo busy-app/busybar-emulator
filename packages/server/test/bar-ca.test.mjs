@@ -36,13 +36,13 @@ test("the bar's list is the firmware's: Mozilla's roots of 20 Oct 2026, 118 cert
   const pems = text.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g);
   assert.equal(pems.length, 118);
   for (const pem of pems) assert.ok(new X509Certificate(pem).ca, "every one is a certificate authority");
-  // Byte for byte the firmware's assets/shared/ca/cacert.pem at the commits of firmware.json (1.3.1 and dev have the
-  // same file; checked against the firmware checkout 12.11). Whether Node's own roots differ is not this list's
+  // Byte for byte the firmware's assets/shared/ca/cacert.pem at the commits of firmware.json (1.3.1 and 1.4.1 have the
+  // same file, git blob c5818b24; checked against the firmware checkout 16.11). Whether Node's own roots differ is not this list's
   // business: a Node release may come to trust the same set (24.22.2 does).
   assert.equal(createHash("sha256").update(text).digest("hex"), FIRMWARE_CACERT_SHA256);
 });
 
-/** SHA-256 of the firmware's assets/shared/ca/cacert.pem (1.3.1 8edd2da4, dev 4d1c24ac). */
+/** SHA-256 of the firmware's assets/shared/ca/cacert.pem (1.3.1 8edd2da4, 1.4.1 28c175b3). */
 const FIRMWARE_CACERT_SHA256 = "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe";
 
 /** One https request to a server of this test with the certificate above: the error, or null and the body. */

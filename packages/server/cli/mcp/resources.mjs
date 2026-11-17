@@ -1,5 +1,6 @@
 // The resources of `busy-emulator mcp`: the emulator's own texts, so that a chat client without the project open has
-// the cheat sheet too. Both are made from what the emulator already says; nothing is read from the disk.
+// the cheat sheet too. Both are made from what the emulator already says; only the section's firmware numbers are read,
+// from the emulator's own engine (template-fixes.mjs, sectionFirmwares).
 import { agentsSection } from "../../projects/template-fixes.mjs";
 
 const GUIDE = [
@@ -31,7 +32,7 @@ const GUIDE = [
   "",
   "Only the person can: trust a folder the emulator did not create (`busy-emulator trust <folder>` in a terminal), sign in to GitHub and choose the account, choose the license and the AI usage, confirm the push and the pull request, tick the author checklist and its optional items. Ask them; never choose for them, and never tick or confirm anything for them. `refused`: they chose Cancel; do not ask again unless they say so.",
   "",
-  "Every answer has `ok`; a failure has `code`, `message` and `hint`. The hints name commands of the command line `busy-emulator`: each has the tool of the same name here (`create` is create_app, `dev --once` is refresh, `settings get` and `settings set` are settings_get and settings_set, `catalog-texts` is catalog_texts, `publish <step>` is publish with that `step`). `allow-local` has no tool: when an app's log says a request to this computer was refused, ask the person to run `busy-emulator allow-local <port>` in a terminal. Settings marked `sensitive` in settings.json read as `(hidden)`; settings_set still sets them.",
+  "Every answer has `ok`; a failure has `code`, `message` and `hint`. The hints name commands of the command line `busy-emulator`: each has the tool of the same name here (`create` is create_app, `dev --once` is refresh, `settings get` and `settings set` are settings_get and settings_set, `catalog-texts` is catalog_texts, `firmware` and `firmware use` are firmware_get and firmware_use, `publish <step>` is publish with that `step`). `allow-local` has no tool: when an app's log says a request to this computer was refused, ask the person to run `busy-emulator allow-local <port>` in a terminal. Settings marked `sensitive` in settings.json read as `(hidden)`; settings_set still sets them.",
   "",
   "The emulated BUSY Bar answers the BUSY Bar's own HTTP API at the `url` status gives: the person's own busy-cli works against it too (`npx busy-cli app install --addr 127.0.0.1:<port>`).",
   "",
@@ -51,7 +52,7 @@ export const RESOURCES = [
     uri: "busy-emulator://guide/project",
     name: "project",
     title: "The emulator's section of a project's AGENTS.md",
-    description: "What create_app writes into the project's AGENTS.md: the commands, the format of settings.json and how an app reads its settings.",
+    description: "What create_app writes into the project's AGENTS.md: the commands, what only the latest firmware has, the format of settings.json and how an app reads its settings.",
     mimeType: "text/markdown",
     text: () => agentsSection(),
   },

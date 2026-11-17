@@ -1,6 +1,7 @@
 // The APPS screen with no apps names the address the emulated bar answers on, not the USB address of a real one
 // (patches.mjs, apps_menu_scene_empty.c; host_bar_address in native/emu_system.c). The firmware's own text stays when
-// the host has no address. Both firmware versions, the screen module as committed.
+// the host has no address. Every firmware, the screen module as committed. The SETUP hint of 1.4.1, which does the same,
+// is drawn in emulator/test/server/setup-hint.test.mjs.
 //
 //   node --test "emulator/packages/**/*.test.mjs"
 import assert from "node:assert/strict";
@@ -79,7 +80,18 @@ test("the patch replaces both of the firmware's texts and keeps them for a host 
   assert.match(added, /"No apps yet\. Add via http:\/\/10\.0\.4\.20"/);
 });
 
-for (const name of ["1.3.1", "dev"]) {
+test("1.4.1's SETUP hint: the patch replaces both of the firmware's texts and keeps them for a host without an address", () => {
+  const edits = patches["applications/system/js_app_launcher/scenes/js_app_launcher_scene_web_setup.c"];
+  assert.ok(edits, "patches.mjs edits the SETUP hint scene");
+  const replaced = edits.map(([find]) => find).join("\n");
+  assert.match(replaced, /front_status, "Set up via\\nhttp:\/\/10\.0\.4\.20"/);
+  assert.match(replaced, /back_status, "Set up via\\nhttp:\/\/10\.0\.4\.20"/);
+  const added = edits.map(([, replace]) => replace).join("\n");
+  assert.match(added, /host_bar_address\(\)/);
+  assert.equal(added.match(/"Set up via\\nhttp:\/\/10\.0\.4\.20"/g).length, 2, "without an address the firmware's own words, on both displays");
+});
+
+for (const name of loadFirmware().versions) {
   test(`firmware ${name}: the APPS screen with no apps shows the emulator's address, inside the back display's text area`, async () => {
     const firmware = loadFirmware(name);
     assert.match(readFileSync(join(firmware.dir, "screen.mjs"), "utf8"), /Module\.host\.barAddress/, "the screen module asks the host for the address");

@@ -14,9 +14,16 @@
 //
 // The checks and the firmware's record are loaded when the command runs, not when the command line starts: the other
 // commands need neither.
+//
+// Beside the catalog's checks, `firmware_hints` (EMU-321; ../../readiness/firmware-hints.mjs): hints about the firmware
+// the app needs, from its own code read as text, set against api_version in its manifest. The code uses what only a
+// newer firmware has (an app's /api/storage, console.warn) with a lower api_version; or api_version is newer than
+// anything the code was found to use, and BUSY Bars on an older firmware refuse the app. They are hints: they never
+// fail the check.
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { commandLine } from "../lifecycle.mjs";
 import { CliError } from "../output.mjs";
 import { commandFor, projectAt } from "../project.mjs";
 import { SANDBOX_CODES } from "../system.mjs";
@@ -74,6 +81,28 @@ export async function formText(made) {
   return `Made ${made} for the catalog's texts. Write in it:\n${detailsHelp().map((line) => `  ${line}`).join("\n")}\n\n`;
 }
 
+/** The firmware hints for the project of `result` (firmware-hints.mjs), or none when this copy cannot tell. */
+export async function firmwareHintsOf(ctx, result) {
+  try {
+    const { firmwareHints } = await import("../../readiness/firmware-hints.mjs");
+    const { firmwaresHere } = await import("../firmware.mjs");
+    const here = await firmwaresHere();
+    const manifest = result.facts?.manifest;
+    if (!here || !manifest?.exists) return [];
+    const api = manifest.json && typeof manifest.json === "object" ? manifest.json.api_version : null;
+    return firmwareHints({ dir: result.folder, api, manifest: manifest.relative, firmwares: here.firmwares, cli: commandLine(ctx) });
+  } catch {
+    return [];
+  }
+}
+
+/** The hints as a block of the text, "" when there are none. */
+export function hintsText(hints) {
+  if (!hints.length) return "";
+  const indent = (text) => text.split("\n").map((line) => `    ${line}`).join("\n");
+  return ["", "Firmware hints, from reading the code's text (they do not fail the check):", ...hints.flatMap((hint) => [`  ${hint.message}`, indent(`Change: ${hint.fix}`)])].join("\n");
+}
+
 /** The ids of the checks that fail, for a one-line message. */
 export const failing = (result) => result.checks.filter((check) => check.status === "fail" && check.blocking).map((check) => check.id);
 
@@ -91,8 +120,9 @@ export default {
   options: { "--full": { key: "full" } },
   async run(ctx, sys, { args, options, json }) {
     const { project, result, readiness, made } = await runCheck(ctx, sys, args[0]);
-    const data = { ...dataOf(readiness, result, options.full === true), made_details: made };
-    const report = readiness.reportText(result);
+    const hints = await firmwareHintsOf(ctx, result);
+    const data = { ...dataOf(readiness, result, options.full === true), firmware_hints: hints, made_details: made };
+    const report = `${readiness.reportText(result)}${hints.length ? `\n${hintsText(hints)}` : ""}`;
     const form = await formText(made);
     if (result.result === "fail") {
       const ids = failing(result);

@@ -3,10 +3,15 @@
 // or HTML body, a bare "Inactivity timeout", "out of memory" with no word of the response that caused it. These notes
 // name the request and say what to change. They go to the log as "App <id>: emulator: ...", like the device's others.
 //
-// What they say about the bar is the firmware's behavior, read from its code (1.3.1): lib/fetch/fetch.c does not
-// follow redirects; js_readable_stream.c ends a reader's read() with { done: true, value: <the error text> } and rejects
-// reader.closed with "cancelled" when a response fails in its middle; js_fetch_body_methods.c collects the whole body
-// before text() or json() turn it into a string or objects in the app's heap.
+// What they say about the bar is the firmware's behavior, read from its code (1.3.1 and 1.4.1): lib/fetch/fetch.c does
+// not follow redirects; js_readable_stream.c ends a reader's read() with { done: true, value: <the error text> } when a
+// response fails in its middle; js_fetch_body_methods.c collects the whole body before text() or json() turn it into a
+// string or objects in the app's heap. How a failure rejects depends on the firmware: 1.3.1 rejects fetch(), text()
+// and json() with the error text and reader.closed with "cancelled"; from 1.4.1 (API 27.15.0, firmware commit
+// d111b6e1) with a TypeError whose message is the text, and reader.closed with TypeError("Stream error").
+
+/** The first API whose firmware rejects a failed request with a TypeError, not a string (1.4.1, d111b6e1). */
+export const TYPE_ERRORS_FROM_API = "27.15.0";
 
 /** What lib/fetch's error texts mean, for the note. */
 const FAILURES = Object.freeze({
@@ -44,16 +49,17 @@ export function redirectNote({ method, url, status, location }) {
  * The note for a request that failed with lib/fetch's error.
  * @param {{ method: string, url: string, message: string, afterHead: boolean, bytes: number }} e
  */
-export function networkErrorNote({ method, url, message, afterHead, bytes }) {
+export function networkErrorNote({ method, url, message, afterHead, bytes, typeError = false }) {
   const why = FAILURES[message] ?? "the request failed";
+  const rejects = typeError ? "a TypeError with this message" : "this string";
   if (!afterHead) {
     // The 5 s count from the start of the request: a server that thinks longer before its first byte fails on a bar.
     const slow = message === "Inactivity timeout" ? " (counted from the start of the request: a server that takes longer to begin its answer does not work from a BUSY Bar)" : "";
-    return `emulator: ${method} ${shown(url)} failed with "${message}": ${why}${slow}. fetch() rejects with this string`;
+    return `emulator: ${method} ${shown(url)} failed with "${message}": ${why}${slow}. fetch() rejects with ${rejects}`;
   }
   return (
     `emulator: ${method} ${shown(url)} ended after ${bytes} ${bytes === 1 ? "byte" : "bytes"} of its body with "${message}": ${why}. ` +
-    `res.json() and res.text() reject with this string; a reader of res.body gets { done: true, value: "${message}" }, not an error, and reader.closed rejects with "cancelled"`
+    `res.json() and res.text() reject with ${rejects}; a reader of res.body gets { done: true, value: "${message}" }, not an error, and reader.closed rejects with ${typeError ? 'TypeError("Stream error")' : '"cancelled"'}`
   );
 }
 

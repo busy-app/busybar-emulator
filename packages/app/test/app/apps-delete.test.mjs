@@ -5,7 +5,7 @@
 // files its folder goes to the Trash (a stand-in in a test run: the folder is noted, not moved). Script alone deletes
 // nothing. No network.
 //
-// APPS_DELETE_SHOTS=<folder> also saves pictures at 1200×800 and 900×650.
+// APPS_DELETE_SHOTS=<folder> also saves pictures at 1200×800 and 1140×650.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -108,7 +108,7 @@ async function shot(name) {
   mkdirSync(SHOTS, { recursive: true });
   for (const [w, h] of [
     [1200, 800],
-    [900, 650],
+    [1140, 650],
   ]) {
     await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);
     await sleep(1000);
@@ -149,7 +149,7 @@ test("the row's menu: right-click at the pointer; Escape, a click outside and a 
   await until(async () => (await menu()) === null, "Escape to close the menu");
   assert.equal(await page(`document.querySelector("#apps li.app.menu-open") === null`), true);
 
-  // A click outside closes it, and so does a scroll.
+  // A click outside closes it, and so does a scroll of the list.
   await rightClick(row("app.test.package"));
   await until(() => menu(), "the menu");
   assert.deepEqual(await menu(), ["Delete…"], "an app from a package has no folder to show");
@@ -157,8 +157,12 @@ test("the row's menu: right-click at the pointer; Escape, a click outside and a 
   await until(async () => (await menu()) === null, "a click outside to close the menu");
   await rightClick(row("app.test.package"));
   await until(() => menu(), "the menu");
+  // The console's scroll (to its last line, each time one comes) does not move the row: the menu stays.
+  await page(`document.querySelector("#console").dispatchEvent(new Event("scroll")), true`);
+  await sleep(200);
+  assert.deepEqual(await menu(), ["Delete…"], "the console's scroll leaves the menu open");
   await page(`document.querySelector("#apps").dispatchEvent(new Event("scroll")), true`);
-  await until(async () => (await menu()) === null, "a scroll to close the menu");
+  await until(async () => (await menu()) === null, "a scroll of the list to close the menu");
 
   // From the keyboard: Shift+F10 on the row's button opens it with the first item in focus; the arrows move.
   await page(`document.querySelector(${q(`${row("app.test.clock")} .row-more`)}).focus(), true`);

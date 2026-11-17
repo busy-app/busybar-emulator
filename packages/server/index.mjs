@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // BUSY Bar emulator server: the bar's HTTP API on localhost, backed by the firmware's JS runtime in wasm.
 //
-//   node emulator/packages/server/index.mjs [--port 8640] [--control-port <port>] [--data <dir>] [--firmware 1.3.1|dev]
+//   node emulator/packages/server/index.mjs [--port 8640] [--control-port <port>] [--data <dir>] [--firmware 1.4.1|1.3.1]
 //       [--allow-origin <origin>]... [--window-origin <origin>] [--allow-local <port>]... [--fast] [--verbose]
 //   node emulator/packages/server/index.mjs --help | --version
 //
@@ -21,7 +21,7 @@
 // server's key can allow a port later, on the management address (POST /_emu/local-ports?port=<port>), as the command
 // line does: busy-emulator allow-local <port>.
 //
-// The data — the emulated bar's apps and settings, a bar for each firmware — lives in the user's data folder:
+// The data — the emulated bar's apps and settings, one BUSY Bar whatever the firmware — lives in the user's data folder:
 // ~/Library/Application Support/BUSY Bar Emulator on macOS, %LOCALAPPDATA%\BUSY Bar Emulator on Windows; --data names
 // another folder. Nothing is written into the emulator's own folder. The folder is the one busy-emulator and the app
 // use, found by the same function (resolveContext in cli/context.mjs): a run from the source tree takes the home from
@@ -146,9 +146,12 @@ function help() {
     "  --allow-local <port>  a port of this computer that apps on the BUSY Bar may reach, such as the port of a service the",
     "                       app talks to; other ports of localhost and of this computer's own network addresses are",
     "                       refused (on a BUSY Bar, localhost is the BUSY Bar itself). Give it once for each port (default: none)",
-    "  --data <folder>      the data folder: the emulated BUSY Bar's apps and settings, a BUSY Bar for each firmware",
+    "  --data <folder>      the data folder: the emulated BUSY Bar's apps and settings, and the firmware it was last",
+    "                       switched to",
     `                       (default: the user's data folder, here ${dataDir})`,
-    `  --firmware <name>    the firmware to run: ${Object.keys(firmwares.versions).join(", ")} (default ${firmwares.default}, or EMU_FIRMWARE)`,
+    `  --firmware <name>    the firmware to run: ${Object.keys(firmwares.versions).join(", ")} (default ${firmwares.default}, the latest). The first of these`,
+    "                       runs: this option, EMU_FIRMWARE, the firmware the BUSY Bar was last switched to (POST",
+    "                       /_emu/firmware), the latest. One named by the option or EMU_FIRMWARE is for this run only",
     "  --fast               apps run at this computer's speed, not at a BUSY Bar's",
     "  --verbose            also print requests the emulator has no answer for, and where a failed start failed",
     "  --version            print the version and exit",

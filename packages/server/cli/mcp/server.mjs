@@ -14,7 +14,7 @@ export const INSTRUCTIONS = [
   "Start with status (and start when it is not running), then create_app, edit the code in the project's folder, refresh, screenshot. For the app catalog: icon, catalog_texts, then publish step by step (screenshots, readme, prepare; then signin, push, pr, which the person confirms in the emulator's window).",
   "Read the resource busy-emulator://guide/start for the steps and busy-emulator://guide/project for how an app is written.",
   "Only the person chooses the license, the AI usage and the GitHub account, and confirms the push and the pull request and ticks the catalog's author checklist, optional items included, in the emulator's window: ask them, never choose or tick for them.",
-  "Each answer has ok; a failure has code, message and hint. A hint names a command of the busy-emulator command line: the tool of the same name does it here (create is create_app, dev --once is refresh, settings get/set are settings_get/settings_set).",
+  "Each answer has ok; a failure has code, message and hint. A hint names a command of the busy-emulator command line: the tool of the same name does it here (create is create_app, dev --once is refresh, settings get/set are settings_get/settings_set, firmware and firmware use are firmware_get and firmware_use).",
   "No tool lets an app reach a port of this computer: when an app's log says a request to this computer was refused, ask the person to run busy-emulator allow-local <port> in a terminal.",
   "Settings marked sensitive (a token) are shown as (hidden); settings_set still sets them.",
   "A tool that takes far longer than it should is stopped with the programs it started and answers tool_timeout; status, logs and screenshot answer while a build runs.",

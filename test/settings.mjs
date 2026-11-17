@@ -1,8 +1,9 @@
 // The firmware's SETTINGS programs and their nested screens, on a bar and in the emulator: the back display after
 // each step of a walk through them.
 //
-//   node emulator/test/settings.mjs                 an emulator of its own against the bar's saved frames (test/settings/)
-//   node emulator/test/settings.mjs --firmware dev  the same on another firmware; --emu 127.0.0.1:8640 a running emulator
+//   node emulator/test/settings.mjs                 an emulator of its own against the bar's saved frames
+//                                                   (test/settings/<firmware>/, the emulator's firmware)
+//   node emulator/test/settings.mjs --firmware 1.3.1  the same on another firmware; --emu 127.0.0.1:8640 a running emulator
 //   node emulator/test/settings.mjs --record        walk a connected bar (10.0.4.20) and save what it showed
 //   node emulator/test/settings.mjs --only time     one walk
 //   node emulator/test/settings.mjs --images        bar | emulator sheets in a folder of the system's temporary folder
@@ -20,10 +21,9 @@ import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 
 import { commandLine } from "../packages/server/arguments.mjs";
-import { emulatorFor, outputDir, totals } from "./own-emulator.mjs";
+import { emulatorFor, firmwareAt, outputDir, recordingsDir, totals } from "./own-emulator.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const savedDir = join(here, "settings");
 // Recordings the public repository does not carry (some show private data of the bar they were recorded on, and the
 // others of the same kind are kept out with them): its export lists them here with the reason (test/unpublished.json).
 // In the development repository there is no list.
@@ -148,10 +148,18 @@ function sheet(barShots, emuShots) {
 // ---------------------------------------------------------------- run
 
 if (only && !WALKS[only]) throw new Error(`no walk ${only}: ${Object.keys(WALKS).join(", ")}`);
-if (record) mkdirSync(savedDir, { recursive: true });
 // Recording walks the emulator first too: one of its own unless --emu names one.
 const target = await emulatorFor(args, { name: "settings" });
 const emu = target.addr;
+// The recordings of the firmware the emulator runs: test/settings/<firmware>. A bar is recorded against an emulator
+// on its own firmware, whose walk guards the bar's.
+const firmware = target.firmware ?? (await firmwareAt(emu));
+const savedDir = recordingsDir("settings", firmware);
+if (record) {
+  const barFirmware = await firmwareAt(bar);
+  if (barFirmware !== firmware) throw new Error(`the bar runs ${barFirmware} and the emulator ${firmware}: record with --firmware ${barFirmware}`);
+  mkdirSync(savedDir, { recursive: true });
+}
 // The time zones are listed around the bar's own zone: the emulator takes it for the walks, and gets its own back.
 const emuZone = JSON.parse(await api(emu, "GET", "time/timezone")).name;
 const setZone = (zone) => api(emu, "POST", `time/timezone?timezone=${encodeURIComponent(zone)}`);
@@ -160,13 +168,18 @@ if (record) await setZone(JSON.parse(await api(bar, "GET", "time/timezone")).nam
 let failed = 0;
 let passed = 0;
 let skipped = 0;
+const reasons = {};
 for (const [name, keys] of Object.entries(WALKS)) {
   if (only && name !== only) continue;
   const file = join(savedDir, `${name}.json`);
-  const why = Object.hasOwn(unpublished, `test/settings/${name}.json`) ? unpublished[`test/settings/${name}.json`] : null;
+  const key = `test/settings/${firmware}/${name}.json`;
+  const why = Object.hasOwn(unpublished, key) ? unpublished[key] : null;
   if (!record && why && !existsSync(file)) {
     // Said and counted as skipped, never as a walk that agrees.
     skipped++;
+    // The reason the gate allows in the public tree only (gate-lib.mjs ALLOWED_SKIPS: test/unpublished.json).
+    const reason = "a recording left out of the public tree (test/unpublished.json)";
+    reasons[reason] = (reasons[reason] ?? 0) + 1;
     console.log(`  SKIP ${name}: its recording is not published: ${why}`);
     continue;
   }
@@ -185,7 +198,7 @@ for (const [name, keys] of Object.entries(WALKS)) {
     if (!existsSync(file)) {
       // A walk that cannot be compared is not a walk that agrees.
       failed++;
-      console.log(`  FAIL ${name}: no recording of a bar (node emulator/test/settings.mjs --record --only ${name})`);
+      console.log(`  FAIL ${name}: no recording of a bar on ${firmware} (node emulator/test/settings.mjs --record --only ${name})`);
       continue;
     }
     barShots = JSON.parse(readFileSync(file, "utf8")).shots.map((s) => ({ kind: s.kind, frame: Buffer.from(s.frame, "base64") }));
@@ -205,5 +218,5 @@ await setZone(emuZone);
 console.log(failed ? `${failed} walks differ from the bar` : record ? "recorded" : skipped ? (passed ? `the other walks agree with the bar; ${skipped} skipped` : `no walk compared; ${skipped} skipped`) : "all walks agree with the bar");
 if (images) console.log(`images: ${outputDir("settings")}`);
 await target.stop();
-if (!record) totals({ pass: passed, fail: failed, skip: skipped });
+if (!record) totals({ pass: passed, fail: failed, skip: skipped, reasons });
 process.exit(record ? (failed ? 1 : 0) : process.exitCode);

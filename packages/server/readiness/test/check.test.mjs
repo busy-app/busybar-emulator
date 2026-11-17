@@ -114,8 +114,9 @@ test("a finished project passes: no check fails, and what a folder cannot tell i
     if (check.status === "unchecked") assert.ok(check.why, `${check.id} says why it is not checked`);
     assert.ok(check.title, check.id);
   }
-  assert.equal(json.firmware.name, "1.3.1");
-  assert.match(by(json).firmware_too_old.found, /api_version 27\.12\.0; firmware 1\.3\.1 has API 27\.14\.0/);
+  // The catalog counts by the latest released firmware: the default of firmware.json.
+  assert.equal(json.firmware.name, "1.4.1");
+  assert.match(by(json).firmware_too_old.found, /api_version 27\.12\.0; firmware 1\.4\.1 has API 27\.15\.0/);
   assert.match(by(json).source_commit.found, /origin\/main/);
   assert.match(by(json).screenshots_count.found, /^2 from screenshots\/front-<n>\.png; the cover is screenshots\/front-1\.png/, "the enlarged copy front-1@8x.png is not a screenshot");
   // The catalog's own words come with each check where this tree has the registry.
@@ -225,7 +226,7 @@ const DEFECTS = [
   ["screenshots", "a screenshot outside the project", withDetails({ screenshots: ["../cover.png"] }), ["manifest_references"], [], /\.\.\/cover\.png leaves the app's folder/],
   ["version", "a version of two numbers", withManifest({ version: "1.0" }), ["manifest_version"], [], /version is "1\.0"/],
   ["version", "a version with a suffix", withManifest({ version: "1.0.0-beta" }), ["manifest_version"], [], /1\.0\.0-beta/],
-  ["API version", "an API newer than the released firmware's", withManifest({ api_version: "99.0.0" }), ["firmware_too_old"], [], /api_version is 99\.0\.0; the released firmware in this emulator, 1\.3\.1, has API 27\.14\.0/],
+  ["API version", "an API newer than the released firmware's", withManifest({ api_version: "99.0.0" }), ["firmware_too_old"], [], /api_version is 99\.0\.0; the released firmware in this emulator, 1\.4\.1, has API 27\.15\.0/],
   ["license", "no license file", withFiles((files) => (files.LICENSE = null)), ["license"], [], /no LICENSE, LICENCE or COPYING/],
   ["license", "a license text of the author's own", withFiles((files) => (files.LICENSE = "You may use this app at home. Not for commercial use.")), [], ["license_unrecognised"], /not one the catalog recognizes/],
   ["lock file", "no lock file", withFiles((files) => (files["package-lock.json"] = null)), ["build_lockfile"], [], /no package-lock\.json and no pnpm-lock\.yaml/],
@@ -585,7 +586,7 @@ test("submit writes submission/ for a finished project: the manifest, the pull r
   const pr = readFileSync(path.join(folder, "PR-DESCRIPTION.md"), "utf8");
   for (const line of ["# Author checklist", "- [ ] I'm the author of the app or have write access to its repository", "- [ ] I've tested the app on a BUSY Bar with the latest release firmware", "- [ ] The screenshots are taken from the bar", "# AI usage", "Keep ONE option and delete the others."]) assert.ok(pr.includes(line), line);
   assert.doesNotMatch(pr, /- \[x\]/i);
-  assert.match(pr, /Built and run on BUSY Bar Emulator .*with the released firmware 1\.3\.1 \(HTTP API 27\.14\.0\)\. Not run on a physical BUSY Bar\. The screenshots are frames of the emulated BUSY Bar's displays/);
+  assert.match(pr, /Built and run on BUSY Bar Emulator .*with the released firmware 1\.4\.1 \(HTTP API 27\.15\.0\)\. Not run on a physical BUSY Bar\. The screenshots are frames of the emulated BUSY Bar's displays/);
   assert.match(pr, /54 of 66 checks pass, none fails; 5 could not be checked outside the catalog\./);
 
   // The steps: the fork, the one file at its path, the box to tick first; every block names its language.

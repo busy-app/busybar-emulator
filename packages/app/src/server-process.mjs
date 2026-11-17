@@ -66,11 +66,12 @@ function killQuietly(pid, signal) {
  * @param {(facts: object) => void} [o.onReady]  the server answers: { port, url, ... } as the supervisor tells it
  * @param {(question: object, signal: AbortSignal) => Promise<object>} [o.onAsk]  a question of the server's to the
  *   person; what it resolves with goes back as the answer. Without it every question is answered "unavailable".
+ * @param {(event: object) => void} [o.onFirmware]  the BUSY Bar switches firmware: startServer's onFirmware event
  * @returns a handle: `pid` (the supervisor's process, which is the server's), `exited` (a promise of how the run
  *   ended: { code, signal, error, errorCode, stopped, said }; `said` is true when the supervisor told it itself),
  *   `stop()`, `killNow()`
  */
-export function startServerProcess({ nodePath, supervisorPath, serverEntry, serverOptions, env, onLine, onReady = () => {}, onAsk = null }) {
+export function startServerProcess({ nodePath, supervisorPath, serverEntry, serverOptions, env, onLine, onReady = () => {}, onAsk = null, onFirmware = () => {} }) {
   const child = startShellProgram(nodePath, [supervisorPath, serverEntry], {
     env: serverEnvironment(env),
     stdio: ["pipe", "pipe", "pipe", "ipc"],
@@ -97,6 +98,7 @@ export function startServerProcess({ nodePath, supervisorPath, serverEntry, serv
   child.on("message", (message) => {
     if (message?.type === "ready" && Number.isInteger(message.port)) onReady(message);
     if (message?.type === "exit") ending = message;
+    if (message?.type === "firmware" && typeof message.event?.state === "string") onFirmware(message.event);
     if (message?.type === "ask" && Number.isInteger(message.id) && !questions.has(message.id)) {
       const abort = new AbortController();
       questions.set(message.id, abort);

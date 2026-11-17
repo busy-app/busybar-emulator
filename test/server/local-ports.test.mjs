@@ -8,9 +8,10 @@ import net from "node:net";
 import os from "node:os";
 import { after, test as nodeTest } from "node:test";
 
+import { loadFirmware } from "../../packages/server/firmware.mjs";
 import { startServer } from "../../packages/server/server.mjs";
 import { readServerKey } from "../../packages/server/server-key.mjs";
-import { finish, installApp, node, port, request, serverModule, tempDir, until } from "./helpers.mjs";
+import { finish, get, installApp, node, port, request, serverModule, tempDir, until } from "./helpers.mjs";
 
 after(finish);
 
@@ -50,6 +51,17 @@ function call(method, url, headers = {}) {
     });
     req.on("error", reject).end();
   });
+}
+
+/** Runs an app whose script logs one line, and resolves with that line. */
+async function appSays(emulator, id, script) {
+  await installApp(emulator.url, id, `${script}\nsetInterval(function () {}, 1000);`);
+  assert.equal((await request("POST", `${emulator.url}/api/apps/launch?app_id=${id}`)).status, 200);
+  const prefix = `${id} log: `;
+  const said = await until(`the line of ${id}`, () => emulator.lines.find((line) => line.startsWith(prefix)), 20000);
+  await request("POST", `${emulator.url}/api/apps/quit`);
+  await until(`${id} to stop`, async () => (await get(`${emulator.url}/_emu/state`)).json().running === null);
+  return said.slice(prefix.length);
 }
 
 /** Runs an app that fetches each of `urls` and logs what it got; resolves with url → { status, text } | { error }. */
@@ -114,29 +126,44 @@ test("an app reaches its BUSY Bar's API and an allowed port; other ports of loca
   assert.match(about(emulator.control.port)[0], /management address, which an app may never reach/);
 });
 
-test("an app does not reach this computer by its own network addresses either, unless the port is allowed", async (t) => {
-  // Every address of this computer's interfaces but the loopback and link-local: the home network, IPv6, a VPN, the
-  // bar's USB network. The services listen on 127.0.0.1 only (one on all interfaces would ask the firewall on
-  // Windows), so a request that went out would find nothing there either: what shows the refusal is the console's
-  // line, one for each port, which only a refused request gets. Each address gets a port of its own.
-  const own = Object.values(os.networkInterfaces()).flat().filter((a) => !a.internal && !a.address.startsWith("fe80"));
-  if (!own.length) return t.skip("this computer has no network address");
-  const ports = [];
-  for (let i = 0; i <= own.length; i++) ports.push((await service(t)).port);
-  const allowed = ports[own.length];
-  const emulator = await start(t, { allowLocal: [String(allowed)] });
-  const url = (a, p) => `http://${a.family === "IPv6" ? `[${a.address}]` : a.address}:${p}/`;
-  const urls = own.map((a, i) => url(a, ports[i]));
-  const got = await appFetches(emulator, "app.test.own", [...urls, url(own[0], allowed)]);
-  for (const [i, u] of urls.entries()) {
-    assert.deepEqual(got.get(u), { error: "socket error" }, u);
-    const line = emulator.lines.find((l) => l.startsWith("App app.test.own: its request to") && l.includes(`:${ports[i]} was refused`));
-    assert.ok(line, `${u} was not refused as this computer`);
-    assert.match(line, /it leads to this computer/);
-  }
-  // An allowed port is let through to the address (where nothing listens on it: the service is on 127.0.0.1 only).
-  assert.ok(!emulator.lines.some((l) => l.includes(`:${allowed} was refused`)), "an allowed port was refused on an own address");
-});
+for (const firmware of loadFirmware().versions) {
+  test(`${firmware}: an app does not reach this computer by its own network addresses either, unless the port is allowed`, async (t) => {
+    // Every address of this computer's interfaces but the loopback and link-local: the home network, IPv6, a VPN, the
+    // bar's USB network. The services listen on 127.0.0.1 only (one on all interfaces would ask the firewall on
+    // Windows), so a request that went out would find nothing there either: what shows the refusal is the console's
+    // line, one for each port, which only a refused request gets. Each address gets a port of its own.
+    const own = Object.values(os.networkInterfaces()).flat().filter((a) => !a.internal && !a.address.startsWith("fe80"));
+    if (!own.length) return t.skip("this computer has no network address");
+    const ports = [];
+    for (let i = 0; i <= own.length; i++) ports.push((await service(t)).port);
+    const allowed = ports[own.length];
+    const emulator = await start(t, { allowLocal: [String(allowed)], firmware });
+    const url = (a, p) => `http://${a.family === "IPv6" ? `[${a.address}]` : a.address}:${p}/`;
+    const urls = own.map((a, i) => url(a, ports[i]));
+    // What this firmware's URL parser makes of a host in brackets, asked of its own URL class: 1.3.1 takes it, 1.4.1
+    // (495af1db: a host of letters, digits and "-._", lib/toolbox/url.c) throws "Invalid URL", and so does its fetch,
+    // before any request is made.
+    const brackets = await appSays(emulator, "app.test.brackets", 'try { new URL("http://[fd00::1]:5/"); console.log("brackets taken"); } catch (e) { console.log("brackets refused"); }');
+    // The allowed port, on an address the firmware can name: this computer's IPv4 address, else its IPv6 one where
+    // brackets are taken; else 0.0.0.0, which is this computer too (and is refused as such unless allowed).
+    const named = own.find((a) => a.family === "IPv4") ?? (brackets === "brackets taken" ? own[0] : null);
+    const allowedUrl = named ? url(named, allowed) : `http://0.0.0.0:${allowed}/`;
+    const got = await appFetches(emulator, "app.test.own", [...urls, allowedUrl]);
+    for (const [i, u] of urls.entries()) {
+      if (own[i].family === "IPv6" && brackets === "brackets refused") {
+        assert.deepEqual(got.get(u), { error: "Invalid URL" }, u);
+        continue;
+      }
+      assert.deepEqual(got.get(u), { error: "socket error" }, u);
+      const line = emulator.lines.find((l) => l.startsWith("App app.test.own: its request to") && l.includes(`:${ports[i]} was refused`));
+      assert.ok(line, `${u} was not refused as this computer`);
+      assert.match(line, /it leads to this computer/);
+    }
+    assert.notDeepEqual(got.get(allowedUrl), { error: "Invalid URL" }, allowedUrl);
+    // An allowed port is let through to the address (where nothing listens on it: the service is on 127.0.0.1 only).
+    assert.ok(!emulator.lines.some((l) => l.includes(`:${allowed} was refused`)), "an allowed port was refused on an own address");
+  });
+}
 
 test("a program with the server's key allows and takes back a port while the emulator runs", async (t) => {
   const later = await service(t);

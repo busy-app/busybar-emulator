@@ -234,6 +234,8 @@ export function createRecorder({ device, dataDir, barSpeed, askShell, log }) {
     // A clip its command gave up waiting for is never moved away: it goes once it is old (audit H12).
     removeOlderThan(folder, CLIP_KEEP_MS, { match: (name) => /^clip-.+\.(mp4|gif)$/i.test(name) });
     const id = `${process.pid}-${Date.now()}-${++count}`;
+    // A take the firmware's switch cuts off (server.mjs, POST /_emu/firmware) says so.
+    const firmwareBefore = device.firmware?.name ?? null;
     try {
       if (options.layout === "window") return await recordWindow(options, id, signal);
       const running = device.running;
@@ -313,7 +315,11 @@ export function createRecorder({ device, dataDir, barSpeed, askShell, log }) {
       }
       return { status: 200, body: { ...facts, bytes: answer.bytes, encoder: answer.encoder, codec: answer.codec, decoded_frames: answer.decoded, encode_ms: Date.now() - encodeStarted } };
     } catch (e) {
-      if (e?.code === "restarted") return { status: 503, body: { code: "off", error: `The take stopped: ${e.message}.` } };
+      if (e?.code === "restarted") {
+        const now = device.firmware?.name ?? null;
+        const why = now !== firmwareBefore ? `the BUSY Bar switched to firmware ${now} during the take` : e.message;
+        return { status: 503, body: { code: "off", error: `The take stopped: ${why}.` } };
+      }
       throw e;
     } finally {
       busy = false;

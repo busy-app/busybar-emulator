@@ -68,18 +68,18 @@ async function expectServer(cli, { firmware, dataDir, fast = false }) {
 test("--port and --data: the default firmware at bar speed, the five start-up lines, the BUSY Bar's log with the time", async (t) => {
   const dataDir = tempDir(t);
   const cli = await run(t, ["--port", String(port(0)), "--data", dataDir]);
-  const base = await expectServer(cli, { firmware: "1.3.1", dataDir });
+  const base = await expectServer(cli, { firmware: "1.4.1", dataDir });
   // What happens on the bar is printed with the time of day in front.
   await installApp(base, "app.test.cli", "setInterval(function () {}, 1000);");
   await until("the log line", () => cli.lines().length > 5);
   assert.match(cli.lines()[5], /^\d\d:\d\d:\d\d Installed app\.test\.cli 0\.1\.0$/);
-  assert.ok(existsSync(join(dataDir, "bar", "1.3.1", "ext", "user_assets", "app.test.cli")));
+  assert.ok(existsSync(join(dataDir, "bar", "ext", "user_assets", "app.test.cli")));
 });
 
 test("--firmware, --fast and --verbose", async (t) => {
   const dataDir = tempDir(t);
-  const cli = await run(t, ["--verbose", "--fast", "--firmware", "dev", "--data", dataDir, "--port", String(port(0))]);
-  const base = await expectServer(cli, { firmware: "dev", dataDir, fast: true });
+  const cli = await run(t, ["--verbose", "--fast", "--firmware", "1.3.1", "--data", dataDir, "--port", String(port(0))]);
+  const base = await expectServer(cli, { firmware: "1.3.1", dataDir, fast: true });
   // --verbose: a request the emulator has no answer for is printed.
   assert.equal((await get(`${base}/api/no/such/thing?x=1`)).status, 404);
   await until("the verbose line", () => cli.lines().length > 5);
@@ -93,7 +93,7 @@ test("--firmware, --fast and --verbose", async (t) => {
 test("without --verbose such a request is not printed", async (t) => {
   const dataDir = tempDir(t);
   const cli = await run(t, ["--port", String(port(0)), "--data", dataDir]);
-  const base = await expectServer(cli, { firmware: "1.3.1", dataDir });
+  const base = await expectServer(cli, { firmware: "1.4.1", dataDir });
   assert.equal((await get(`${base}/api/no/such/thing`)).status, 404);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(cli.lines().length, 5);
@@ -101,12 +101,12 @@ test("without --verbose such a request is not printed", async (t) => {
 
 test("EMU_FIRMWARE names the firmware, and --firmware goes before it", async (t) => {
   const dataDir = tempDir(t);
-  const fromEnvironment = await run(t, ["--port", String(port(0)), "--data", dataDir], { env: { EMU_FIRMWARE: "dev" } });
-  await expectServer(fromEnvironment, { firmware: "dev", dataDir });
+  const fromEnvironment = await run(t, ["--port", String(port(0)), "--data", dataDir], { env: { EMU_FIRMWARE: "1.3.1" } });
+  await expectServer(fromEnvironment, { firmware: "1.3.1", dataDir });
   fromEnvironment.child.kill();
   await fromEnvironment.child.exit;
-  const fromFlag = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "1.3.1"], { env: { EMU_FIRMWARE: "dev" } });
-  await expectServer(fromFlag, { firmware: "1.3.1", dataDir });
+  const fromFlag = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "1.4.1"], { env: { EMU_FIRMWARE: "1.3.1" } });
+  await expectServer(fromFlag, { firmware: "1.4.1", dataDir });
 });
 
 test("run through a symbolic link it behaves the same", async (t) => {
@@ -117,8 +117,8 @@ test("run through a symbolic link it behaves the same", async (t) => {
   } catch (e) {
     return t.skip(`cannot make a symbolic link here: ${e.code}`);
   }
-  const cli = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "dev"], { script: link });
-  await expectServer(cli, { firmware: "dev", dataDir });
+  const cli = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "1.3.1"], { script: link });
+  await expectServer(cli, { firmware: "1.3.1", dataDir });
 });
 
 test("a port in use: one line that says so, exit code 1, and the process ends by itself", async (t) => {
@@ -138,7 +138,7 @@ test("an unknown firmware and a port that is not a number: a line that says so a
   const dataDir = join(tempDir(t), "data");
   const unknown = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "no-such-firmware"]);
   assert.equal(await unknown.exited(), 1);
-  assert.equal(unknown.stderr(), 'Unknown firmware "no-such-firmware". The emulator has: 1.3.1, dev (emulator/packages/engine/firmware.json).\n');
+  assert.equal(unknown.stderr(), 'Unknown firmware "no-such-firmware". The emulator has: 1.4.1, 1.3.1 (emulator/packages/engine/firmware.json).\n');
   // --verbose adds where it failed.
   const verbose = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "no-such-firmware", "--verbose"]);
   assert.equal(await verbose.exited(), 1);
@@ -156,12 +156,12 @@ test("an unknown firmware and a port that is not a number: a line that says so a
 test("ready: the first line of stdout and, over a channel, one message; from then on a request is answered", async (t) => {
   const dataDir = tempDir(t);
   // Asked for a free port: the line and the message are where the port is named.
-  const cli = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "dev", "--fast"], { channel: true });
-  const base = await expectServer(cli, { firmware: "dev", dataDir, fast: true });
+  const cli = await run(t, ["--port", String(port(0)), "--data", dataDir, "--firmware", "1.3.1", "--fast"], { channel: true });
+  const base = await expectServer(cli, { firmware: "1.3.1", dataDir, fast: true });
   assert.equal(cli.messages.length, 1);
   const api = (await get(`${base}/api/version`)).json().api_semver;
   const { controlPort, controlUrl, ...rest } = cli.messages[0].message;
-  assert.deepEqual(rest, { type: "ready", port: cli.port, url: base, firmware: "dev", apiVersion: api, dataDir, barSpeed: false });
+  assert.deepEqual(rest, { type: "ready", port: cli.port, url: base, firmware: "1.3.1", apiVersion: api, dataDir, barSpeed: false });
   assert.equal(controlUrl, `http://127.0.0.1:${controlPort}`);
   assert.ok(cli.lines()[1].startsWith(`Management: ${controlUrl}  `));
   assert.equal(await cli.messages[0].answer, 200, "the request made when the message came was answered");
@@ -237,31 +237,31 @@ test("what the BUSY Bar says while it starts comes after the start-up lines, wit
   // An install that did not finish left the version it was replacing aside (js_app_installer/replaced): the bar puts
   // it back when it starts, and says so.
   const dataDir = tempDir(t);
-  const aside = join(dataDir, "bar", "1.3.1", "ext", "apps_data", "js_app_installer", "replaced");
+  const aside = join(dataDir, "bar", "ext", "apps_data", "js_app_installer", "replaced");
   mkdirSync(join(aside, "appmeta"), { recursive: true });
   mkdirSync(join(aside, "scripts"));
   writeFileSync(join(aside, "appmeta", "manifest.json"), JSON.stringify({ format_version: 1, id: "app.f.back", name: "Back", version: "0.1.0", api_version: "27.0.0" }));
   writeFileSync(join(aside, "scripts", "main.js"), "setInterval(function () {}, 1000);");
   const cli = await run(t, ["--port", String(port(0)), "--data", dataDir]);
-  await expectServer(cli, { firmware: "1.3.1", dataDir });
+  await expectServer(cli, { firmware: "1.4.1", dataDir });
   await until("the BUSY Bar's line", () => cli.lines().length > 5);
   assert.match(cli.lines()[0], /^BUSY Bar emulator: http:\/\/127\.0\.0\.1:\d+ /);
   assert.match(cli.lines()[5], /^\d\d:\d\d:\d\d Put app\.f\.back 0\.1\.0 back: an install that did not finish had moved it aside$/);
-  assert.ok(existsSync(join(dataDir, "bar", "1.3.1", "ext", "user_assets", "app.f.back", "scripts", "main.js")));
+  assert.ok(existsSync(join(dataDir, "bar", "ext", "user_assets", "app.f.back", "scripts", "main.js")));
 });
 
 test("so does what it says of a data folder whose volume it cannot look at", { skip: process.platform !== "darwin" && "the BUSY Bar looks at the volume on macOS only" }, async (t) => {
   if (process.getuid() === 0) return t.skip("root may write anywhere");
   // The bar tries a file in the data folder to learn whether its volume keeps attributes in \"._\" files, as exFAT
   // does; in a folder that takes no new file it cannot, and says so when it is made, before it starts. (The bar's
-  // folder, bar/1.3.1: the data folder itself must take the lock.)
+  // folder, bar: the data folder itself must take the lock.)
   const dataDir = join(tempDir(t), "data");
-  const bar = join(dataDir, "bar", "1.3.1");
+  const bar = join(dataDir, "bar");
   mkdirSync(join(bar, "ext", "user_assets"), { recursive: true });
   chmodSync(bar, 0o555);
   const cli = await run(t, ["--port", String(port(0)), "--data", dataDir]);
   try {
-    await expectServer(cli, { firmware: "1.3.1", dataDir });
+    await expectServer(cli, { firmware: "1.4.1", dataDir });
     await until("the BUSY Bar's line", () => cli.lines().length > 5);
     assert.match(cli.lines()[0], /^BUSY Bar emulator: /);
     assert.match(cli.lines()[5], /^\d\d:\d\d:\d\d Could not check whether the data folder's volume keeps file attributes/);

@@ -1,0 +1,30 @@
+{
+  "format_version": 1,
+  "version": 1,
+  "fields": {
+    "host": {
+      "type": "string",
+      "label": "Computer address",
+      "description": "IP address or hostname of the computer running Glances",
+      "default": "",
+      "max_length": 64
+    },
+    "port": {
+      "type": "integer",
+      "label": "Glances port",
+      "description": "Port of the Glances web server (glances -w listens on 61208)",
+      "default": 61208,
+      "min": 1,
+      "max": 65535
+    },
+    "interval_ms": {
+      "type": "integer",
+      "label": "Sample interval, ms",
+      "description": "Time between samples. One sample is one column of the graph. Glances refreshes its REST API about every 2 seconds, so a shorter interval repeats samples",
+      "default": 2000,
+      "min": 500,
+      "max": 10000,
+      "step": 100
+    }
+  }
+}

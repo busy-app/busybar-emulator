@@ -1,5 +1,8 @@
 // Keeps the emulator server running: starts it, waits until it is ready, starts it again when it dies — the third
-// death within a minute is the last — and stops it. Nothing here knows about Electron; the shell listens to "state".
+// death within a minute is the last — and stops it. Nothing here knows about Electron; the shell listens to "state",
+// and to "firmware" for a switch of the BUSY Bar's firmware. A switch happens inside the server's process (server.mjs,
+// useFirmware): it is no death, no state changes, and the restart policy never hears of it. A server started again
+// after a death runs the firmware the data folder keeps as the last one chosen, as every start without --firmware.
 //
 // States: "idle" → "starting" → "ready"; from "ready" a death leads back to "starting" or to "gave-up";
 // "port-busy" and "failed" are a start that did not happen; "stopped" is the end. A start that has had no answer for
@@ -90,11 +93,15 @@ export function createServerKeeper({ config, env, log, policy = createRestartPol
       nodePath: config.nodePath,
       supervisorPath: config.supervisorPath,
       serverEntry: config.serverEntry,
-      // The whole data folder: the server keeps its format record, its lock and a bar for each firmware in it
-      // (architecture.md section 4, EMU-005), and makes the folder if it is not there.
+      // The whole data folder: the server keeps its format record, its lock, the BUSY Bar and the firmware last chosen
+      // for it there (architecture.md section 4, EMU-005, EMU-318), and makes the folder if it is not there. No
+      // firmware is named: the server runs the chosen one.
       serverOptions: { port: config.port, dataDir: config.dataDir },
       env,
       onAsk: ask,
+      onFirmware(event) {
+        if (run === current) events.emit("firmware", event);
+      },
       onLine(line, stream) {
         log(`[server${stream === "err" ? "!" : ""}] ${line}`);
         if (stream === "err" && line.trim()) lastError = line.trim();

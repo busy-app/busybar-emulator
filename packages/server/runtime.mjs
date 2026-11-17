@@ -183,8 +183,14 @@ export class AppRuntime {
     this.stats = { calls: 0, wasmMs: 0, maxWasmMs: 0, maxCpuMs: 0, busyMs: 0, draws: 0, heapSize: 0, heapNow: 0, heapPeak: 0 };
     this.queue = []; // { fn, key, due } waiting for the app to be free, by due time
     this.busyUntil = 0; // the app's time (Unix ms) when it is free again
+    // The redraw after the app's last draw (bar-speed.mjs, redrawMs): what of it its JS has yet to wait out, and when it
+    // is over in the app's time if no JS slows it down. It is over when either runs out.
+    this.redraw = { left: 0, until: 0 };
+    // The work of the slices that ran while there was a redraw to wait out, up to each one's first request: what
+    // fitModel counts twice.
+    this.redrawWork = { ops: 0, bytes: 0 };
     this.skipped = 0; // ms that passed for the app at once (skip): its time is that far ahead of the computer's
-    this.slice = null; // { start, ops, bytes } while JS runs: its start in the app's time and the work counters then
+    this.slice = null; // { start, ops, bytes, redraw } while JS runs: its start in the app's time, the work counters then and the redraw left to wait out
     this.drainTimer = null;
     this.sliceLimitMs ??= SLICE_LIMIT_MS;
     this.sliceClockLimitMs ??= (SLICE_CLOCK_LIMIT_MS / SLICE_LIMIT_MS) * this.sliceLimitMs;
@@ -311,11 +317,23 @@ export class AppRuntime {
     return { ops: this.M._emu_vm_ops_count(), bytes: this.M._emu_alloc_bytes_count() };
   }
 
-  /** The bar's time, ms, for what the current slice has done so far. */
+  /**
+   * The bar's time, ms, for what the current slice has done so far: its JS, and the redraw after the app's last draw,
+   * which holds its JS back until the redraw is over or the JS makes its next request (bar-speed.mjs, redrawMs).
+   */
   sliceMs() {
-    const { ops, bytes } = this.work();
+    return this.sliceJsMs() + this.sliceRedrawMs();
+  }
+
+  /** The bar's time for the JS of the current slice alone, up to `to` (the work counters then; now by default). */
+  sliceJsMs(to = this.work()) {
     // The counters wrap around; a slice does not do 4 billion of either.
-    return this.speed.jsMs((ops - this.slice.ops) >>> 0, (bytes - this.slice.bytes) >>> 0);
+    return this.speed.jsMs((to.ops - this.slice.ops) >>> 0, (to.bytes - this.slice.bytes) >>> 0);
+  }
+
+  /** What the redraw added to the slice: its JS before its first request, twice, up to the redraw left. */
+  sliceRedrawMs() {
+    return this.slice.redraw > 0 ? Math.min(this.slice.redraw, this.sliceJsMs(this.slice.atFetch ?? this.work())) : 0;
   }
 
   /**
@@ -362,6 +380,8 @@ export class AppRuntime {
       fetchStart: (fetch, url, method, headers, body, deviceKey) => {
         this.fetches.set(fetch, null);
         const start = this.now();
+        // The redraw holds the slice's JS up to here; after it the bar's API works alongside (sliceMs).
+        if (this.slice && !this.slice.atFetch) this.slice.atFetch = this.work();
         // After the slice: the bar's API (the screen module for display/draw) is not the app's JS and is not slowed.
         queueMicrotask(() => {
           try {
@@ -478,11 +498,24 @@ export class AppRuntime {
     const due = this.speed ? start + this.speed.localApiMs(body?.length ?? 0) : start;
     const res = await this.localApi({ method, url, headers, body });
     if (!this.fetches.has(fetch) || this.exited) return;
+    // A draw the bar takes is redrawn after its answer: the JS after it waits that out (bar-speed.mjs, redrawMs).
+    if (this.speed && method === "POST" && u.pathname === "/api/display/draw" && res.status === 200) {
+      const ms = this.speed.redrawMs?.() ?? 0;
+      // It starts when the answer reaches the app.
+      this.redraw = { left: ms, until: due + ms };
+    }
     const head = `HTTP/1.1 ${res.status} ${STATUS_TEXT[res.status] ?? ""}\r\n${res.headers.map(([k, v]) => `${k}: ${v}\r\n`).join("")}Content-Length: ${res.body.length}\r\n\r\n`;
     this.postFetch(fetch, () => this.withBytes(new TextEncoder().encode(head), (p, n) => this.M._emu_fetch_headers(fetch, p, n)), due);
     for (let i = 0; i < res.body.length; i += 2048) {
       const chunk = res.body.subarray(i, i + 2048);
       this.postFetch(fetch, () => this.fetchData(fetch, chunk), due);
+    }
+    // An answer the bar's handler sends twice (files-api.mjs): the second one arrives as more body, and lib/fetch's
+    // check of the body's size (fetch_verify_response_body_size) fails the request.
+    if (res.repliedTwice) {
+      const again = new Uint8Array([...new TextEncoder().encode(head), ...res.body]);
+      this.postFetch(fetch, () => this.fetchData(fetch, again), due);
+      return this.fetchFailed(fetch, "Incomplete response body", due);
     }
     this.postFetch(fetch, () => this.M._emu_fetch_finish(fetch, 1), due);
   }
@@ -619,7 +652,8 @@ export class AppRuntime {
   call(fn, start = this.wall()) {
     if (this.exited) return undefined;
     const t0 = performance.now();
-    if (this.speed) this.slice = { start, ...this.work() };
+    // The redraw left when the slice starts: none once its time has passed, whether or not JS ran meanwhile.
+    if (this.speed) this.slice = { start, ...this.work(), redraw: Math.max(0, Math.min(this.redraw.left, this.redraw.until - start)) };
     let result;
     this.callStart = t0;
     this.callCpu = threadMs();
@@ -636,7 +670,17 @@ export class AppRuntime {
     const cpu = threadMs() - this.callCpu;
     // At the computer's speed nothing waits: events run as they come, and the app is busy for as long as its JS ran.
     const busy = this.speed ? this.sliceMs() : dt;
-    if (this.speed) this.busyUntil = this.slice.start + busy;
+    if (this.speed) {
+      this.busyUntil = this.slice.start + busy;
+      // The JS that ran during it took its share: the redraw is that much further on, and ends that much later.
+      const charged = this.sliceRedrawMs();
+      this.redraw = { left: Math.max(0, this.slice.redraw - charged), until: this.redraw.until + charged };
+      if (this.slice.redraw > 0) {
+        const { ops, bytes } = this.slice.atFetch ?? this.work();
+        this.redrawWork.ops += (ops - this.slice.ops) >>> 0;
+        this.redrawWork.bytes += (bytes - this.slice.bytes) >>> 0;
+      }
+    }
     this.slice = null;
     this.stats.calls++;
     this.stats.wasmMs += dt;

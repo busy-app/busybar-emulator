@@ -8,7 +8,8 @@ import { test } from "node:test";
 
 import { loadCommands, parseArguments } from "../../cli/busy-emulator.mjs";
 import { checkSettingsSchema } from "../settings-schema.mjs";
-import { agentsSection, fixSettingsHelper, fixTemplate, SECTION_BEGIN, SECTION_END, SETTINGS_HELPER, writeAgentsSection } from "../template-fixes.mjs";
+import { firmwareChoices, loadFirmware } from "../../firmware.mjs";
+import { agentsSection, FIRMWARE_LIST_WRITTEN_FOR, fixSettingsHelper, fixTemplate, SECTION_BEGIN, SECTION_END, SETTINGS_HELPER, sectionFirmwares, writeAgentsSection } from "../template-fixes.mjs";
 
 // The template's own files (@busy-app/create-app 0.5.0), the parts that matter here.
 const TEMPLATE_HELPER = `// Settings values, read through the global the JerryScript runtime provides.
@@ -131,5 +132,52 @@ test("the section: every busy-emulator call is a command with options it takes; 
   assert.equal(checkSettingsSchema(example).ok, true);
   // The file goes into the author's public repository: the fixed paths with ~ and %LOCALAPPDATA%, never a home.
   assert.doesNotMatch(section, /\/Users\/|\/home\/|[A-Z]:\\Users/);
-  assert.ok(section.split("\n").length <= 70 && section.length <= 10000, `short: an agent reads it at every task (${section.split("\n").length} lines, ${section.length} characters)`);
+  // 70 lines and 10,000 characters before the firmware part (EMU-323) took 19 lines and 1,300 characters.
+  assert.ok(section.split("\n").length <= 95 && section.length <= 12000, `short: an agent reads it at every task (${section.split("\n").length} lines, ${section.length} characters)`);
+});
+
+test("the section's firmware part names the latest and the previous firmware and their API, as this emulator has them", () => {
+  const choices = firmwareChoices();
+  // The list of what only the latest has was written for this pair: a new firmware in firmware.json fails here, and
+  // the list is written again for the new pair.
+  assert.deepEqual({ latest: choices.latest, previous: choices.previous }, { ...FIRMWARE_LIST_WRITTEN_FOR });
+  const latest = { version: choices.latest, api: loadFirmware(choices.latest).apiVersion };
+  const previous = { version: choices.previous, api: loadFirmware(choices.previous).apiVersion };
+  assert.deepEqual(sectionFirmwares(), { latest, previous });
+  const section = agentsSection();
+  const part = section.slice(section.indexOf("### Firmware"), section.indexOf("### Settings"));
+  assert.ok(part.includes(`BUSY Bars run firmware ${latest.version} (API ${latest.api}) or ${previous.version} (API ${previous.api})`), part);
+  assert.ok(part.includes(`at ${previous.api}, so the app installs on ${previous.version}. Raise it to ${latest.api} only if`), part);
+  assert.ok(part.includes(`does not guard against them. On ${previous.version}:`), part);
+  // The full address: the short form #1 does not link in the author's own repository.
+  assert.match(part, /https:\/\/github\.com\/busy-app\/busybar-emulator\/issues\/1/);
+  // dev --once looks at the app for a second; a crash after a request comes later.
+  assert.match(part, /`busy-emulator dev --once`, a few seconds later `busy-emulator logs --since-run`/);
+  // Numbers given are the numbers written: nothing of the part is fixed in the text.
+  const other = agentsSection({ firmwares: { latest: { version: "9.1.0", api: "30.1.0" }, previous: { version: "9.0.0", api: "30.0.0" } } });
+  assert.match(other, /BUSY Bars run firmware 9\.1\.0 \(API 30\.1\.0\) or 9\.0\.0 \(API 30\.0\.0\)/);
+  assert.match(other, /at 30\.0\.0, so the app installs on 9\.0\.0\. Raise it to 30\.1\.0 only if/);
+  assert.doesNotMatch(other, /1\.4\.1|1\.3\.1|27\.1[45]\.0/);
+  // A copy of the emulator with one firmware, or none it can read: no firmware part, the rest as it is.
+  const without = agentsSection({ firmwares: null });
+  assert.doesNotMatch(without, /### Firmware/);
+  assert.match(without, /### Settings/);
+  assert.equal(sectionFirmwares("/nonexistent-engine"), null);
+});
+
+test("the section's firmwares from an engine of other versions: the newest released one below the default is the previous", (t) => {
+  const engine = mkdtempSync(path.join(os.tmpdir(), "emu-engine-"));
+  t.after(() => rmSync(engine, { recursive: true, force: true }));
+  const write = (versions, apis) => {
+    writeFileSync(path.join(engine, "firmware.json"), JSON.stringify({ default: "2.10.0", versions: Object.fromEntries(versions.map((v) => [v, { commit: "x" }])) }));
+    for (const [v, api] of Object.entries(apis)) {
+      mkdirSync(path.join(engine, "build", v), { recursive: true });
+      writeFileSync(path.join(engine, "build", v, "build-info.json"), JSON.stringify({ api }));
+    }
+  };
+  write(["2.9.0", "dev", "2.10.0", "2.2.0"], { "2.10.0": "30.2.0", "2.9.0": "30.1.0" });
+  assert.deepEqual(sectionFirmwares(engine), { latest: { version: "2.10.0", api: "30.2.0" }, previous: { version: "2.9.0", api: "30.1.0" } });
+  // One released firmware only: no pair, no firmware part.
+  write(["2.10.0", "dev"], {});
+  assert.equal(sectionFirmwares(engine), null);
 });

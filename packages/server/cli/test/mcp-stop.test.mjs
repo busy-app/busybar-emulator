@@ -78,7 +78,7 @@ test("every tool has a time of its own: seconds for those that read, minutes for
   for (const name of ["build", "refresh", "create_app", "typecheck"]) assert.ok(time(name) >= 10 * 60_000, name);
   assert.ok(time("create_app") > time("build"));
   assert.ok(time("press", { key: "ok", times: 100, hold_ms: 10_000 }) > 100 * 10_000, "a press of a hundred holds has time for them");
-  assert.deepEqual(TOOLS.filter((tool) => tool.parallel).map((tool) => tool.name), ["status", "list_examples", "projects", "logs", "screenshot", "settings_get"]);
+  assert.deepEqual(TOOLS.filter((tool) => tool.parallel).map((tool) => tool.name), ["status", "list_examples", "projects", "logs", "screenshot", "firmware_get", "settings_get"]);
 });
 
 test("a tool that hangs is stopped after its time with its program and that program's own; the session answers meanwhile, and what reads does not wait", async () => {

@@ -195,6 +195,22 @@
       restart: () => call("update.restart"),
       popup: () => call("update.popup"),
     }),
+    /**
+     * The BUSY Bar's firmware (EMU-322). use({ version, when }): "restart" chooses it for the next restart and answers
+     * at once ({ firmware, pending }); "now" switches and answers once the BUSY Bar is up ({ firmware, from, changed,
+     * ms }). With "now", `run` is done in the same action once the switch is over: { folder } a Refresh of that
+     * project, { id } a start of that app, { refused: true } the install of the package an api_mismatch kept; its
+     * answer is `ran`.
+     */
+    firmware: Object.freeze({
+      use: (options) => {
+        const o = options || {};
+        const run = o.run && typeof o.run === "object" ? (typeof o.run.folder === "string" ? { folder: o.run.folder } : typeof o.run.id === "string" ? { id: o.run.id } : o.run.refused === true ? { refused: true } : null) : null;
+        return call("firmware.use", { version: String(o.version || ""), when: o.when === "restart" ? "restart" : "now", ...(run ? { run } : {}) });
+      },
+      /** The dialog's Cancel: the package an api_mismatch kept for Switch and run is let go. → { forgotten } */
+      forget: () => call("firmware.forget"),
+    }),
     reveal: (path) => call("reveal", path),
     open: (path) => call("open", path),
     copy: (text) => call("copy", text),

@@ -1,0 +1,9 @@
+{
+  "$comment": "Scenes of 1.4.1 compared with another firmware's recording, because the bar could not be recorded on 1.4.1 for them. timed.mjs reads this file, compares the scene with test/timed/<from>/<scene>.json and says so on its line. Not a recording of a bar on 1.4.1.",
+  "off": {
+    "from": "1.3.1",
+    "why": "the scene powers the bar off, which was not allowed when 1.4.1 was recorded (16-17.11), and on Wi-Fi the bar would not come back by itself",
+    "compared": "git diff 8edd2da4 (1.3.1) 28c175b3 (1.4.1) of busybar-firmware is empty for everything the scene draws with: applications/main/soft_off (the program; the emulator runs it as emu_system.c), assets/animations/soft_off (turn_off_72x16), applications/services/gui/modules/anim_player.c and .h, lib/anim_file, lib/xpm, applications/services/desktop, applications/services/front_display, applications/services/input; lib/lvgl is the same commit (0e12dbeb).",
+    "changed, and why it does not touch the scene": "The GUI core changed (gui.c, widget.c, widget.h, widget_i.h; 070b2fc4, for SETUP's smenu): the display's own data moved from LVGL's user_data to driver_data, and widget_style() now walks a widget's base classes for the first one with style callbacks. The anim player's class (anim_player_lvgl_class) and its base, widget_lvgl_class, have no user_data, so no style callbacks, on either firmware: widget_style() styles the animation in neither. The flush to the front display (gui_flush_front_callback) reads the same GuiDisplay from driver_data instead of user_data. The other changed modules (smenu, status_view, var_item_list) are not on the screen in this scene. The emulator built from 1.4.1 shows the 1.3.1 bar's ten frames of this scene, at its pace."
+  }
+}

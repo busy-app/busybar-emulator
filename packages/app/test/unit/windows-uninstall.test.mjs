@@ -275,11 +275,11 @@ test(
       writeFileSync(path.join(launcher, "bin", "busy-emulator.launch"), `${path.join(to, ...COMMAND.split("/"))}\r\n${path.join(to, "resources", "cli.mjs")}\r\n`);
       copyFileSync(path.join(to, ...CLI.split("/")), path.join(launcher, "bin", "busy-emulator.exe"));
       writeFileSync(path.join(launcher, "bin", "busy-emulator.exe.old-4242"), "the launcher that ran during an update");
-      mkdirSync(path.join(data, "bar", "1.3.1", "ext"), { recursive: true });
+      mkdirSync(path.join(data, "bar", "ext"), { recursive: true });
       mkdirSync(path.join(data, "projects"), { recursive: true });
-      writeFileSync(path.join(data, "format"), "1\n");
+      writeFileSync(path.join(data, "format"), "2\n");
       writeFileSync(path.join(data, "install.json"), JSON.stringify({ app: path.join(to, EXE), cli: path.join(launcher, "bin", "busy-emulator.exe"), version: "1.2.3" }, null, 2));
-      writeFileSync(path.join(data, "bar", "1.3.1", "ext", "an-app.txt"), "an app on the emulated bar");
+      writeFileSync(path.join(data, "bar", "ext", "an-app.txt"), "an app on the emulated bar");
       writeFileSync(path.join(data, "projects", "trusted.json"), "[]");
     };
     try {
@@ -317,7 +317,7 @@ test(
       const kept = await run(path.join(to, UNINSTALLER), ["/S"], { temp });
       assert.equal(kept.code, 0, kept.log);
       assert.deepEqual([existsSync(to), existsSync(link), existsSync(launcher), entry()], [false, false, false, null], kept.log);
-      assert.deepEqual(filesOf(data), ["bar/1.3.1/ext/an-app.txt", "format", "projects/trusted.json"], "the data folder is not as it was, but for install.json");
+      assert.deepEqual(filesOf(data), ["bar/ext/an-app.txt", "format", "projects/trusted.json"], "the data folder is not as it was, but for install.json");
       assert.match(kept.log, new RegExp(`the data folder is kept: ${data.replace(/[\\.]/g, "\\$&")}`));
 
       // Installed again over the data that stayed, then removed with them.

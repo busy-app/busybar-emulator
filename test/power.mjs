@@ -1,6 +1,6 @@
 // What the emulated bar does when things go wrong, and its power: the firmware's supervisor in the screen module.
 //
-//   node emulator/test/power.mjs [--firmware dev] [--images]
+//   node emulator/test/power.mjs [--firmware 1.3.1] [--images]
 //
 // In an emulator of its own (own-emulator.mjs), or the one --addr 127.0.0.1:8640 names (never a bar: the test fills
 // the JS heap and powers the device off):

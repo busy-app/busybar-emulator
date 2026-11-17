@@ -4,13 +4,19 @@
 //   GET  /emulator                 the page (files in ./legacy-window)
 //   GET  /emulator/stage3d/frame/* the 3D view's frame: the files of packages/stage/frame, with their own policy
 //                                  (stage3d.mjs)
-//   GET  /_emu/events              server-sent events: "hello", "frame" { front, back } when the picture changes
+//   GET  /_emu/events              server-sent events: "hello" { firmware, apiVersion, notice, firmwares, pending,
+//                                  switching } on connecting,
+//                                  "firmware" { state: "pending" | "switching" | "ready" | "failed", ... } when a
+//                                  firmware is chosen for the next restart and when the BUSY Bar switches (server.mjs;
+//                                  the stream stays open across the switch),
+//                                  "frame" { front, back } when the picture changes
 //                                  (base64, as GET /api/screen sends them), "log" { kind, text, time }, "apps",
 //                                  "state" { running, selector } every second and on changes, "key" { key, type }
 //                                  for every event of a button or the wheel the bar takes (the 3D view moves its
-//                                  buttons by them), "lights" { preset, color, brightness } for the status lights
-//                                  when the firmware starts a preset or its brightness changes, and on connecting
-//                                  (device.mjs, lightsState)
+//                                  buttons by them), "lights" { preset, color, brightness, elapsed, set? } for the
+//                                  status lights when the firmware starts a preset, the brightness changes or the
+//                                  lights go out with the system, and on connecting: elapsed is the ms the preset has
+//                                  run (device.mjs, lightsState; the timeline in legacy-window/status-lights.mjs)
 //   POST /_emu/key?key=ok&action=down|up   hold and release a button, as the hardware does
 //   GET  /_emu/audio?id=N          the samples of the sound that plays: raw 16-bit mono PCM, 44100 Hz
 //   POST /_emu/time?hold=1|0       stop the system's clock (animations, scrolling, the menus' timers) or let it run;
@@ -63,7 +69,19 @@ const FRAME_CHECK_MS = 33;
 // Console lines a newly opened window gets.
 const HISTORY = 500;
 
-export function attachDeviceWindow(device, { apiVersion }) {
+/**
+ * @param {object} device
+ * @param {{ about?: () => { firmware: object, notice: string | null, firmwares?: object[], pending?: object | null, switching?: object | null }, apiVersion?: string }} [o]
+ *   what the hello says of the firmware, asked at every connection: { firmware: { name, commit, summary, version, api,
+ *   alias }, notice, firmwares, pending, switching } (the server's, as GET /_emu/firmware has them: a window opened or
+ *   loaded again shows a firmware chosen for the next restart, and a switch under way); without it, the device's
+ *   firmware as it is then, with `apiVersion` if given
+ */
+export function attachDeviceWindow(device, { about = null, apiVersion = null } = {}) {
+  about ??= () => {
+    const { firmware } = device;
+    return { firmware: { name: firmware.name, commit: firmware.info.firmware, summary: firmware.summary, version: firmware.name, api: apiVersion ?? firmware.apiVersion, alias: null }, notice: null };
+  };
   const clients = new Set();
   const history = [];
   device.events.on("log", (event) => {
@@ -138,8 +156,8 @@ export function attachDeviceWindow(device, { apiVersion }) {
 
     if (url.pathname === "/_emu/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-      const { firmware } = device;
-      const hello = { firmware: { name: firmware.name, commit: firmware.info.firmware, summary: firmware.summary }, apiVersion };
+      const { firmware, notice, firmwares = [], pending = null, switching = null } = about();
+      const hello = { firmware, apiVersion: firmware.api, notice, firmwares, pending, switching };
       res.write(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`);
       for (const event of history) res.write(`event: log\ndata: ${JSON.stringify(event)}\n\n`);
       res.write(`event: state\ndata: ${JSON.stringify(state())}\n\n`);
@@ -271,5 +289,7 @@ export function attachDeviceWindow(device, { apiVersion }) {
    * connections and close with them; the last one to close ends the checking of frames, as when a window is shut.
    */
   handle.close = () => clearInterval(states);
+  /** The BUSY Bar's firmware changes (server.mjs): every window and every follower of the console hears it. */
+  handle.firmware = (event) => broadcast("firmware", event);
   return handle;
 }

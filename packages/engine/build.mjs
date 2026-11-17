@@ -37,7 +37,8 @@
 // runtime, compiled unchanged:
 //   - JerryScript (lib/jerryscript amalgam) with the defines from lib/jerryscript.scons;
 //   - the app globals, applications/services/js_runner/*.c (all but js_runner.c);
-//   - the libraries they use: FuriString, toolbox url/slice/path/tls_config, http headers/response, cJSON.
+//   - the libraries they use: FuriString, toolbox url/slice/path/tls_config, http headers/response (and the request
+//     method's checks, http_method.c, since 1.4.1), cJSON.
 // screen, compiled unchanged:
 //   - LVGL (lib/lvgl, the sources lib/lvgl.scons lists) with the firmware's lv_conf.h, and lib/lvgl_addons
 //     (fonts, themes, file system);
@@ -120,6 +121,8 @@ const OPENAPI_DIR = "applications/services/web_server/openapi";
 const DOCS_SCRIPTS = ["scripts/openapi_merge.py", "scripts/swagger.py", "scripts/flipper"];
 const SWAGGER = "assets/swagger";
 const HTTP_API_H = "applications/services/web_server/http_api/http_api.h";
+// The web server's access rules, among them what an app's requests may reach.
+const API_ROOT_C = "applications/services/web_server/http_api/api_root.c";
 // What the build needs from the firmware itself, exported per version.
 const EXPORTED = ["lib", "applications/services", ...DOCS_SCRIPTS, SWAGGER, "applications/main/apps_menu", "applications/main/busy", "applications/main/settings_menu", "applications/main/soft_off", "applications/settings", "applications/system/updater", "applications/system/js_app_launcher", "targets/f21/config", "targets/f21/furi_hal", WEB];
 
@@ -174,7 +177,7 @@ const clean = new Set();
 // installed into.
 let fw, gen, staging, dest;
 // build-info.json: about the firmware and the build, then about the runtime module, then about the screen module.
-const INFO_KEYS = ["version", "firmware", "commit", "buildDate", "emscripten", "optimized", "api", "web", "docs", "jerryscript", "firmwareDefines", "emulatorDefines", "consoleSeverities", "lvgl", "screenDefines"];
+const INFO_KEYS = ["version", "firmware", "commit", "buildDate", "emscripten", "optimized", "api", "appAllowlist", "web", "docs", "jerryscript", "firmwareDefines", "emulatorDefines", "consoleSeverities", "lvgl", "screenDefines"];
 
 for (const version of versions) {
   const { commit } = config.versions[version];
@@ -185,7 +188,7 @@ for (const version of versions) {
   mkdirSync(staging, { recursive: true });
   console.log(`== firmware ${version} (${commit.slice(0, 8)})`);
   generateHeaders();
-  const info = { version, firmware: commit.slice(0, 8), commit, buildDate: buildDate(commit), emscripten, optimized: !debug, api: apiVersion(), web: webRecord(commit), docs: buildDocs() };
+  const info = { version, firmware: commit.slice(0, 8), commit, buildDate: buildDate(commit), emscripten, optimized: !debug, api: apiVersion(), appAllowlist: appAllowlist(), web: webRecord(commit), docs: buildDocs() };
   if (targets.includes("runtime")) Object.assign(info, buildRuntime());
   if (targets.includes("screen")) Object.assign(info, await buildScreen(version, info.buildDate));
   // Everything is built: only now is build/<version> touched, so a build that fails leaves it whole.
@@ -332,6 +335,8 @@ function buildRuntime() {
     "js_console.c", "js_fetch.c", "js_fetch_body_methods.c", "js_headers.c", "js_input.c", "js_interval.c",
     "js_local_storage.c", "js_readable_stream.c", "js_request.c", "js_response.c", "js_stubs.c", "js_url.c", "js_util.c",
   ].map((f) => join(jsRunner, f));
+  // Since 1.4.1 (495af1db, FW-1243): fetch's arguments are parsed in a file of their own.
+  firmwareGlobals.push(...since(join(jsRunner, "js_fetch_request.c")));
   const firmwareLibs = [
     join(furi, "core/string.c"),
     join(fw, "lib/toolbox/url.c"),
@@ -340,6 +345,8 @@ function buildRuntime() {
     join(fw, "lib/toolbox/tls_config.c"),
     join(fw, "lib/http/http_headers.c"),
     join(fw, "lib/http/http_response.c"),
+    // Since 1.4.1 (495af1db): the request method's checks, which js_fetch_request.c calls.
+    ...since(join(fw, "lib/http/http_method.c")),
     join(fw, "lib/cjson/cJSON.c"),
   ];
   const shims = ["host.c", "furi_shim.c", "memmgr_shim.c", "fetch_shim.c", "storage_shim.c", "gui_shim.c", "emu_runner.c"].map((f) => join(native, f));
@@ -358,6 +365,7 @@ function buildRuntime() {
     join(fw, "lib/toolbox"),
     join(fw, "fbt_layers/core_libs/lib/mlib"),
     amalgam,
+    fw, // last: <lib/fetch/fetch.h>, which js_fetch_request.h (1.4.1) includes from the firmware's root
   ];
   const exported = [
     "malloc", "free", "emu_init", "emu_run_file", "emu_terminate", "emu_heap_stats", "emu_last_error", "emu_cleanup",
@@ -507,6 +515,20 @@ function apiVersion() {
     process.exit(1);
   }
   return header;
+}
+
+// What a request of an app may reach: api_root.c's js_apps_api_allowlist, as { path: "exact|prefix METHOD ..." }. The
+// server checks every request that carries js_fetch.c's mark against it, as http_api_access_status() does.
+function appAllowlist() {
+  const text = readFileSync(join(fw, API_ROOT_C), "utf8");
+  const body = /static const HttpApiAccess js_apps_api_allowlist\[\] = \{([^;]*)\};/.exec(text)?.[1];
+  const entries = body ? [...body.matchAll(/\{\s*"([^"]+)",\s*HttpApiAccessMatchType(Exact|Prefix),\s*([\w\s|]+?)\s*\}/g)] : [];
+  // Every entry read, or the build stops: a rule the reading missed would refuse an app what the BUSY Bar allows.
+  if (!entries.length || entries.length !== (body.match(/\{/g) ?? []).length) {
+    console.error(`Cannot read the apps' allowlist (js_apps_api_allowlist) in ${API_ROOT_C}.`);
+    process.exit(1);
+  }
+  return Object.fromEntries(entries.map(([, path, kind, methods]) => [path, [kind.toLowerCase(), ...methods.split("|").map((m) => /^HttpMethod(\w+)$/.exec(m.trim())[1].toUpperCase())].join(" ")]));
 }
 
 // The bar's API documentation, made as the firmware's build makes it (scripts/fbt_env_modules/fwenv/bsb_assets.scons):
@@ -666,6 +688,12 @@ function patched(src) {
 function cFiles(dir) {
   // "._name.c" is what macOS leaves beside name.c on a disk without extended attributes.
   return readdirSync(dir).filter((f) => f.endsWith(".c") && !f.startsWith("._")).sort().map((f) => join(dir, f));
+}
+
+// A source a newer firmware added: [file] when this version has it, else nothing. An older version builds without
+// it; a newer one that lost it fails to link (an undefined symbol is an error in Emscripten).
+function since(file) {
+  return existsSync(file) ? [file] : [];
 }
 
 function subdirs(dir) {
