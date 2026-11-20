@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { HAS_REAL_SERVER, removeFolder, sleep, targz, temporaryFolder, until } from "../helpers.mjs";
 import { launch } from "./harness.mjs";
@@ -136,7 +136,7 @@ test("the opened app: its folder over Copy prompt for AI, Stop and Run; the prom
     const at = (el) => [...document.querySelectorAll("#app-pane *")].indexOf(el);
     const path = document.querySelector("#app-folder .ac-path");
     return { name: at(document.querySelector("#app-title")), folder: at(document.querySelector("#app-folder")), actions: at(document.querySelector("#app-actions")), tabs: at(document.querySelector("#app-tabs")),
-      path: path.dataset.tipDetail, readOnly: path.getAttribute("aria-readonly") === "true", shown: path.textContent,
+      tip: path.dataset.tip ?? null, title: path.getAttribute("title") || null, readOnly: path.getAttribute("aria-readonly") === "true", shown: path.textContent,
       icons: [...document.querySelectorAll("#app-folder .ac-path-btn")].map((b) => b.ariaLabel),
       row: [...document.querySelectorAll("#app-actions button")].map((b) => b.ariaLabel || b.textContent.trim()),
       run: getComputedStyle(document.querySelector("#app-run")).backgroundColor,
@@ -145,7 +145,8 @@ test("the opened app: its folder over Copy prompt for AI, Stop and Run; the prom
       facts: document.querySelector("#app-facts").textContent };
   })()`);
   assert.ok(order.name < order.folder && order.folder < order.actions && order.actions < order.tabs, JSON.stringify(order));
-  assert.equal(order.path, dir);
+  // No hover card and no title on the field (18.11); the whole path is what Copy gives (device-window test, window-layout copy tests).
+  assert.deepEqual([order.tip, order.title], [null, null]);
   assert.equal(order.readOnly, true);
   assert.ok(dir.endsWith(order.shown.replace(/^~/, "")), order.shown);
   assert.deepEqual(order.icons, ["Copy the path", process.platform === "win32" ? "Show in Explorer" : "Open in Finder"]);

@@ -366,9 +366,11 @@ What a new project still lacks, and how to add each:
 - **The catalog's texts.** `<cli> check` (and `submit`) makes `catalog.json` in the project, empty. Write in it:
   `category` (one of `productivity`, `clocks`, `info-feeds`, `social`, `dev-monitoring`, `music`, `art`, `games`,
   `smart-home`, `utilities`), `short_description` (one line, 10 to 120 characters), `description` (50 to 4000
-  characters; level 1–2 headings, bold, italic, lists and http(s) links are taken, `\n` is a new line) and
-  `changelog` (10 to 4000 characters). The emulator never writes these for you; `<cli> catalog-texts set` writes
-  the ones you give it, checked as the catalog checks them.
+  characters; level 1–2 headings, bold, italic, lists and http(s) links are taken, `\n` is a new line; or a
+  Markdown file of the app's folder, such as `"@CATALOG.md"`, checked on its text) and `changelog` (10 to 4000
+  characters). A README written for the catalog will do as that file; the one `publish readme` writes will not:
+  its comment, picture and code are more than the catalog takes. The emulator never writes these for you; `<cli> catalog-texts set` writes the ones you give it,
+  checked as the catalog checks them. Commit `catalog.json`: `submit` writes the catalog's manifest from it.
 
   ```json
   {
@@ -428,7 +430,11 @@ chosen app. Prepare, where nothing leaves the computer:
 2. **Screenshots**: Take from the BUSY Bar, or **Upload…** PNG files you made (72×16 for the front, 160×80 for the back,
    or an exact whole-number enlargement of one). Reorder and remove them; the first front one is the cover.
 3. **README**: fields (title, about, how to use) or Markdown, with a preview. The screenshots, the settings, how to
-   build and the license line are added for you. Text left from the template keeps Next off.
+   build and the license line are added for you. How to use is optional: it helps people reading the README, and the
+   catalog does not show it yet; rows you add are checked. Text left from the template keeps Next off. Wrote your
+   README.md elsewhere? Turn on **Use the project's README.md as it is**: the step shows the file as GitHub will and
+   never writes or changes it; what it would check (links outside the app's folder, files the repository will not
+   hold) comes as hints.
 4. **License**: MIT, Apache 2.0 or GPL 3.0, each said in plain words, or your own LICENSE file; nothing is chosen for
    you.
 5. **Repository files**: what goes public, the `.gitignore` lines, and anything that looks like a secret.
@@ -437,7 +443,7 @@ chosen app. Prepare, where nothing leaves the computer:
 7. **Build and package**: the build and `submission/`.
 
 Then Publish: **Publish to GitHub** and **Send to catalog** (below). **Next** saves what the step holds; it is off,
-with the reason in the footer, until the step is complete, and a step opens only after the ones before it. Done
+with the reason beside it, until the step is complete, and a step opens only after the ones before it. Done
 steps are ticked and can be opened again. The window remembers the steps done in `.busy/publish.json` of the project
 (`.busy/` keeps itself out of git) and opens at the first step not done.
 
@@ -448,7 +454,7 @@ The same steps on the command line, for you or an agent:
 <cli> publish check                                  # builds, checks types, then the catalog's checks
 <cli> catalog-texts set --category clocks --short-description "A large clock with the date for the desk."
 <cli> publish screenshots --take front               # what the front display shows now, for the catalog
-<cli> publish readme set --usage "Turn the wheel."    # the README's how to use; readme preview shows it
+<cli> publish readme set --intro "A large clock."    # the README; readme preview shows it
 <cli> publish license --license MIT --author "Your Name"
 <cli> publish files                                  # what the repository will hold, and what looks like a secret
 <cli> publish files --write                          # the missing .gitignore lines, and README.md
@@ -477,8 +483,12 @@ one go: for an agent, once you have chosen the license. Each command takes the p
   screenshots and the license. A README of your own is kept unless you add `--readme replace`; `--keep-in <path>`
   takes back a line it added.
 - **`publish readme`** shows (`get`), writes (`set`) or previews (`preview`) README.md: `--mode fields` with
-  `--title`, `--intro` and `--usage` (how to use the app, which only you can write), or `--mode markdown` with
-  `--markdown <text>`. A README of your own is opened as Markdown and kept as it is.
+  `--title`, `--intro` and `--usage` (how to use the app, which only you can write; optional), or `--mode markdown`
+  with `--markdown <text>`. `--controls '{"Start": "Starts the timer"}'` writes How to use as a row a control of the
+  BUSY Bar. A README without How to use is ready. Rows given in the fields are checked; a How to use section
+  of your own Markdown (install steps, say) is only a hint, never a block. A README of your own is opened as Markdown and kept as it is.
+  `publish readme set --keep` uses the project's README.md as it is: nothing is written, and the answer's `file_hints`
+  say what would break on GitHub. Another README over it later needs `--replace`; the old file goes to `.busy/removed/`.
 - **`publish screenshots`** lists them in the catalog's order, each with what the catalog says of it. `--take front`
   or `--take back` saves what the display shows now, with an enlarged copy for the README; `--upload <files>` adds
   PNG files you made (paths joined as in `PATH`, or a JSON list), checked for their size; `--order` sets the order
@@ -510,10 +520,26 @@ This sign-in belongs to GitHub CLI on this computer: other programs, including A
 emulator's confirmations cover only its own commands. When the emulator signed GitHub CLI in and it had no account
 before, Also sign out GitHub CLI on this computer starts ticked when you sign out.
 
-Then it makes a public repository of yours (named after the app; you can change the name) and publishes the files of
-Repository files to it in one commit, without git. It reads the commit back from GitHub and shows its link and its
-commit. The folder `.github/workflows/` is not published. Publishing again updates the same repository; a name you
-have already gets a free one offered. The manifest in `submission/` now names the repository and the commit.
+Then it makes a public repository of yours and publishes the files of Repository files to it in one commit, without
+git. It reads the commit back from GitHub and shows its link and its commit. The folder `.github/workflows/` is not
+published. The manifest in `submission/` now names the repository and the commit.
+
+The name it offers is the repository it published the project to before, else the one you imported the project from,
+else the one the project's own git remote (`origin`, or its only remote) names on your account, else the last part of
+the app's id; you can change it. A line under the field says when the name is from the git remote, and why the
+remote was not used when it is another account's or not on GitHub.
+
+- **A new name**: Publish to GitHub creates the repository.
+- **A repository you published to from here**: Publish again updates it.
+- **A repository of yours not published to from here** (a git clone of it, say): the button is **Publish into**
+  with its name. It first says what changes: a new commit on top of its default branch with the project's files,
+  nothing force-pushed; the files only the repository has stay, unless you tick that they go. Nothing is sent before
+  you confirm. Later publishes update it, as above.
+- **That repository has commits the project doesn't have** (made on GitHub or on another computer): nothing is sent.
+  Get them first: `git pull` in a git clone, or import the repository again (Create app, Import from GitHub), carry
+  your changes over and publish from that copy.
+- **A repository of yours that is archived or empty**, or one you may not push to: choose another name;
+  Publish to GitHub offers a free one.
 
 **Send to catalog** opens the pull request that adds `applications/<app id>/manifest.yml` to the catalog. It shows
 the catalog's author checklist as the catalog's template has it: you tick every item that is true, and you choose

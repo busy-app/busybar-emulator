@@ -158,7 +158,7 @@ test("options: a flag, a value after a space or after =, each once; a value that
 
 test("a wrong call is told before anything is started, asked or written", async (t) => {
   for (const argv of [
-    ["screenshot", "--scale", "1"],
+    ["screenshot", "--scale", "0"],
     ["screenshot", "--scale", "33"],
     ["screenshot", "--scale", "2.5"],
     ["screenshot", "--scale", "eight"],
@@ -180,7 +180,7 @@ test("a wrong call is told before anything is started, asked or written", async 
   const folderless = await run(["screenshot", "--out", "shots", "--json"], fakeSystem(t));
   assert.match(folderless.json.message, /shots, which is neither a folder nor a \.png file; for a new folder end the path with \/\.$/);
   const human = await run(["screenshot", "--scale", "64"], fakeSystem(t));
-  assert.equal(human.err, `busy-emulator: --scale takes a whole number from 2 to 32, not "64".\nUsage: /Users/you/.busy-emulator/bin/busy-emulator screenshot [--back] [--out <path>] [--scale <n>]`);
+  assert.equal(human.err, `busy-emulator: --scale takes a whole number from 1 to 32, not "64".\nUsage: /Users/you/.busy-emulator/bin/busy-emulator screenshot [--back] [--out <path>] [--scale <n>]`);
 });
 
 test("Windows: a path whose closing quote PowerShell 5.1 kept is refused with what happened, in JSON if --json was swallowed", { skip: path.sep !== "\\" && "a \" is a letter of a path elsewhere" }, async (t) => {
@@ -483,4 +483,13 @@ test("a copy of the command line without the encoder still runs every other comm
   const json = JSON.parse(missing[0]);
   assert.equal(json.code, "internal");
   assert.match(json.message, /no PNG encoder \(packages\/server\/capture\/png\.mjs\)/);
+});
+
+test("--scale 1 is the display's own size, as without the option: the frame file and no second file", async (t) => {
+  const sys = fakeSystem(t);
+  const one = await run(["screenshot", "--scale", "1", "--json"], sys);
+  assert.equal(one.code, 0, JSON.stringify(one.json));
+  assert.equal(one.json.scaled, null);
+  assertPixels(one.json.file, "front", FRONT);
+  assert.deepEqual(listing(path.dirname(one.json.file)), [path.basename(one.json.file)], "only the frame file");
 });

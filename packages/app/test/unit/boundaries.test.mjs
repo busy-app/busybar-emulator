@@ -114,8 +114,12 @@ const IMPORTED_NAMES = path.join(PACKAGES, "engine", "test", "imported-names.mjs
 // terminal gives the running app's shell a terminal with a stand-in launcher, loading terminal.mjs in its main process.
 const UNFOLLOWABLE_ALLOWED = new Map([
   ["test/app/terminal.test.mjs", ["import(module"]],
+  // EMU-358: the FIFO and device cases read .git in a child process with a time limit, so that a hang fails the test, not the file.
+  ["test/unit/github-publish.test.mjs", ["import(${JSON.stringify(pathToFileURL(path.resolve(import.meta.dirn"]],
   ["src/supervisor.mjs", ["import(pathToFileURL(serverModule"]],
   ["tools/packaging/check.mjs", ["import(pathToFileURL(path.join(tool, \"check.mjs\""]],
+  // The update chain packs each version with the packaging of that version's own commit, from its worktree.
+  ["test/update-chain/build.mjs", ["import(pathToFileURL(path.join(appDir, \"tools\", \"packaging\", name"]],
 ]);
 
 test("packages/app loads no module in a way the scan cannot follow, but for the named exceptions", () => {

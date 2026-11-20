@@ -167,7 +167,7 @@ export default {
       if (answer.status === 404 && /no settings schema/i.test(said)) {
         throw new CliError("no_settings", `${id} has no settings: the app on the BUSY Bar has no appmeta/settings.json.`, `Describe them in src/appmeta/settings.json of the project (the format is in the project's AGENTS.md), then ${build} and ${run}.`, { id });
       }
-      if (answer.status === 404) throw new CliError("not_installed", `${id} is not on the emulated BUSY Bar.`, `Build it and put it there: ${build}, then ${run}.`, { id });
+      if (answer.status === 404) throw new CliError("not_installed", `${id} is not on the emulated BUSY Bar.`, `Build it and put it there: ${build}, then ${run}; the app has settings only once it is installed, so after that give ${self} settings ${action}${action === "get" ? "" : " …"}${options.restart ? " --restart" : ""} again${action !== "get" && !options.restart ? " (with --restart, to start the app with them)" : ""}.`, { id });
       if (answer.status === 503) throw new CliError("settings_invalid", `The BUSY Bar refuses the settings file of ${id} as it is installed: its appmeta/settings.json is invalid.`, `${build} checks the project's file and names the field at fault; then ${run}.`, { id });
       return answer;
     };

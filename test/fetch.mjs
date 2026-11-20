@@ -4,8 +4,9 @@
 //
 //   node emulator/test/fetch.mjs [--firmware 1.3.1]  in the emulator's runtime (the firmware's own, as for the server)
 //   node emulator/test/fetch.mjs --bar [10.0.4.20]   the same app on a bar, which must reach this computer
-//   node emulator/test/fetch.mjs --bar --record      the same, and the bar's answers to the odd URLs saved to
-//                                                     test/fetch/bar-<firmware>.json
+//   node emulator/test/fetch.mjs --bar --record      the same, and the bar's answers saved to
+//                                                     test/fetch/bar-<firmware>.json: the odd URLs, and each case's
+//                                                     outcome with what the server received (EMU-351)
 //   ... --online                                      also the URL with a name in capitals, to a public echo service
 //                                                     (httpbin.org); always on a bar
 //
@@ -18,6 +19,14 @@
 // cuts the fragment off, sends "/?x=1" for a URL without a path, refuses user:password@ and sends a name in small
 // letters, none of which FIRMWARE_URLS says.
 //
+// A recording with `cases` (EMU-351) is also the reference for the cases themselves: each one's outcome (status and
+// text, or the error), what the server received for it byte for byte (the computer's address and port put back as
+// {host}:{port}), and its time within CASE_MS_TOLERANCE where the time is the point (stall, slow, stream).
+//
+// --bar may name an emulator that plays a BUSY Bar (the BUSY Bar session's trial run, bar-session/run.mjs): an address on the
+// loopback. The server then listens on the loopback, on EMU_FETCH_PORT when it is set (the port the emulator was
+// started to let apps reach, --allow-local), and the app is given another loopback address, as below.
+//
 // On a bar the app is installed, run and removed; its results come back through its localStorage, and the server
 // listens on this computer's address on the bar's network. In the emulator the server listens on the loopback only
 // (nothing reachable from the network, no firewall question on Windows). "localhost" and 127.0.0.1 in an app are the
@@ -28,15 +37,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { commandLine } from "../packages/server/arguments.mjs";
 import { loadFirmware } from "../packages/server/firmware.mjs";
 import { probeSource } from "../packages/server/bar-speed.mjs";
 import { createLocalAccess } from "../packages/server/local-access.mjs";
 import { AppRuntime } from "../packages/server/runtime.mjs";
-import { totals } from "./own-emulator.mjs";
+import { recordingsRoot, totals } from "./own-emulator.mjs";
 import { targz } from "./package.mjs";
 
 const args = process.argv.slice(2);
@@ -48,7 +56,6 @@ const firmware = loadFirmware(args.includes("--firmware") ? args[args.indexOf("-
 const record = args.includes("--record");
 if (record && !bar) throw new Error("--record records a bar: give --bar too");
 const online = Boolean(bar) || args.includes("--online");
-const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 
@@ -71,12 +78,15 @@ async function loopback() {
 
 let listen;
 let address;
-if (bar) {
+// An emulator that plays a BUSY Bar answers on this computer's loopback.
+const barIsLocal = Boolean(bar) && /^(127\.|localhost\b|\[::1\])/.test(bar);
+if (bar && !barIsLocal) {
   // This computer's address on the bar's network.
   const addresses = Object.values(os.networkInterfaces()).flat().filter((i) => i.family === "IPv4" && !i.internal).map((i) => i.address);
   address = addresses.find((a) => a.split(".").slice(0, 3).join(".") === bar.split(".").slice(0, 3).join("."));
   if (!address) throw new Error(`this computer has no address on the network of the bar ${bar}`);
-  listen = "0.0.0.0";
+  // On that address only, not on every network the computer is on.
+  listen = address;
 } else {
   ({ listen, ask: address } = await loopback());
 }
@@ -101,6 +111,8 @@ const server = net.createServer((socket) => {
       return socket.end(Buffer.concat([Buffer.from(`HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${echo.length}\r\n\r\n`), echo]));
     }
     if (path === "/ok") return socket.end(`HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nhello`);
+    // A header with nothing after its colon, as api.coinbase.com sends access-control-expose-headers (issue 1).
+    if (path === "/empty-header") return socket.end(`HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Empty:\r\nContent-Length: 2\r\n\r\nhi`);
     if (path === "/redirect") return socket.end(`HTTP/1.1 302 Found\r\nLocation: /ok\r\nContent-Length: 0\r\n\r\n`);
     if (path === "/short") return socket.end(`HTTP/1.1 200 OK\r\nContent-Length: 50\r\n\r\nhello`);
     // No Content-Length: the body ends when the connection does. A piece a second, as a streamed answer comes.
@@ -123,7 +135,7 @@ const server = net.createServer((socket) => {
     socket.end(`HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n`);
   });
 });
-await new Promise((r) => server.listen(0, listen, r));
+await new Promise((r) => server.listen(barIsLocal && process.env.EMU_FETCH_PORT ? Number(process.env.EMU_FETCH_PORT) : 0, listen, r));
 const base = `http://${address}:${server.address().port}`;
 
 // The odd URLs: {host} is this computer's address the app is given, {port} the server's port. The server answers with
@@ -277,6 +289,34 @@ if (bar) {
     setTimeout(() => reject(new Error("the app did not finish in 30 s")), 30000).unref();
   });
 }
+// A response header with an empty value (busy-app/busybar-emulator#1). Firmware 1.3.1's lib/http/http_headers.c
+// rejects the value, js_headers_alloc() fails ("Error parsing headers") and the app crashes instead of getting a
+// rejected fetch (busy-app/busybar-firmware#1154). bcf04fed "[FW-1287] Handle HTTP headers with empty value (#1156)",
+// in 1.4.1, reads it as "". In a run of its own, since on 1.3.1 it ends the app. A firmware not in this table fails
+// the check until its line is written from its source.
+const EMPTY_HEADER = { "1.3.1": "fatal", "1.4.1": "answered" };
+let emptyHeader;
+if (!bar) {
+  const lines = [];
+  const ended = await new Promise((resolve) => {
+    const runtime = new AppRuntime({
+      firmware,
+      appId: APP,
+      heapKib: 64,
+      entry: "/empty.js",
+      readFile: (p) => (p === "/empty.js" ? new TextEncoder().encode(`fetch(${JSON.stringify(base + "/empty-header")}).then((r) => r.text().then((t) => console.log("answered " + r.status + " " + JSON.stringify(r.headers.get("x-empty")) + " " + t)), (e) => console.log("rejected " + String(e && e.message !== undefined ? e.message : e)));`) : null),
+      writeFile: () => false,
+      localApi: async () => ({ status: 404, headers: [], body: new Uint8Array() }),
+      localAccess: createLocalAccess({ allow: [server.address().port] }),
+      onConsole: (severity, text) => lines.push(text),
+      onLog: () => {},
+      onExit: resolve,
+    });
+    runtime.start().catch((e) => resolve(`start failed: ${e.message}`));
+    setTimeout(() => resolve("still running after 15 s"), 15000).unref();
+  });
+  emptyHeader = { ended, lines };
+}
 server.close();
 
 console.log(bar ? `fetch on the bar ${bar}, server ${base}` : `fetch in the emulator's runtime, server ${base}`);
@@ -300,16 +340,59 @@ check("slow", r.slow?.value?.error !== undefined && r.slow.ms >= 4900 && r.slow.
 check("stream", r.stream?.value?.pieces >= 6 && r.stream.value.lastMs - r.stream.value.firstMs > 4500 && r.stream.value.text.endsWith("piece6;"), "a streamed body comes piece by piece, past 5 s in all");
 check("refused", r.refused?.value?.error !== undefined, "a closed port is an error");
 // The odd URLs: against the bar's recording for this firmware if there is one, else against the firmware's source.
-const recordFile = join(here, "fetch", `bar-${firmware.name}.json`);
+const recordFile = join(recordingsRoot(), "fetch", `bar-${firmware.name}.json`);
 const recording = !bar && existsSync(recordFile) ? JSON.parse(readFileSync(recordFile, "utf8")) : null;
 const want = recording?.urls ?? FIRMWARE_URLS;
 const against = bar ? "the firmware's source, on the bar" : recording ? `the bar's recorded answer (${recording.source.bar})` : "the firmware's source (no recording of a bar for this firmware)";
 for (const name of Object.keys(URLS)) {
   const got = r[name] ? general(r[name].value) : undefined;
+  // Recording a bar, its answers are what is recorded, not checked: the source's table is 1.3.1's (FIRMWARE_URLS).
+  if (record) {
+    console.log(`  rec  ${name}: ${JSON.stringify(got)}`);
+    continue;
+  }
   const ok = JSON.stringify(got) === JSON.stringify(want[name]);
   check(name, ok, `${JSON.stringify(URLS[name])} as ${against}${ok ? "" : `; wanted ${JSON.stringify(want[name])}`}`);
 }
-if (online) {
+// The cases against the bar's recorded outcomes (EMU-351), when the recording has them.
+const CASES = ["ok", "post", "redirect", "short", "stall", "slow", "stream", "refused"];
+// What the server received for each case, by the key `seen` has it under.
+const RECEIVED = { ok: "GET /ok", post: "POST /ok", redirect: "/redirect", short: "/short", stall: "/stall", slow: "/slow", stream: "/stream" };
+// The times that are the point of a case: how far the emulator's may be from the bar's, ms. The bar's clock and the
+// computer's, a request over USB and one on the loopback, the bar's slower JS: a second covers them and still tells
+// 5 s from 7.
+const CASE_MS_TOLERANCE = 1000;
+const timeOf = (name, one) => (name === "stream" ? (one?.value?.lastMs ?? NaN) - (one?.value?.firstMs ?? NaN) : one?.ms);
+const outcome = (name, one) => {
+  if (!one) return null;
+  const value = general(one.value);
+  if (name === "stream" && value && typeof value === "object") {
+    delete value.firstMs;
+    delete value.lastMs;
+  }
+  return value;
+};
+if (recording?.cases) {
+  for (const name of CASES) {
+    const want = recording.cases[name];
+    if (!want) continue;
+    const got = outcome(name, r[name]);
+    const same = JSON.stringify(got) === JSON.stringify(want.value);
+    check(name, same, `the outcome as the BUSY Bar's recording${same ? "" : `; wanted ${JSON.stringify(want.value)}`}`);
+    if (want.received !== undefined) {
+      const received = seen[RECEIVED[name]] === undefined ? null : general(seen[RECEIVED[name]]);
+      const alike = received === want.received;
+      check(name, alike, `the server received what it received from the BUSY Bar${alike ? "" : `; BUSY Bar ${JSON.stringify(want.received)}, emulator ${JSON.stringify(received)}`}`);
+    }
+    if (["stall", "slow", "stream"].includes(name)) {
+      const apart = Math.abs(timeOf(name, r[name]) - want.ms);
+      check(name, apart <= CASE_MS_TOLERANCE, `${Math.round(timeOf(name, r[name]))} ms, the BUSY Bar ${want.ms} ms (within ${CASE_MS_TOLERANCE})`);
+    }
+  }
+}
+if (online && record) {
+  console.log(`  rec  url-name-capitals: ${JSON.stringify(r["url-name-capitals"]?.value)}`);
+} else if (online) {
   const ok = JSON.stringify(r["url-name-capitals"]?.value) === JSON.stringify(want["url-name-capitals"]);
   check("url-name-capitals", ok, `${JSON.stringify(ONLINE_URL)} as ${against}${ok ? "" : `; wanted ${JSON.stringify(want["url-name-capitals"])}`}`);
 } else {
@@ -319,9 +402,14 @@ if (record) {
   const fw = JSON.parse(await (await fetch(`http://${bar}/api/status/firmware`)).text());
   const urls = Object.fromEntries(Object.keys(URLS).map((name) => [name, r[name] ? general(r[name].value) : null]));
   if (r["url-name-capitals"]) urls["url-name-capitals"] = r["url-name-capitals"].value;
-  mkdirSync(dirname(join(here, "fetch", "x")), { recursive: true });
-  const file = join(here, "fetch", `bar-${fw.version}.json`);
-  writeFileSync(file, JSON.stringify({ source: probeSource(fw), urls }, null, 2) + "\n");
+  // Each case's outcome, what the server received for it and its time (EMU-351).
+  const cases = Object.fromEntries(
+    CASES.filter((name) => r[name]).map((name) => [name, { value: outcome(name, r[name]), ms: Math.round(timeOf(name, r[name])), ...(RECEIVED[name] ? { received: seen[RECEIVED[name]] === undefined ? null : general(seen[RECEIVED[name]]) } : {}) }]),
+  );
+  const dir = join(recordingsRoot(), "fetch");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `bar-${fw.version}.json`);
+  writeFileSync(file, JSON.stringify({ source: probeSource(fw), urls, cases }, null, 2) + "\n");
   console.log(`recorded: ${file}`);
 }
 // Without Wi-Fi (the device window's switch) a request to the network fails; only the emulator is asked.
@@ -345,6 +433,12 @@ if (!bar) {
   });
   results.offline = { name: "offline", value: offline };
   check("offline", offline === "Failed to connect to server", "without Wi-Fi a request to the network fails");
+}
+if (emptyHeader) {
+  results["empty-header"] = { name: "empty-header", value: emptyHeader };
+  const want = EMPTY_HEADER[firmware.name];
+  const got = emptyHeader.ended === "finished" && emptyHeader.lines.join("\n") === 'answered 200 "" hi' ? "answered" : /^fatal/.test(emptyHeader.ended) && emptyHeader.lines.length === 0 ? "fatal" : "other";
+  check("empty-header", want !== undefined && got === want, want === undefined ? `no line in EMPTY_HEADER for firmware ${firmware.name}` : want === "answered" ? "a header with an empty value is read as \"\"" : "a header with an empty value crashes the app, as on a BUSY Bar with this firmware");
 }
 console.log(failed ? `${failed} checks failed` : "all checks passed");
 console.log(Object.values(results).map((x) => `    ${x.name} ${x.ms} ms ${JSON.stringify(x.value)}`).join("\n"));

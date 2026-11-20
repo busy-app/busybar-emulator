@@ -342,6 +342,8 @@ publishing use the same codes. A code with a section above links to it. The exit
 | `port_busy` | Another program listens on port 8640 | [Port 8640 is in use](#port-8640-is-in-use) |
 | `settings_invalid` | `settings.json` is not what the firmware takes | [The settings file](#settings_invalid-or-the-busy-bar-shows-settings-file-is-invalid) |
 | `settings_refused` | The BUSY Bar refused a value; the answer says why | Give a value the field takes |
+| `data_format_newer` | A newer version of the emulator moved the data folder to a newer format; this older one changes nothing in it and runs no command on it | Install the newest version from the [latest release](https://github.com/busy-app/busybar-emulator/releases/latest) |
+| `data_folder_unusable` | The data folder's format record is broken (a link, unreadable, not a number), or the folder has the layout from before it; nothing in it is changed | Put `format` in the data folder right, or move the folder away to start anew |
 | `start_failed`, `server_failed`, `start_interrupted`, `start_timeout` | The emulator did not start, or ended while it started | [The emulator keeps stopping](#the-emulator-keeps-stopping-or-did-not-start) |
 | `typecheck_failed` | The project's TypeScript has errors; each names its file and line | Fix them; `build` does not check types |
 | `untrusted_package`, `untrusted_project`, `trust_needs_person` | The folder is not trusted | [Trust it](#untrusted_project) |
@@ -371,7 +373,9 @@ publishing use the same codes. A code with a section above links to it. The exit
 | `no_manifest` | The project has no `src/appmeta/manifest.json` | Run it in the app's project |
 | `not_a_license`, `not_found` | The license file is not plain text of up to 200 KB, or cannot be read | Choose the license's text file |
 | `not_screenshots` | No file was taken | A front screenshot is a PNG of 72×16, a back one of 160×80, or an exact enlargement |
-| `readme_incomplete` | The README is not written yet | Write it in the README step, with at least one How to use row |
+| `readme_incomplete` | The README is not written yet, or How to use rows given in the fields (`--usage`, `--controls`) name no control or say nothing | Write it in the README step; How to use is optional, so fix the rows or leave them out |
+| `readme_gone` | README.md was used as it is and is not in the project any more; nothing was written | Put the file back, or choose another README in the README step |
+| `readme_kept` | README.md is used as it is, and this would write another README over it | Add `--replace` to write it, or `--mode markdown` alone to edit the file's own text; in the window, Replace README.md |
 | `submission_exists` | `submission/` is there and was not made by the emulator | Move it away, then package again |
 | `write_failed` | A file could not be written | Check that the project's folder is writable and the disk not full |
 

@@ -693,7 +693,7 @@ barAddressCopy.addEventListener("click", async () => {
   barAddressCopy.title = done === "again" ? "Click again" : done ? "Copied" : "Not copied";
   barAddressCopy.classList.toggle("copied", done === true);
   setTimeout(() => {
-    barAddressCopy.title = "Copy the address of BUSY Bar";
+    barAddressCopy.removeAttribute("title"); // no hover label (Mikhail 18.11); the name is aria-label
     barAddressCopy.classList.remove("copied");
   }, 2000);
 });
@@ -1097,7 +1097,7 @@ function renderAppTop(row) {
     const folderWhy = project.unavailable ? AWAY : null;
     const pathRow = make("div", "ac-path-row");
     // The path from ~ in two parts, the project's own folder whole at its end (pathLine; window.css, .ac-path): a
-    // read-only field for the keyboard and a screen reader, its whole path in its descriptor.
+    // read-only field for the keyboard and a screen reader (its name is aria-label); no hover card, no title (Mikhail 18.11).
     const path = pathLine(project.shownFolder ?? project.folder);
     path.classList.add("ac-path");
     path.title = "";
@@ -1105,7 +1105,6 @@ function renderAppTop(row) {
     path.setAttribute("role", "textbox");
     path.setAttribute("aria-readonly", "true");
     path.ariaLabel = "The project's folder";
-    tip(path, "The project's folder", project.folder, { onText: true });
     // Select all, in the field, is the path's, not the page's. The key goes by its letter, and by its place (e.code)
     // only when the layout gives no Latin letter: on a Russian layout e.key is a Cyrillic letter, and the browser's
     // Select all still takes the key; on AZERTY the key at KeyA is Q, and Cmd+Q must stay Quit.
@@ -1417,7 +1416,8 @@ function rowNote(row) {
 function renderApps() {
   const create = $("#create-app");
   aria(create, "disabled", inShell() && !creating ? "false" : "true");
-  create.title = !inShell() ? NEEDS_APP : creating ? "Creating the app" : "Create a new app: from a template or an empty one";
+  create.title = !inShell() ? NEEDS_APP : creating ? "Creating the app" : "";
+  if (!create.title) create.removeAttribute("title"); // no hover label when it can be pressed (Mikhail 18.11); aria-label names it
   // With no app yet, Create app is the empty list's own button, the one thing to do: the heading's goes.
   create.hidden = powered && inShell() && installed !== null && !creating && rows().length === 0;
   if (!powered) {
@@ -1525,7 +1525,7 @@ function rowMenuHooks(li, row) {
     if (menuClosedBy === more) return void (menuClosedBy = null);
     const box = more.getBoundingClientRect();
     openRowMenu(row.id, { x: box.right, y: box.bottom + 4, alignRight: true, byKey: e.detail === 0, back: more });
-  }, "More", "more");
+  }, "", "more"); // no hover label (Mikhail 18.11); the name is aria-label
   more.ariaLabel = `More for ${row.name}`;
   more.ariaHasPopup = "menu";
   li.querySelector(".row-actions").append(more);
@@ -2828,8 +2828,10 @@ const catalog = (() => {
     if (answer?.ok === false || !answer?.texts) page.failed = answer?.message ?? "The project could not be read.";
     else {
       page.status = answer;
-      const read = howTo ? rowsOfReadme(answer.readme) : null;
-      const usage = read ? { rows: Object.fromEntries(howTo.CONTROLS.map((control) => [control, read.find((row) => row.control === control)?.text ?? ""])), others: read.filter((row) => !howTo.CONTROLS.includes(row.control)) } : null;
+      // README.md used as it is (EMU-365): its own How to use, read only; nothing here writes it.
+      const kept = answer.readme?.config?.mode === "file";
+      const read = howTo ? (kept ? howTo.read(answer.readme.facts?.file ?? "") : rowsOfReadme(answer.readme)) : null;
+      const usage = read ? { rows: Object.fromEntries(howTo.CONTROLS.map((control) => [control, read.find((row) => row.control === control)?.text ?? ""])), others: read.filter((row) => !howTo.CONTROLS.includes(row.control)), kept } : null;
       page.drafts = { name: answer.texts.name ?? row.name, texts: { category: "", short_description: "", description: "", changelog: "", ...(answer.texts.texts ?? {}) }, usage };
     }
     if (chosen()?.project?.folder === folder && appTab === "catalog" && sideMode === "app") {
@@ -2973,7 +2975,7 @@ const catalog = (() => {
         if (answer?.ok === false || answer?.name_problem) problems.push(answer?.name_problem ?? answer?.message ?? "The texts were not saved");
         else for (const key of ["name", "category", "short_description", "description"]) page.dirty.delete(key);
       }
-      if (page.dirty.has("usage") && howTo) {
+      if (page.dirty.has("usage") && howTo && !page.drafts.usage?.kept) {
         const answer = await actions().publish.readme({ folder, readme: readmeWith(page.status.readme, page.drafts.usage) });
         if (answer?.ok === false) problems.push(answer?.message ?? "README.md was not written");
         else page.dirty.delete("usage");
@@ -3065,12 +3067,15 @@ const catalog = (() => {
         const line = make("div", "control-row");
         const input = make("input", "ov-input");
         input.value = d.usage.rows[control] ?? "";
-        input.placeholder = { Start: "Start or pause", "Wheel turn": "Change a value", "Wheel press": "Confirm", Back: "Go back" }[control] ?? "";
+        input.placeholder = d.usage.kept ? "" : ({ Start: "Start or pause", "Wheel turn": "Change a value", "Wheel press": "Confirm", Back: "Go back" }[control] ?? "");
         input.ariaLabel = control;
-        input.addEventListener("input", () => {
-          d.usage.rows[control] = input.value;
-          changed("usage");
-        });
+        input.readOnly = d.usage.kept;
+        if (!d.usage.kept) {
+          input.addEventListener("input", () => {
+            d.usage.rows[control] = input.value;
+            changed("usage");
+          });
+        }
         // The control's chip, as the catalog's page shows it (icons/controls), and its name.
         const cap = make("span", "keycap");
         const chip = make("img");
@@ -3081,7 +3086,7 @@ const catalog = (() => {
         line.append(cap, input);
         list.append(line);
       }
-      box.append(list, make("p", "page-note", "The How to use section of README.md: the catalog shows it on the app's page."));
+      box.append(list, make("p", "page-note", d.usage.kept ? "README.md is used as it is: its How to use, read only. Change it in the file, or in Publish, README." : "Optional: the How to use section of README.md, for people reading it. The catalog does not show it yet."));
     }
     renderSave();
     appBody.replaceChildren(...folded(row, d, [...fields.children], iconsEl, controlsBox));
@@ -3099,7 +3104,7 @@ const catalog = (() => {
       { key: "short_description", label: "Short description", value: d.texts.short_description, done: Boolean(d.texts.short_description?.trim()), body: shortRow },
       { key: "description", label: "Description", value: clip(d.texts.description ?? ""), done: Boolean(d.texts.description?.trim()), body: descriptionRow },
       { key: "category", label: "Category", value: category?.name ?? "", done: Boolean(category), body: categoryRow },
-      ...(controlsBox ? [{ key: "usage", label: "Controls", value: described ? `${described} of ${howTo.CONTROLS.length} described` : "", done: described > 0, body: controlsBox }] : []),
+      ...(controlsBox ? [{ key: "usage", label: "Controls", value: described ? `${described} of ${howTo.CONTROLS.length} described` : "Optional", done: described > 0, optional: true, body: controlsBox }] : []),
     ];
     if (row.version) {
       const version = make("input", "ov-input");
@@ -3107,7 +3112,8 @@ const catalog = (() => {
       version.readOnly = true;
       items.push({ key: "version", label: "Version", value: row.version, done: true, body: pageField("Version", version, "From src/appmeta/manifest.json. An update in the catalog needs a higher one.").row });
     }
-    const counted = items.filter((item) => item.key !== "version");
+    // The version is read only; the controls are optional (EMU-364): neither counts toward ready.
+    const counted = items.filter((item) => item.key !== "version" && !item.optional);
     const ready = counted.filter((item) => item.done).length;
     const head = make("div", "ac-fold-head");
     const count = make("span", "ac-fold-count", `${ready} of ${counted.length} ready`);
@@ -3880,10 +3886,10 @@ addEventListener("load", () => {
 const consoleBox = $("#console");
 const MAX_LINES = 2000;
 
-function addLine({ kind, text, time }) {
+function addLine({ kind, text, time, note }) {
   const stick = consoleBox.scrollTop + consoleBox.clientHeight >= consoleBox.scrollHeight - 4;
   const line = document.createElement("div");
-  line.className = `line ${kind}`;
+  line.className = `line ${kind}${note ? " noted" : ""}`;
   const t = new Date(time);
   const stamp = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}`;
   // An app's console line arrives as "<app id> <severity>: <text>"; the color already says the severity.
@@ -3891,7 +3897,8 @@ function addLine({ kind, text, time }) {
   const shown = ["log", "info", "warn", "error"].includes(kind) ? text.replace(new RegExp(`^\\S+ ${kind}: `), "") : text;
   line.innerHTML = `<span class="time"></span><span class="text"></span>`;
   line.querySelector(".time").textContent = stamp;
-  line.querySelector(".text").textContent = shown;
+  // A line the emulator explains stays as the firmware wrote it; the note follows, muted (device.mjs, first-launch-note.mjs).
+  line.querySelector(".text").textContent = note ? `${shown}  (${note})` : shown;
   consoleBox.append(line);
   while (consoleBox.childElementCount > MAX_LINES) consoleBox.firstElementChild.remove();
   if (stick) consoleBox.scrollTop = consoleBox.scrollHeight;
@@ -3906,7 +3913,7 @@ const shownKind = (kind) => !consoleBox.classList.contains(`hide-${kind}`) && (!
 
 // A console that shows no line, because it has none or its filters hide them all, says so.
 function renderBlank() {
-  consoleBox.classList.toggle("blank", ![...consoleBox.children].some((line) => shownKind(line.className.replace("line ", ""))));
+  consoleBox.classList.toggle("blank", ![...consoleBox.children].some((line) => shownKind(line.classList[1])));
 }
 
 // layout-v2: how many errors the console holds, beside its name; and All or Errors.

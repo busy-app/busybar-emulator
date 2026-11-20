@@ -59,7 +59,16 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
  * timed). A firmware draws its own screens, so each is compared with the recordings of a bar on it.
  */
 export function recordingsDir(suite, firmware) {
-  return join(here, suite, firmware);
+  return join(recordingsRoot(), suite, firmware);
+}
+
+/**
+ * The folder the suites' recordings of a BUSY Bar live under: test/, unless EMU_RECORDINGS names another. The bar
+ * session's kit (bar-session/run.mjs) names one when it records an emulator, so a trial run never writes over a bar's
+ * recordings, and then runs the suites against what it wrote there.
+ */
+export function recordingsRoot() {
+  return process.env.EMU_RECORDINGS || here;
 }
 
 /** The firmware version the device at `addr` reports (GET /api/status/firmware): a bar's, or an emulator's. */
@@ -100,7 +109,7 @@ async function installAppSet(barDir, firmware) {
  * scenes need them).
  * Returns { addr, url, firmware, dataDir, apps, stop() }; stop() is also called when the process ends.
  */
-export async function ownEmulator({ firmware, barSpeed = true, apps = false, name = "suite" } = {}) {
+export async function ownEmulator({ firmware, barSpeed = true, apps = false, name = "suite", allowLocal = [] } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), `${FOLDER}${process.pid}-`));
   const own = { dataDir, stop: async () => {} };
   owned.add(own);
@@ -108,7 +117,7 @@ export async function ownEmulator({ firmware, barSpeed = true, apps = false, nam
   // The bar's log goes where the suite's pictures go when a gate runs it, and nowhere otherwise.
   const logFile = process.env.EMU_TEST_OUT ? join(outputDir(name), `server-${loadFirmware(firmware).name}.log`) : null;
   const log = logFile ? (line) => appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`) : () => {};
-  const emulator = await startServer({ dataDir, port: 0, firmware, barSpeed, log, onError: (e) => log(`error: ${e?.stack ?? e}`) });
+  const emulator = await startServer({ dataDir, port: 0, firmware, barSpeed, allowLocal, log, onError: (e) => log(`error: ${e?.stack ?? e}`) });
   let stopped = null;
   own.stop = () =>
     (stopped ??= emulator.stop().finally(() => {

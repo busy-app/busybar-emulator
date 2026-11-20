@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, test } from "./node-test.mjs";
 
 import { listening, mountReadOnlyImage, removeFolder, sleep, temporaryFolder, until } from "../helpers.mjs";
 import { launch } from "./harness.mjs";

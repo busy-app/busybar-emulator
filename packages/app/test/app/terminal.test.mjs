@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { HAS_REAL_SERVER, removeFolder, temporaryFolder, until } from "../helpers.mjs";
 import { launch } from "./harness.mjs";

@@ -7,7 +7,7 @@
 // (emu-239), learns that the shell is gone and ends, and does not stay on the bar's port. Before the watchdog the
 // loop held the thread for ever, the request had no answer, and only the shell's death was checked here.
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "./node-test.mjs";
 
 import { alive, listening, PORTS, sleep, targz } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";

@@ -20,6 +20,7 @@ import { insideRoots, within } from "./path-boundary.mjs";
 import { checkSettingsSchema } from "./projects/settings-schema.mjs";
 import { AppRuntime, InputKey, InputType } from "./runtime.mjs";
 import { BleStatus, JsRunnerError, LauncherStatus, Screen, WifiState } from "./screen.mjs";
+import { FIRST_LAUNCH_NOTE, isFirstLaunchLine } from "./first-launch-note.mjs";
 import { emptyFolder, isBusy, retrying, unpackPackage, UnpackError } from "./tar.mjs";
 import { visibleNames, volumeMakesSidecars } from "./volume.mjs";
 
@@ -281,9 +282,10 @@ export class Device {
     // the computer's (busy-emulator logs --since); "apps" when the installed or running apps change.
     this.events = new EventEmitter();
     this.logLines = []; // the latest lines, for POST /api/log_dump
-    this.log = (text, kind = "system") => {
+    // note: what the emulator says beside a line it keeps as the firmware wrote it (first-launch-note.mjs).
+    this.log = (text, kind = "system", note) => {
       log(text);
-      const line = { kind, text, time: this.barTime(), at: Date.now() };
+      const line = { kind, text, time: this.barTime(), at: Date.now(), ...(note ? { note } : {}) };
       this.logLines.push(line);
       if (this.logLines.length > LOG_LINES) this.logLines.shift();
       this.events.emit("log", line);
@@ -1168,6 +1170,10 @@ export class Device {
       // FuriLogLevel: 2 error, 3 warning. The runtime's errors (a script that throws) are the app's errors.
       onLog: (level, tag, text) => {
         if (level > 3) return;
+        // The firmware's line of an app's first launch (no file yet) is no failure: kept as it is, as information with a note.
+        // The firmware words every failure of opening that file the same; the emulator owns the storage and can tell a
+        // missing file from one that exists (on a real BUSY Bar the text alone cannot), so only a missing file is noted.
+        if (isFirstLaunchLine(id, tag, text) && !existsSync(join(this.root, "ext", "apps_data", "jsrunner", `${id}.localstorage.json`))) return this.log(`${id} [${tag}] ${text}`, "info", FIRST_LAUNCH_NOTE);
         this.log(`${id} [${tag}] ${text}`, level <= 2 ? "error" : "warn");
         appLine(text);
       },

@@ -1,6 +1,7 @@
 // The update's pop-up in the app (update-popup.mjs, legacy-window/update-popup.js), against the stand-in for GitHub
-// the updater's tests use: a newer version at the start shows it, with a few lines of the release's notes; Later
-// closes it and the top bar's notice stays; Update now starts the download, with its progress; a copy that cannot
+// the updater's tests use: a newer version at the start shows it, with the release's notes whole (the real ones of
+// 0.1.0-beta.6, nested items nested) and Release notes, which opens the release's page; long notes scroll in their own
+// area and the card stays inside the window at its smallest; Later closes it and the top bar's notice stays; Update now starts the download, with its progress; a copy that cannot
 // replace itself offers Download; the first run's greeting goes first; a version is offered once in a run; a start
 // within a day of the last check still asks, and the pop-up follows; a long version's title is never cut.
 // UPDATE_POPUP_SHOTS=<folder> also saves pictures at 1200×800 and 1140×650.
@@ -10,8 +11,9 @@ import { createHash, generateKeyPairSync } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
-import { after, afterEach, before, test } from "node:test";
+import { after, afterEach, before, test } from "./node-test.mjs";
 
+import { parseReleaseNotes } from "../../src/update-check.mjs";
 import { manifestBytes, signManifest } from "../../src/update-manifest.mjs";
 import { PORTS, removeFolder, sleep, temporaryFolder, until } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";
@@ -24,7 +26,9 @@ const mac = process.platform === "darwin";
 const ASSET = mac ? (process.arch === "arm64" ? "busybar-emulator-mac-arm64.zip" : "busybar-emulator-mac-x64.zip") : "busybar-emulator-win-x64-setup.exe";
 const skip = { skip: (!HAS_REAL_SERVER && "the server is not beside this package") || (!["darwin", "win32"].includes(process.platform) && "no update on this system") };
 const SHOTS = process.env.UPDATE_POPUP_SHOTS || null;
-const NOTES = "### Fixed\n\n- Run no longer stops at the first `fetch` of an app.\n- The 3D view keeps its camera after a restart.\n- Publish says which file is too large.\n\n## Files\n\n- `busybar-emulator-mac-arm64.dmg`: macOS\n";
+// The body of 0.1.0-beta.6's release as GitHub has it: the changelog's section, then "## Files".
+const NOTES = readFileSync(new URL("../fixtures/release-notes-v0.1.0-beta.6.md", import.meta.url), "utf8");
+const PAGE = `https://github.com/busy-app/busybar-emulator/releases/tag/v${VERSION}`;
 
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -161,11 +165,30 @@ test("a newer version at the start: the pop-up offers it with the notes; Later c
   await until(() => shown("#update-popup"), "the pop-up", 30_000);
   assert.equal(await text("#update-popup-title"), `BUSY Bar Emulator ${VERSION} is available`);
   assert.match(await text("#update-popup-about"), /^You are on \d+\.\d+\.\d+/);
-  assert.deepEqual(await app.page(`[...document.querySelectorAll("#update-popup-notes li")].map((li) => li.textContent)`), ["Run no longer stops at the first fetch of an app.", "The 3D view keeps its camera after a restart.", "Publish says which file is too large."]);
-  assert.deepEqual(await app.page(`[...document.querySelectorAll("#update-popup .update-popup-foot > *")].map((b) => b.textContent)`), ["Later", "Update now"]);
+  // The whole notes up to their Files, the features with their details nested under them, as text.
+  const notes = parseReleaseNotes(NOTES);
+  const drawn = await app.page(`(() => {
+    const area = document.querySelector("#update-popup-notes");
+    const items = (list) => [...list.children].map((li) => ({ lead: li.querySelector(":scope > strong")?.textContent ?? null, text: [...li.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim(), list: li.querySelector(":scope > ul") ? items(li.querySelector(":scope > ul")) : null }));
+    return { lists: [...area.children].map((one) => one.tagName), items: items(area.querySelector(":scope > ul")), text: area.textContent, html: area.innerHTML };
+  })()`);
+  assert.deepEqual(drawn.lists, ["UL"]);
+  const expected = (items) => items.map((one) => ({ lead: one.lead ?? null, text: one.text, list: one.list ? expected(one.list.items) : null }));
+  assert.deepEqual(drawn.items, expected(notes.blocks[0].items));
+  assert.equal(drawn.items.length, 5, "five features");
+  assert.deepEqual(drawn.items.map((one) => one.list?.length ?? 0), [3, 3, 0, 2, 1], "their details nested under them");
+  assert.ok(drawn.text.includes("set-aside/format-1-bars-<time>/."), "the last detail whole, its words as written");
+  assert.ok(!drawn.text.includes("…") && !/Files|\.dmg/.test(drawn.text), "nothing cut, nothing of the Files section");
+  assert.ok(!/<(?!\/?(ul|li|strong)>)/.test(drawn.html), `only lists and their words: ${drawn.html.slice(0, 200)}`);
+  assert.deepEqual(await app.page(`[...document.querySelectorAll("#update-popup .update-popup-foot > *")].map((b) => b.textContent)`), ["Release notes", "Later", "Update now"]);
   assert.equal(await shown("#update-popup-why"), false);
   assert.equal(await app.page(`document.activeElement?.id`), "update-popup-go", "the focus on Update now");
   await shot("offer");
+  // Release notes opens the release's page in the browser, and the pop-up stays for Update now.
+  await app.click("#update-popup-page");
+  await until(async () => (await app.run((shell) => shell.opener.opened)).includes(PAGE), "the release page opened in the browser");
+  await sleep(300);
+  assert.equal(await shown("#update-popup"), true, "the pop-up stays");
   await app.click("#update-popup-later");
   await until(async () => !(await shown("#update-popup")), "the pop-up closed");
   assert.equal(await shown("#update-go"), true, "the top bar's notice stays");
@@ -207,10 +230,14 @@ test("a copy that cannot replace itself: the pop-up says why and offers Download
   await until(() => shown("#update-popup"), "the pop-up", 30_000);
   assert.equal(await shown("#update-popup-go"), false, "no Update now");
   assert.match(await text("#update-popup-why"), mac ? /cannot write to .*Download the new version from its release page instead\.$/ : /not installed by the emulator's setup/);
-  assert.deepEqual(await app.page(`[...document.querySelectorAll("#update-popup .update-popup-foot > *")].map((b) => b.textContent)`), ["Later", "Download"]);
+  assert.deepEqual(await app.page(`[...document.querySelectorAll("#update-popup .update-popup-foot > *")].map((b) => b.textContent)`), ["Release notes", "Later", "Download"]);
+  assert.equal(await app.page(`document.querySelectorAll("#update-popup-notes > ul > li").length`), 5, "the notes here too");
   await shot("download");
+  await app.click("#update-popup-page");
+  await until(async () => (await app.run((shell) => shell.opener.opened)).filter((one) => one === PAGE).length === 1, "Release notes opened the release page");
+  assert.equal(await shown("#update-popup"), true, "the pop-up stays");
   await app.click("#update-popup-download");
-  await until(async () => (await app.run((shell) => shell.opener.opened)).includes(`https://github.com/busy-app/busybar-emulator/releases/tag/v${VERSION}`), "the release page opened in the browser");
+  await until(async () => (await app.run((shell) => shell.opener.opened)).filter((one) => one === PAGE).length === 2, "Download opened the release page");
   await until(async () => !(await shown("#update-popup")), "the pop-up closed");
   assert.ok(!asked.includes(`/download/v${VERSION}/${ASSET}`), "nothing was downloaded");
 });
@@ -273,6 +300,65 @@ test("a long version's title is never cut: it wraps, at 1140×650 and at 1200×8
       assert.deepEqual({ ...box, lines: box.lines <= 2 }, { lines: true, cut: false, ellipsis: "clip", size: "18px", weight: "500", inside: true }, `${w}×${h}: ${JSON.stringify(box)}`);
     }
     await shot("long-version");
+  } finally {
+    served[LATEST] = before;
+  }
+});
+
+test("long notes scroll in their own area; the card stays inside the window at its smallest, and only the notes scroll", skip, async () => {
+  const before = served[LATEST];
+  const long = ["- **A feature with a long name** and words that go on.", ...Array.from({ length: 60 }, (_, i) => `  - Detail ${i + 1}, with words enough to take most of a line in the pop-up's tile.`), "- **The last feature.**", "", "## Files", "", "- x"].join("\n");
+  served[LATEST] = Buffer.from(JSON.stringify({ tag_name: `v${VERSION}`, body: long }));
+  try {
+    await start({ place: readOnly });
+    await until(() => shown("#update-popup-notes"), "the pop-up with its notes", 30_000);
+    for (const [w, h] of [
+      [1140, 600],
+      [1140, 650],
+      [1200, 800],
+    ]) {
+      await app.run((shell, _electron, size) => shell.windows.current.win.setContentSize(size[0], size[1]), [w, h]);
+      await sleep(400);
+      const box = await app.page(`(() => {
+        const card = document.querySelector("#update-popup .update-popup");
+        const notes = document.querySelector("#update-popup-notes");
+        const r = card.getBoundingClientRect();
+        const foot = document.querySelector("#update-popup .update-popup-foot").getBoundingClientRect();
+        notes.scrollTop = 0;
+        notes.scrollTop = 200;
+        const scrolled = notes.scrollTop;
+        notes.scrollTop = notes.scrollHeight;
+        const last = [...notes.querySelectorAll(":scope > ul > li")].at(-1).getBoundingClientRect();
+        const n = notes.getBoundingClientRect();
+        const shownLast = last.top >= n.top && last.bottom <= n.bottom + 0.5;
+        notes.scrollTop = 0;
+        return { inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, footInside: foot.bottom <= r.bottom, cardScrolls: card.scrollHeight > card.clientHeight + 1, notesScroll: notes.scrollHeight > notes.clientHeight, scrolled, shownLast, height: Math.round(n.height), window: [innerWidth, innerHeight] };
+      })()`);
+      assert.deepEqual({ inside: box.inside, footInside: box.footInside, cardScrolls: box.cardScrolls, notesScroll: box.notesScroll, scrolls: box.scrolled > 0, shownLast: box.shownLast, tall: box.height >= 44 && box.height <= 320 }, { inside: true, footInside: true, cardScrolls: false, notesScroll: true, scrolls: true, shownLast: true, tall: true }, `${w}×${h}: ${JSON.stringify(box)}`);
+    }
+    // The last detail and the last feature are there, whole: nothing was left out of a body this long.
+    assert.equal(await app.page(`document.querySelectorAll("#update-popup-notes > ul > li:first-child > ul > li").length`), 60);
+    assert.equal(await text("#update-popup-notes > ul > li:last-child"), "The last feature.");
+    await shot("long-notes");
+  } finally {
+    served[LATEST] = before;
+  }
+});
+
+test("one line of notes takes one line: the tile is as tall as its text, no empty space under it", skip, async () => {
+  const before = served[LATEST];
+  served[LATEST] = Buffer.from(JSON.stringify({ tag_name: `v${VERSION}`, body: "Fixes the Run button.\n\n## Files\n\n- x\n" }));
+  try {
+    await start({ place: readOnly });
+    await until(() => shown("#update-popup-notes"), "the pop-up with its notes", 30_000);
+    const box = await app.page(`(() => {
+      const notes = document.querySelector("#update-popup-notes");
+      const style = getComputedStyle(notes);
+      const words = notes.querySelector("p").getBoundingClientRect();
+      return { height: Math.round(notes.getBoundingClientRect().height), padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom), words: Math.round(words.height), scrolls: notes.scrollHeight > notes.clientHeight };
+    })()`);
+    assert.deepEqual(box, { height: 44, padding: 24, words: 20, scrolls: false }, JSON.stringify(box));
+    assert.equal(await text("#update-popup-notes"), "Fixes the Run button.");
   } finally {
     served[LATEST] = before;
   }

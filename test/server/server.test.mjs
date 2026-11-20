@@ -559,13 +559,46 @@ test("a port that a program holds on every address of the computer counts as in 
   }
 });
 
+/**
+ * What a TCP connection to `address`:`port` comes to, within `ms`: "refused" (nothing listens there), "connected"
+ * (something accepted it), or "unreached" with the system's reason (a timeout, no route, an address that is gone).
+ */
+function reach(address, port, ms) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: address, port });
+    const done = (outcome) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(outcome);
+    };
+    const timer = setTimeout(() => done({ outcome: "unreached", why: `no answer in ${ms} ms` }), ms);
+    socket.once("connect", () => done({ outcome: "connected" }));
+    socket.once("error", (error) => done(error.code === "ECONNREFUSED" ? { outcome: "refused" } : { outcome: "unreached", why: error.code ?? error.message }));
+  });
+}
+
+/** How long a connection to one of the computer's own addresses may take: an answer from this computer comes at once. */
+const OWN_ADDRESS_MS = 3_000;
+
 test("the server listens on this computer's own address only", async (t) => {
   const emulator = await start(t);
   assert.match(emulator.url, /^http:\/\/127\.0\.0\.1:\d+$/);
-  const addresses = Object.values(networkInterfaces()).flat().filter((i) => i.family === "IPv4" && !i.internal).map((i) => i.address);
-  if (!addresses.length) t.diagnostic("no network address on this computer: only the address in the handle was checked");
-  // On the computer's addresses in the network nothing answers on that port.
-  for (const address of addresses) await assert.rejects(get(`http://${address}:${emulator.port}/api/version`), { code: "ECONNREFUSED" });
+  const addresses = () => Object.values(networkInterfaces()).flat().filter((i) => i.family === "IPv4" && !i.internal).map((i) => i.address);
+  if (!addresses().length) t.diagnostic("no network address on this computer: only the address in the handle was checked");
+  // On the computer's addresses in the network nothing accepts a connection on that port. A connection that is
+  // accepted fails the test, whatever comes after it. One that never gets an answer is no listener either: a socket
+  // listening on this computer's own address takes a connection at once. That happens while an interface comes or
+  // goes (17.11 on the Mac, Wi-Fi, Tailscale and the BUSY Bar's USB changing: a request to one of them hung for 81 s
+  // and ended in a reset), so it is said, not failed, unless no address that is still the computer's refused (EMU-330).
+  const seen = [];
+  for (const address of addresses()) {
+    const { outcome, why } = await reach(address, emulator.port, OWN_ADDRESS_MS);
+    assert.notEqual(outcome, "connected", `something accepted a connection on ${address}:${emulator.port}`);
+    const still = addresses().includes(address);
+    if (outcome === "unreached") t.diagnostic(`${address}: not reached (${why}; ${still ? "still an address of this computer" : "no longer an address of this computer"})`);
+    if (still) seen.push(outcome);
+  }
+  if (seen.length) assert.ok(seen.includes("refused"), "none of this computer's addresses could be reached: nothing was checked");
 });
 
 test("a data folder that cannot be used: an error that says what is wrong, and nothing left behind", async (t) => {

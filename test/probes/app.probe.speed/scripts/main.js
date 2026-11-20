@@ -7,6 +7,13 @@
 //   drawFull   POST /api/display/draw with that frame, from fetch() to the answer's text
 //   drawText   the same with one short text element
 //   loopFps    step + xpm + draw, one frame after another, as an app animating from JS would
+//   calls      an app's frame made the way apps make one: a 72x7 XPM of digits by String(), one call a pixel, and
+//              the draw's body around it by JSON.stringify (the drawtime probe of EMU-344): function calls
+//   noCalls    the same XPM of digits without a call: a digit taken from a string by index (EMU-344)
+//   cheapCalls an empty JS function called as often as calls calls String(): the price of a call alone (EMU-344)
+//   drawtime   the drawtime probe itself: its frame made, then drawn, ten times one after another
+//   drawtimeFrame  the same JS, but the draw sends this probe's 72x16 frame of 32 colors (made before the clock):
+//              whether a heavier frame shows the redraw after a draw (redrawMs, EMU-317)
 const APP = "app.probe.speed";
 const W = 72;
 const H = 16;
@@ -48,6 +55,47 @@ function xpm() {
   return lines.join("\n");
 }
 
+// The calls piece: what the drawtime probe of EMU-344 timed as "build-only", in the same shape its TypeScript compiles to.
+function graph(seed) {
+  const rows = [];
+  for (let r = 0; r < 7; r += 1) {
+    let line = "";
+    for (let c = 0; c < 72; c += 1) line += String((r * 7 + c * 3 + seed) % 5);
+    rows.push(line);
+  }
+  return ["! XPM2", "72 7 5 1", "0 c #262C36", "1 c #0E5C2E", "2 c #108F3E", "3 c #2BC653", "4 c #56F08A", ...rows].join("\n");
+}
+
+function elements(i) {
+  return [
+    { id: "t", type: "text", display: "front", align: "top_left", x: 1, y: -1, text: `run ${i}`, font: "small", color: "#FFFFFFFF", z_index: 2 },
+    { id: "g", type: "xpmbitmap", display: "front", align: "top_left", x: 0, y: 9, data: graph(i), z_index: 1 },
+  ];
+}
+
+const calls = (i) => JSON.stringify({ application_name: "app.probe.drawtime", priority: 50, elements: elements(i + 200) });
+
+// The drawtime probe's body as this app sends it: the calls piece under this app's name.
+const drawtimeBody = (i) => JSON.stringify({ application_name: APP, priority: 50, elements: elements(i + 200) });
+
+// The calls piece's XPM without a call: the digit by index into a string.
+const DIGITS = "01234";
+function noCalls(seed) {
+  const rows = [];
+  for (let r = 0; r < 7; r += 1) {
+    let line = "";
+    for (let c = 0; c < 72; c += 1) line += DIGITS[(r * 7 + c * 3 + seed) % 5];
+    rows.push(line);
+  }
+  return rows.length;
+}
+
+// As many calls as the calls piece makes of String(), to a function that does nothing.
+function nothing(x) {}
+function cheapCalls(seed) {
+  for (let k = 0; k < 504; k += 1) nothing(k + seed);
+}
+
 function body(elements) {
   return JSON.stringify({ application_name: APP, priority: 50, elements });
 }
@@ -81,6 +129,9 @@ function timedDraws(make, count) {
 const result = {};
 result.stepMs = timed(step, 2000);
 result.xpmMs = timed(xpm, 1500);
+result.callsMs = timed(calls, 1500);
+result.noCallsMs = timed(noCalls, 1500);
+result.cheapCallsMs = timed(cheapCalls, 1500);
 result.drawFullBytes = frameBody().length;
 result.drawTextBytes = textBody(0).length;
 
@@ -91,6 +142,25 @@ timedDraws(textBody, 10)
   })
   .then((ms) => {
     result.drawFullMs = ms;
+    // The drawtime probe: each draw's body made after the last one's answer, then sent.
+    const t0 = Date.now();
+    let chain = Promise.resolve();
+    for (let i = 0; i < 10; i++) chain = chain.then(() => draw(drawtimeBody(i)));
+    return chain.then(() => {
+      result.drawtimeMs = (Date.now() - t0) / 10;
+    });
+  })
+  .then(() => {
+    // The same JS, this probe's frame drawn.
+    const frame = frameBody();
+    const t0 = Date.now();
+    let chain = Promise.resolve();
+    for (let i = 0; i < 10; i++) chain = chain.then(() => (drawtimeBody(i), draw(frame)));
+    return chain.then(() => {
+      result.drawtimeFrameMs = (Date.now() - t0) / 10;
+    });
+  })
+  .then(() => {
     // Frame after frame for 5 s. Each frame starts from the last one's answer and the promises are not chained, so a
     // fast emulator does not pile them up in the heap.
     return new Promise((resolve) => {

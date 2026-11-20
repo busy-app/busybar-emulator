@@ -100,6 +100,18 @@ const until = async (check, what, ms = 10_000) => {
   }
 };
 
+/** The helper's "started <exe> (process N)" lines: every program it launched, in order. */
+const launches = (plan) => readFileSync(plan.log, "utf8").match(/started .* \(process [^)]+\)$/gm) ?? [];
+
+/**
+ * The old version, started again by the helper: its launch is in the helper's log by the time the helper ends, and the
+ * detached script then writes its mark. On a loaded machine that takes a while: up to 60 s.
+ */
+async function oldStartedAgain(plan) {
+  assert.equal(launches(plan).length, 2, `the helper launched the new version, then the old one: ${launches(plan).join(" | ")}`);
+  await until(() => existsSync(path.join(path.dirname(plan.folder), "ran-old")), "the old version's mark", 60_000);
+}
+
 mac("macOS: the new bundle goes in, starts and says so; the old one goes", async () => {
   const plan = macPlan(path.join(T, "good"));
   bundle(plan.target, `#!/bin/sh\necho old > "$MARKS/ran-old"\n`);
@@ -124,7 +136,34 @@ mac("macOS: a new version that ends before it is up is taken out, and the old on
   assert.equal(result.code, "did_not_start");
   assert.match(result.message, /did not start, so the emulator went back to 0\.1\.0-beta\.1/);
   assert.match(readFileSync(plan.exe, "utf8"), /ran-old/, "the old version is back in its place");
-  await until(() => existsSync(path.join(path.dirname(plan.folder), "ran-old")), "the old version started again");
+  await oldStartedAgain(plan);
+});
+
+mac("macOS: a new version that moved the data folder to a newer format and then ended stays; the old one is not put back, and the result says why", async () => {
+  const plan = macPlan(path.join(T, "moved"));
+  const data = path.dirname(path.dirname(plan.folder));
+  mkdirSync(data, { recursive: true });
+  writeFileSync(path.join(data, "format"), "2\n");
+  bundle(plan.target, `#!/bin/sh\necho old > "$MARKS/ran-old"\n`);
+  bundle(plan.bundle, `#!/bin/sh\nprintf '3\\n' > "$MARKS/../format"\nexit 3\n`);
+  assert.equal(await runHelper(plan), 0);
+  const result = JSON.parse(readFileSync(plan.result, "utf8"));
+  assert.equal(result.code, "ended_after_move");
+  assert.equal(result.format, 3);
+  assert.match(result.message, /moved the data folder to its format 3 and then ended before it was up; 0\.1\.0-beta\.1 cannot open that folder any more/);
+  assert.match(readFileSync(plan.exe, "utf8"), /format/, "the new version stays in the app's place");
+  assert.match(readFileSync(path.join(plan.previous, "Contents", "MacOS", "BUSY Bar Emulator"), "utf8"), /ran-old/, "the old version is kept in the staging folder");
+  // The helper has ended (runHelper waited for it) and launched one program, the new version: the old one never ran.
+  assert.equal(launches(plan).length, 1, `the helper launched: ${launches(plan).join(" | ")}`);
+  assert.ok(!existsSync(path.join(path.dirname(plan.folder), "ran-old")), "the old version was not started");
+  // The same format as before is no move: the old version goes back as before.
+  const same = macPlan(path.join(T, "same"));
+  mkdirSync(path.dirname(path.dirname(same.folder)), { recursive: true });
+  writeFileSync(path.join(path.dirname(path.dirname(same.folder)), "format"), "2\n");
+  bundle(same.target, `#!/bin/sh\necho old > "$MARKS/ran-old"\n`);
+  bundle(same.bundle, "#!/bin/sh\nexit 3\n");
+  assert.equal(await runHelper(same), 0);
+  assert.equal(JSON.parse(readFileSync(same.result, "utf8")).code, "did_not_start");
 });
 
 mac("a plan whose token is not the one given is refused, and nothing moves", async () => {
@@ -151,7 +190,8 @@ mac("macOS: a new bundle changed after the app checked it is not put in; the old
   assert.match(result.message, /changed after the emulator checked it/);
   assert.match(readFileSync(plan.exe, "utf8"), /ran-old/, "the old version is where it was");
   assert.ok(!existsSync(plan.staging), "the changed bundle is removed");
-  await until(() => existsSync(path.join(path.dirname(plan.folder), "ran-old")), "the old version started again");
+  assert.equal(launches(plan).length, 1, "the helper launched the old version, and nothing else");
+  await until(() => existsSync(path.join(path.dirname(plan.folder), "ran-old")), "the old version's mark", 60_000);
 });
 
 test("Windows: the setup is checked against the manifest's SHA-256 right before it runs", async () => {

@@ -235,3 +235,28 @@ test("a file changed while the check builds: the check's record is of the files 
   const status = (await cli(home, ["publish", "status", dir])).json;
   assert.deepEqual([status.check.stale, status.check.changed], [true, ["src/main.ts"]]);
 });
+
+// ---------------------------------------------------------------- the AI usage, as the person gave it (EMU-359)
+
+test("publish ai notes the AI usage and its explanation in .busy/publish.json; status gives them back", async (t) => {
+  const { home, dir } = readyProject(t);
+  assert.equal((await cli(home, ["publish", "status", dir])).json.github.ai, null, "nothing noted yet");
+  const noted = await cli(home, ["publish", "ai", dir, "--ai=partly", "--ai-note=The settings page,\n  and the parser."]);
+  assert.deepEqual([noted.json.ok, noted.json.choice, noted.json.note], [true, "partly", "The settings page, and the parser."]);
+  assert.deepEqual((await cli(home, ["publish", "status", dir])).json.github.ai, { choice: "partly", note: "The settings page, and the parser." });
+  assert.equal(JSON.parse(readFileSync(path.join(dir, ".busy", "publish.json"), "utf8")).steps.ai.note, "The settings page, and the parser.");
+  // A token in it is masked before it is kept (review of #226).
+  assert.equal((await cli(home, ["publish", "ai", dir, "--ai=full", "--ai-note=Key ghp_abcdefghijklmnop1234 inside."])).json.note, "Key … inside.");
+  // "None" keeps no explanation; a choice that is none of the three, or an explanation too long, is refused.
+  assert.deepEqual((await cli(home, ["publish", "ai", dir, "--ai=none", "--ai-note=left over"])).json.note, "");
+  assert.equal((await cli(home, ["publish", "ai", dir, "--ai=some"])).json.code, "usage");
+  assert.equal((await cli(home, ["publish", "ai", dir, "--ai=full", `--ai-note=${"word ".repeat(250)}`])).json.code, "usage");
+  assert.deepEqual((await cli(home, ["publish", "status", dir])).json.github.ai, { choice: "none", note: "" });
+  // A note written by hand that is no choice is not shown.
+  const file = path.join(dir, ".busy", "publish.json");
+  const record = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify({ ...record, steps: { ...record.steps, ai: { choice: "most", note: 7 } } }));
+  assert.equal((await cli(home, ["publish", "status", dir])).json.github.ai, null);
+  // It is the flow's own .busy/: the help for people does not list it.
+  assert.doesNotMatch((await cli(home, ["publish", "nothing"])).json.message, /\bai\b/);
+});

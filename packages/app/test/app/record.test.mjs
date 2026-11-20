@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, test } from "./node-test.mjs";
 
 import { readMp4 } from "../../src/capture-mp4.mjs";
 import { APP_DIR, HAS_REAL_SERVER, NODE, PORTS, removeFolder, sleep, targz, temporaryFolder } from "../helpers.mjs";

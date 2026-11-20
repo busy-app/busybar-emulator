@@ -412,6 +412,7 @@ static char emu_unhandled_text[1024];
 
 extern uint32_t emu_vm_ops;
 extern uint32_t emu_alloc_bytes;
+extern uint32_t emu_calls;
 
 // A string value into buf, cut to fit (no JS heap).
 static void string_to_buf(jerry_value_t value, char* buf, size_t size) {
@@ -520,7 +521,7 @@ static void describe_reason(jerry_value_t reason, char* where, char* out, size_t
 // list; "" when there is none. The host asks until "" after every slice (packages/server/runtime.mjs).
 EMSCRIPTEN_KEEPALIVE const char* emu_unhandled_take(void) {
     emu_unhandled_text[0] = '\0';
-    uint32_t ops = emu_vm_ops, bytes = emu_alloc_bytes;
+    uint32_t ops = emu_vm_ops, bytes = emu_alloc_bytes, calls = emu_calls;
     if(emu_unhandled_count > 0) {
         EmuUnhandled entry = emu_unhandled[0];
         memmove(&emu_unhandled[0], &emu_unhandled[1], (emu_unhandled_count - 1) * sizeof(EmuUnhandled));
@@ -535,6 +536,7 @@ EMSCRIPTEN_KEEPALIVE const char* emu_unhandled_take(void) {
     }
     emu_vm_ops = ops;
     emu_alloc_bytes = bytes;
+    emu_calls = calls;
     return emu_unhandled_text;
 }
 
@@ -677,6 +679,15 @@ EMSCRIPTEN_KEEPALIVE void emu_terminate(void) {
 // jmem_heap_alloc), where the native work of strings, objects and the garbage collector shows (packages/engine/patches.mjs).
 uint32_t emu_vm_ops;
 uint32_t emu_alloc_bytes;
+// Calls and constructions of functions (ecma_op_function_call, ecma_op_function_construct): JS functions, the engine's
+// built-ins and the firmware's globals alike. Work the other two counters do not see: a call to a built-in is one
+// instruction, and much of what it does allocates nothing. Not in the bar speed model yet: a price for calls waits for
+// a recording of a BUSY Bar that separates it (EMU-344).
+uint32_t emu_calls;
+
+EMSCRIPTEN_KEEPALIVE uint32_t emu_calls_count(void) {
+    return emu_calls;
+}
 
 EMSCRIPTEN_KEEPALIVE uint32_t emu_vm_ops_count(void) {
     return emu_vm_ops;

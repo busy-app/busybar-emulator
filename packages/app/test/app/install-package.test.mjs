@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, test } from "node:test";
+import { after, test } from "./node-test.mjs";
 
 import { appPackage } from "../fixtures/app-package.mjs";
 import { FAKE_GH, fakeSignedIn } from "../fixtures/fake-gh.mjs";

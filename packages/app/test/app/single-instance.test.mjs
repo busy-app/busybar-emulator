@@ -1,7 +1,7 @@
 // The app runs once: a second launch ends at once and brings the window of the first to the front.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { APP_DIR, endOnExit, FAKE_SERVER, CHROMIUM_GONE_WITHIN_MS, NODE, PORTS, survivors, until } from "../helpers.mjs";
 import { ELECTRON, launch, QUIET_ENV, VISIBLE } from "./harness.mjs";

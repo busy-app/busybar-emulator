@@ -2,14 +2,14 @@
 // files written for the case, run with --test-reporter=tap as the gate runs them.
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { execProgram } from "../packages/engine/programs.mjs";
-import { ALLOWED_SKIPS, lockIsStale, machineSkipsOf, NO_REASON, partialScope, sortSkips, stillRunning, tallyEvents, tallyTap, tallyTotals, verdictOf } from "./gate-lib.mjs";
+import { ALLOWED_SKIPS, failuresOf, fileOutcome, flakeVerdict, KNOWN_FLAKES, lockIsStale, machineSkipsOf, NO_REASON, partialScope, referencesOf, sortFailures, sortSkips, stillRunning, tallyEvents, tallyTap, tallyTotals, touchedTests, verdictOf } from "./gate-lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -35,7 +35,8 @@ function tally(sources) {
     text = String(e.stdout);
     code = e.status;
   }
-  return { ...tallyTap(text, files), code, unfinished: tallyEvents(existsSync(events) ? readFileSync(events, "utf8") : null) };
+  const recorded = existsSync(events) ? readFileSync(events, "utf8") : null;
+  return { ...tallyTap(text, files), code, recorded, unfinished: tallyEvents(recorded), failures: failuresOf(recorded) };
 }
 
 const withoutTestContext = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "NODE_TEST_CONTEXT"));
@@ -311,4 +312,140 @@ test("the gate on a system other than Windows: EMU_GATE_REMOTE=windows with app 
   assert.match(r.stdout, new RegExp(`PARTIAL RUN, not the gate: --only ${one}; skipped on request: app`));
   assert.doesNotMatch(r.stdout, /all green|which this machine does not run/);
   rmSync(join(dir, "remote-out"), { recursive: true, force: true });
+});
+
+test("the failures the reporter records: each test, hook and file that failed, with its file and the first line of its error; not the blocks around them", () => {
+  const t = tally({
+    "flaky.test.mjs": [
+      'import { describe, test } from "node:test";',
+      'test("the 3D probe", () => { throw new Error("in the app: Error: The 3D view did not answer\\n    at mount.js:254"); });',
+      'describe("block", () => { test("inside", () => { throw new Error("another"); }); });',
+      'test("passes", () => {});',
+    ].join("\n"),
+    "hook.test.mjs": 'import { after, test } from "node:test";\ntest("fine", () => {});\nafter(() => { throw new Error("UDP 0.0.0.0:53975"); });\n',
+  });
+  const seen = t.failures.map((f) => [f.file.split(/[\\/]/).pop(), f.name.split(/[\\/]/).pop(), f.error]).sort();
+  assert.deepEqual(seen, [
+    ["flaky.test.mjs", "inside", "another"],
+    ["flaky.test.mjs", "the 3D probe", "in the app: Error: The 3D view did not answer"],
+    ["hook.test.mjs", "hook.test.mjs", "UDP 0.0.0.0:53975"],
+  ]);
+});
+
+test("a failure is a known flake only when suite, system, file, test and error all match its entry; anything else counts", () => {
+  const ledger = [{ key: "EMU-001", suite: "app", on: ["win32"], file: "test/app/x.test.mjs", test: /^the probe/, error: /did not answer/, why: "w" }];
+  // A Windows checkout's folder, put together here (a path written whole would read as somebody's own to the export check).
+  const cwd = ["C:", "work", "emulator", "packages", "app"].join("\\");
+  const failure = (over = {}) => ({ file: `${cwd}\\test\\app\\x.test.mjs`, name: "the probe of the view", nesting: 0, type: "testCodeFailure", error: "in the app: Error: The view did not answer", ...over });
+  const sort = (failures, platform = "win32", suite = "app") => sortFailures(failures, { suite, cwd, platform, ledger });
+  assert.deepEqual(sort([failure()]).known.map((k) => [k.key, k.file]), [["EMU-001", "test/app/x.test.mjs"]]);
+  assert.equal(sort([failure()]).unknown.length, 0);
+  for (const [why, sorted] of [
+    ["another system", sort([failure()], "darwin")],
+    ["another suite", sort([failure()], "win32", "app-unit")],
+    ["another file", sort([failure({ file: `${cwd}\\test\\app\\y.test.mjs` })])],
+    ["another test", sort([failure({ name: "a click" })])],
+    ["another error", sort([failure({ error: "AssertionError: 1 !== 2" })])],
+  ]) assert.deepEqual([sorted.known.length, sorted.unknown.length], [0, 1], why);
+  // One known and one other: the other keeps the suite red (gate.mjs turns a suite green only with no unknown).
+  assert.deepEqual(((r) => [r.known.length, r.unknown.length])(sort([failure(), failure({ name: "a click" })])), [1, 1]);
+});
+
+test("a known flake turns its suite green only when nothing else is wrong: no file stopped midway, no other failure", () => {
+  // The review of EMU-330: a known flake in one file and another file that ended its process after 2 of its 4 tests
+  // was green, since the unfinished tests were looked at only for exit code 0.
+  const ledger = [{ key: "EMU-001", suite: "app", file: "test/app/flaky.test.mjs", test: /^the probe/, error: /did not answer/, why: "w" }];
+  const cwd = ["", "work", "emulator", "packages", "app"].join("/");
+  const flaky = { file: `${cwd}/test/app/flaky.test.mjs`, name: "the probe", nesting: 0, type: "testCodeFailure", error: "The 3D view did not answer (probe full)" };
+  const events = [
+    JSON.stringify({ failed: flaky }),
+    JSON.stringify({ file: `${cwd}/test/app/cut.test.mjs`, registered: 4, finished: 2, unfinished: ["second ends the process", "third, never runs"] }),
+    JSON.stringify({ file: flaky.file, registered: 2, finished: 2, unfinished: [] }),
+  ].join("\n");
+  const verdict = (over) => flakeVerdict({ failures: failuresOf(events), suite: "app", cwd, platform: "darwin", ledger, fail: 1, ...over });
+  assert.equal(verdict({ unfinished: [] }).green, true, "the flake alone");
+  const unfinished = tallyEvents(events);
+  assert.equal(unfinished.length, 1);
+  assert.equal(verdict({ unfinished }).green, false, "a file that stopped midway");
+  assert.equal(verdict({ unfinished: [], fail: 2 }).green, false, "more failed tests than known failures (one the reporter did not name)");
+  assert.equal(verdict({ unfinished: [], problems: ["a skip without a reason"] }).green, false, "another problem of the tally");
+  assert.equal(flakeVerdict({ failures: [], suite: "app", cwd, ledger, fail: 0 }).green, false, "no failure: not a flake's green");
+});
+
+test("EMU-328's entry takes only the full probe's timeout, not any request of the 3D view that went unanswered", () => {
+  const cwd = ["C:", "work", "emulator", "packages", "app"].join("\\");
+  const failure = (error) => ({ file: `${cwd}\\test\\app\\stage3d.test.mjs`, name: "the RGB LEDs at the ends of Start follow the state the page gives: the hue", nesting: 0, type: "testCodeFailure", error });
+  const sort = (error) => ((r) => [r.known.length, r.unknown.length])(sortFailures([failure(error)], { suite: "app", cwd, platform: "win32" }));
+  assert.deepEqual(sort("in the app: Error: The 3D view did not answer (probe full)"), [1, 0]);
+  for (const other of ["in the app: Error: The 3D view did not answer (probe)", "in the app: Error: The 3D view did not answer (lights)", "in the app: Error: The 3D view did not answer"]) assert.deepEqual(sort(other), [0, 1], other);
+  // The text the entry reads is the one mount.js gives: what was asked, "full" for a full probe.
+  const mount = readFileSync(join(here, "..", "packages", "server", "legacy-window", "stage3d", "mount.js"), "utf8");
+  assert.match(mount, /The 3D view did not answer \(\$\{\[message\?\.type, message\?\.full \? "full" : null\]/);
+});
+
+test("gate:repeat counts a file as passed in a run only when a test of it passed and none failed, a known flake included", () => {
+  const at = (name) => ["", "w", "emulator", "packages", "app", "test", "app", name].join("/");
+  const summary = (name, over = {}) => JSON.stringify({ file: at(name), registered: 3, finished: 3, unfinished: [], passed: 3, skipped: 0, ...over });
+  const failed = (name) => JSON.stringify({ failed: { file: at(name), name: "the probe", nesting: 0, type: "testCodeFailure", error: "The 3D view did not answer (probe full)" } });
+  const file = "packages/app/test/app/a.test.mjs";
+  assert.equal(fileOutcome([summary("a.test.mjs")], file, true), "passed");
+  assert.equal(fileOutcome([`${failed("a.test.mjs")}\n${summary("a.test.mjs", { passed: 2 })}`], file, true), "failed", "a known flake that the gate let through");
+  assert.equal(fileOutcome([summary("a.test.mjs", { passed: 0, skipped: 3 })], file, true), "not run", "every test skipped itself");
+  assert.equal(fileOutcome([], file, true), "not run", "the suite left out (a Mac without Electron)");
+  assert.equal(fileOutcome([summary("a.test.mjs", { finished: 1, unfinished: ["b", "c"], passed: 1 })], file, false), "failed", "stopped midway");
+  assert.equal(fileOutcome([summary("a.test.mjs")], file, false), "failed", "a red run that no test explains");
+  assert.equal(fileOutcome([`${failed("b.test.mjs")}\n${summary("a.test.mjs")}`], file, false), "passed", "another file failed");
+  assert.equal(fileOutcome([summary("a.test.mjs")], `emulator/${file}`, true), "passed", "named from the repository's top");
+});
+
+test("the gate's reporter counts each file's passed and skipped tests, which gate:repeat goes by", () => {
+  const t = tally({
+    "some.test.mjs": 'import { test } from "node:test";\ntest("passes", () => {});\ntest("skips", { skip: "why" }, () => {});\ntest("to do", { todo: "later" }, () => {});\n',
+    "none.test.mjs": 'import { test } from "node:test";\ntest("skips", { skip: "why" }, () => {});\n',
+  });
+  const summaries = t.recorded.split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((e) => e.registered !== undefined);
+  const of = (name) => summaries.find((e) => e.file.endsWith(name));
+  assert.deepEqual([of("some.test.mjs").passed, of("some.test.mjs").skipped], [1, 2]);
+  assert.deepEqual([of("none.test.mjs").passed, of("none.test.mjs").skipped], [0, 1]);
+  assert.equal(fileOutcome([t.recorded], "some.test.mjs", true), "passed");
+  assert.equal(fileOutcome([t.recorded], "none.test.mjs", true), "not run");
+});
+
+test("every known flake names a task of the backlog that is still open", { skip: !existsSync(join(here, "..", "docs", "backlog")) && "the backlog lives in the monorepo, not in the public tree" }, () => {
+  const backlog = join(here, "..", "docs", "backlog");
+  const text = readdirSync(backlog)
+    .filter((f) => /^E\d+-.*\.md$/.test(f))
+    .map((f) => readFileSync(join(backlog, f), "utf8"))
+    .join("\n");
+  // The statuses of a task that is over, by their places in board.mjs's list (new, ready, in work, in review, done,
+  // blocked, canceled, obsolete); read from there, since the public tree has no Cyrillic.
+  const statuses = JSON.parse(/^const STATUSES = (\[.*\]);$/m.exec(readFileSync(join(backlog, "board.mjs"), "utf8"))[1]);
+  assert.equal(statuses.length, 8, "board.mjs's statuses are not the eight this test knows");
+  const closed = [statuses[4], statuses[6], statuses[7]];
+  for (const entry of KNOWN_FLAKES) {
+    assert.match(entry.key, /^EMU-\d{3}$/);
+    const status = new RegExp(`^### ${entry.key} .*\\n\`[^\`]*, ([^,\`]+)\`;`, "m").exec(text)?.[1];
+    assert.ok(status, `${entry.key} is not a task of the backlog`);
+    assert.ok(!closed.includes(status), `${entry.key} is ${status}: take its entry out of KNOWN_FLAKES`);
+    for (const field of ["suite", "file", "test", "error", "why"]) assert.ok(entry[field], `${entry.key}: ${field}`);
+  }
+});
+
+test("a targeted run takes the changed test files and those that reach a changed file through their imports or new URL()", () => {
+  assert.deepEqual(referencesOf('import a from "./a.mjs";\nimport { b } from "../b.mjs";\nimport "./side.mjs";\nawait import("./late.mjs");\nnew URL("../../src/x.mjs", import.meta.url);\nimport fs from "node:fs";').sort(), ["../../src/x.mjs", "../b.mjs", "./a.mjs", "./late.mjs", "./side.mjs"]);
+  const tree = {
+    "pkg/test/one.test.mjs": 'import { h } from "./helper.mjs";',
+    "pkg/test/two.test.mjs": 'const f = new URL("../src/read.mjs", import.meta.url);',
+    "pkg/test/three.test.mjs": 'import x from "node:fs";',
+    "pkg/test/helper.mjs": 'import { y } from "../src/deep.mjs";',
+    "pkg/src/deep.mjs": "export const y = 1;",
+    "pkg/src/read.mjs": "",
+  };
+  const read = (f) => tree[f] ?? null;
+  const tests = ["pkg/test/one.test.mjs", "pkg/test/two.test.mjs", "pkg/test/three.test.mjs"];
+  const touched = touchedTests(["pkg/src/deep.mjs", "pkg/src/read.mjs", "pkg/test/three.test.mjs"], tests, read);
+  assert.deepEqual(touched.files.sort(), tests.slice().sort());
+  assert.equal(touched.why.get("pkg/test/one.test.mjs"), "reaches pkg/src/deep.mjs");
+  assert.equal(touched.why.get("pkg/test/three.test.mjs"), "changed");
+  assert.deepEqual(touchedTests(["pkg/src/other.mjs"], tests, read).files, []);
 });

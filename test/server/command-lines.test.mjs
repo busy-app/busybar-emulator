@@ -37,8 +37,10 @@ const CHECKED = [
   "test/archives/make.mjs",
   "test/state/make.mjs",
   "test/state/record.mjs",
+  "test/bar-session/run.mjs",
   "test/gate.mjs",
   "tools/gate/win.mjs",
+  "tools/gate/repeat.mjs",
   "tools/export/export.mjs",
   "tools/release/release.mjs",
 ];
@@ -59,6 +61,8 @@ const OTHERS = {
   "test/server/data-folder.child.mjs": "a child process of a test, started with its arguments by the test",
   "test/server/flags.child.mjs": "a child process of a test, started with its arguments by the test",
   "test/server/lifecycle.child.mjs": "a child process of a test, started with its arguments by the test",
+  "test/server/data-format.child.mjs": "a child process of a test, started with its arguments by the test",
+  "test/server/data-folders/record.mjs": "a maintainer's tool that records the data folder a release wrote; without a release and a commit, or on a port of the emulator's own, it says how to call it, exit code 2, before it reads or writes anything",
   "test/server/imports.test.mjs": "a test of who reads process.argv",
   "test/server/command-lines.test.mjs": "this test",
   "packages/stage/scene-build/record.mjs": "a maintainer's tool of the 3D view's scene; refuses an unknown option or one without its file itself, exit code 2, before it reads or writes anything",
@@ -133,6 +137,7 @@ async function safeArguments(script, dir) {
       "test/convert-data-folder.mjs": [own],
       "test/state/make.mjs": [join(own, "compare"), join(own, "night")],
       "test/state/record.mjs": ["--bar", nobody],
+      "test/bar-session/run.mjs": ["--bar", nobody, "--serial", "no such serial number"],
       // Were the call taken: one quick suite; a ref that does not exist, which ends gate:win before it reaches Windows.
       "test/gate.mjs": ["--only", "board"],
       "tools/gate/win.mjs": ["--ref", "refs/heads/no-such-branch-of-this-test"],

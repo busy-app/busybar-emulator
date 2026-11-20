@@ -133,9 +133,12 @@ fetch("http://127.0.0.1:${source.port}/big").then(function (r) { console.log("st
   .then(function (x) { console.log("items " + x.length); }, function (e) { console.log("error " + e); });
 setInterval(function () {}, 1000);`);
     await until("the app's end", () => server.out().includes(`App ${ID} exited:`), 30000);
+    const note = new RegExp(`App ${ID}: emulator: the app ran out of its 128 KiB heap after a (\\d+) KiB response to GET http://127\\.0\\.0\\.1:${source.port}/big\\. .*res\\.body\\.getReader\\(\\)`);
+    // The lines after the end come in pieces of the server's output of their own: the test read the log between them
+    // twice (17.11, EMU-330: once before "JS heap overflow", once before the note).
+    await until("the emulator's note after the end", () => note.test(server.out()), 10000).catch(() => {});
     assert.match(server.out(), new RegExp(`App ${ID} exited: fatal: out of memory;`));
     assert.match(server.out(), new RegExp(`App ${ID}: JS heap overflow`));
-    const note = new RegExp(`App ${ID}: emulator: the app ran out of its 128 KiB heap after a (\\d+) KiB response to GET http://127\\.0\\.0\\.1:${source.port}/big\\. .*res\\.body\\.getReader\\(\\)`);
     const said = note.exec(server.out());
     assert.ok(said, server.out());
     assert.ok(Number(said[1]) >= 150 && Number(said[1]) <= 250, `the note names ${said[1]} KiB`);

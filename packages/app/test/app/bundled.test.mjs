@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, realpathSync, renameSync } from "node:fs";
 import path from "node:path";
-import { after, afterEach, before, test } from "node:test";
+import { after, afterEach, before, test } from "./node-test.mjs";
 
 import { appPathOf, launcherPathIn } from "../../src/config.mjs";
 import { WINDOWS_LAUNCH_FILE } from "../../src/install-files.mjs";

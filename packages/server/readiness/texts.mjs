@@ -20,11 +20,26 @@ export function textRules() {
 const length = (text) => [...text].length;
 
 /**
+ * The file a description names as `@<path>`, the one reference the catalog takes: { path, safe } (`safe`: the path stays
+ * inside the app's folder: relative, forward slashes, no ".."), or null when the description is a text written in place.
+ */
+export function descriptionReference(value) {
+  if (typeof value !== "string" || !value.startsWith("@")) return null;
+  const file = value.slice(1);
+  const safe = Boolean(file) && !file.includes("\\") && !file.startsWith("/") && !/^[A-Za-z]:/.test(file) && !file.split("/").includes("..");
+  return { path: file, safe };
+}
+
+/**
  * What is wrong with each text: { category, short_description, description, changelog }, each null when the catalog
  * takes it, otherwise one sentence. `warnings` holds what the catalog takes and still mentions (a category's other
- * name). Texts that are not strings count as not written.
+ * name). Texts that are not strings count as not written. A description may name a file of the app's folder,
+ * `@README.md`, as the catalog allows; `files.description` is that file's text (null when the catalog would not read
+ * it, `files.unread` then says why: facts.mjs descriptionFile), and the
+ * length and Markdown are checked on it, as the catalog checks them. Without it (the window reads no file) only the
+ * path is checked.
  */
-export function textProblems(texts) {
+export function textProblems(texts, files = {}) {
   const t = texts && typeof texts === "object" ? texts : {};
   const problems = {};
   const warnings = {};
@@ -36,27 +51,41 @@ export function textProblems(texts) {
     if (!category) problems.category = "Not one of the catalog's categories.";
     else if (category.id !== t.category) warnings.category = `Another name of ${category.id}: write ${category.id}.`;
   }
-  const lengthProblem = (key, [min, max], what) => {
-    const n = length(t[key]);
+  const lengthProblem = (text, [min, max], what) => {
+    const n = length(text);
     return n < min ? `${n} characters: ${what} needs at least ${min}.` : n > max ? `${n} characters: the catalog takes at most ${max}.` : null;
   };
   if (written("short_description")) {
     if (/[\r\n]/.test(t.short_description)) problems.short_description = "One line, without line breaks.";
     else if (t.short_description.startsWith("@")) problems.short_description = "It may not start with @: the catalog reads that as a file.";
-    else problems.short_description = lengthProblem("short_description", LIMITS.shortDescription, "the short description");
+    else problems.short_description = lengthProblem(t.short_description, LIMITS.shortDescription, "the short description");
   }
   for (const [key, limits, what] of [
     ["description", LIMITS.description, "the description"],
     ["changelog", LIMITS.changelog, "the changelog"],
   ]) {
     if (!written(key)) continue;
-    if (t[key].startsWith("@")) {
-      problems[key] = "It may not start with @: the catalog reads that as a file.";
+    let text = t[key];
+    const reference = key === "description" ? descriptionReference(text) : null;
+    if (reference) {
+      if (!reference.safe) {
+        problems[key] = `${reference.path || "(no path)"} is not a file of the app's folder: name it from that folder, with forward slashes and without "..".`;
+        continue;
+      }
+      if (files.description === undefined) continue;
+      if (typeof files.description !== "string") {
+        problems[key] = `${reference.path} ${files.unread ?? "is not in the project"}: the catalog would not read it. Name a UTF-8 Markdown file of the app's folder, or write the description itself.`;
+        continue;
+      }
+      // The catalog reads the file with universal newlines: \r\n and a lone \r count as one \n.
+      text = files.description.replace(/\r\n?/g, "\n");
+    } else if (text.startsWith("@")) {
+      problems[key] = "It may not start with @: the catalog takes a file only for the description.";
       continue;
     }
-    problems[key] = lengthProblem(key, limits, what);
+    problems[key] = reference && !text.trim() ? `${reference.path} is empty.` : lengthProblem(text, limits, reference ? `the description in ${reference.path}` : what);
     if (!problems[key]) {
-      const found = markdownProblem(t[key]).problem;
+      const found = markdownProblem(text).problem;
       if (found) problems[key] = `The catalog's Markdown refuses ${found}. It takes level 1 and 2 headings, bold, italic, lists and https links.`;
     }
   }

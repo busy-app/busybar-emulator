@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { cpSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { DEVICE_MIN_SIZE } from "../../src/windows.mjs";
 import { HAS_REAL_SERVER, removeFolder, sleep, targz, temporaryFolder, until } from "../helpers.mjs";
@@ -300,7 +300,7 @@ test("the device window is no smaller than its layout holds", { skip }, async ()
   assert.equal(cardHeight, 166);
 });
 
-test("2D: no scroll, no overlap, heads and names fit, in both modes and on every tab, at every size", { skip }, async (t) => {
+test("2D: no scroll, no overlap, heads and names fit, in both modes and on every tab, at every size", { skip, timeout: 600_000 }, async (t) => {
   assert.equal(await page(`document.querySelector("#view-2d").getAttribute("aria-pressed")`), "true");
   await check("2d", t);
 });
@@ -344,7 +344,7 @@ test("the opened app's Catalog: a row a field, each opens in place; the icons an
     icons: [...document.querySelectorAll("#app-body .icon-tile img")].length,
     uploads: [...document.querySelectorAll("#app-body .icon-tile button")].map((b) => b.ariaLabel),
     chips: [...document.querySelectorAll("#app-body .keycap img")].map((img) => img.complete && img.naturalWidth > 0),
-    folder: document.querySelector("#app-folder .ac-path")?.dataset.tipDetail ?? null,
+    folder: document.querySelector("#app-folder .ac-path")?.textContent ?? null, // no hover card holds it now (18.11): the field's own text
   })`);
   assert.deepEqual(shown.rows, ["Name", "Icons", "Short description", "Description", "Category", "Controls", "Version"]);
   assert.equal(shown.name, "Focus Timer");
@@ -556,6 +556,34 @@ test("a setting's description is measured again when the column's width changes:
   }
 });
 
+test("hovering the project's folder field, a More button, the bar's address Copy or Create app shows no card and no title", { skip }, async () => {
+  await state("app-settings");
+  try {
+    const hover = (sel) => page(`(async () => {
+      const el = document.querySelector(${JSON.stringify(sel)});
+      el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 800));
+      const box = document.querySelector("#ac-tip");
+      return { card: !!box && !box.hidden, title: el.getAttribute("title"), label: el.getAttribute("aria-label") };
+    })()`);
+    const path = await hover("#app-folder .ac-path");
+    assert.deepEqual([path.card, path.title, path.label], [false, null, "The project's folder"]);
+    const more = await hover("#app-more");
+    assert.deepEqual([more.card, more.title], [false, null]);
+    assert.match(more.label, /^More/);
+    const row = await hover('#apps li.app .row-more');
+    assert.deepEqual([row.card, row.title], [false, null]);
+    assert.match(row.label, /^More for /);
+    for (const [sel, name] of [["#bar-address-copy", /^Copy the address/], ["#create-app", /^Create app$/]]) {
+      const one = await hover(sel);
+      assert.deepEqual([one.card, one.title], [false, null], sel);
+      assert.match(one.label, name);
+    }
+  } finally {
+    await state("all");
+  }
+});
+
 test("the project's folder: its own name whole at the field's end at every width, the folders before it cut at their end", { skip }, async () => {
   await state("app-settings");
   const look = `(() => {
@@ -719,7 +747,7 @@ test("a narrow console: the kinds of line are a pop-up under their button, close
   }
 });
 
-test("3D: no scroll, no overlap, heads and names fit, at every size", { skip }, async (t) => {
+test("3D: no scroll, no overlap, heads and names fit, at every size", { skip, timeout: 600_000 }, async (t) => {
   if (await page(`document.querySelector("#view-3d").ariaDisabled === "true"`)) return t.skip(`no 3D view in this run's hidden window: ${await page(`document.querySelector("#view-3d").title`)}`);
   await resize([1200, 800]);
   await page(`document.querySelector("#view-3d").click(), true`);

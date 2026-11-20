@@ -13,7 +13,8 @@ import { insideFolder } from "../path-boundary.mjs";
 import { DETAILS_FILE, SCREENSHOTS_FOLDER, sourceManifest } from "../readiness/facts.mjs";
 import { LICENSE_FILE, recognizeLicense } from "../readiness/rules.mjs";
 import { textsOf } from "../readiness/texts.mjs";
-import { README_MARK, readmeConfig, readmeMarkdown, templateLeft } from "./readme.mjs";
+import { fileHints, fileProblem, README_MARK, readmeConfig, readmeMarkdown, templateLeft } from "./readme.mjs";
+import { read as howToUseRows, sectionHint } from "./how-to-use.mjs";
 import { ignoredBy, parseIgnore, projectTree } from "./tree.mjs";
 
 export { README_MARK };
@@ -312,11 +313,13 @@ export function readmeFile(dir) {
 
 /**
  * Whose the README is: none, the template's, the flow's (unchanged since the README step or Repository files wrote
- * it), or the person's.
+ * it), the person's, or "kept": the person's own file, used as it is (the README step's mode "file", EMU-365), which
+ * nothing of the flow writes again.
  */
 export function readmeState(dir, progress = readProgress(dir)) {
   const text = readmeFile(dir);
   if (text === null) return "none";
+  if (progress.steps?.readme?.config?.mode === "file" && !fileProblem(text)) return "kept";
   const now = hash(text);
   if (progress.steps?.readme?.hash === now || (text.startsWith(README_MARK) && progress.steps?.files?.readme === now)) return "ours";
   if (TEMPLATE_README.test(text)) return "template";
@@ -358,13 +361,53 @@ export function readmeText(dir, facts, progress = readProgress(dir)) {
   return readmeMarkdown(readmeSaved(dir, facts, progress), facts);
 }
 
-/** Writes README.md from a configuration and notes it, so that it counts as the flow's until the person edits it. */
+/**
+ * Writes README.md from a configuration and notes it, so that it counts as the flow's until the person edits it. In
+ * mode "file" it writes nothing: the choice to use the project's README.md as it is is noted, and the file is left
+ * byte for byte (EMU-365). A text the file holds already (line ends aside) is not written again either.
+ */
 export function writeReadme(dir, config, facts, now = Date.now()) {
   const kept = readmeConfig(config, facts);
+  const before = readmeFile(dir);
+  if (kept.mode === "file") {
+    noteStep(dir, "readme", { config: kept }, now);
+    return { text: before ?? "", config: kept, left: templateLeft(before ?? "") };
+  }
   const text = readmeMarkdown(kept, facts);
-  writeFileSync(writable(dir, "README.md"), text);
-  noteStep(dir, "readme", { config: kept, hash: hash(text) }, now);
-  return { text, config: kept, left: templateLeft(text) };
+  const same = before !== null && before.replace(/\r\n?/g, "\n") === text;
+  if (!same) writeFileSync(writable(dir, "README.md"), text);
+  noteStep(dir, "readme", { config: kept, hash: hash(same ? before : text) }, now);
+  return { text: same ? before : text, config: kept, left: templateLeft(text) };
+}
+
+/**
+ * Moves README.md into .busy/removed/, as a license file that is replaced goes: before another README is written over
+ * one that was used as it is (EMU-365). The name it has there, or null when there was none.
+ */
+export function moveReadmeAway(dir, now = Date.now()) {
+  const from = path.join(dir, "README.md");
+  if (!existsSync(from)) return null;
+  ownFolder(dir);
+  const away = writable(dir, `${OWN_FOLDER}/removed`);
+  mkdirSync(away, { recursive: true });
+  const name = `${now}-README.md`;
+  renameSync(from, path.join(away, name));
+  return `${OWN_FOLDER}/removed/${name}`;
+}
+
+/**
+ * What the README step says of the project's own README.md used as it is (EMU-365): readme.mjs fileHints (links out
+ * of the app's folder or to files the repository will not hold, the template's text) with the published files as they
+ * are now, and a How to use section that is not control rows (EMU-364). Hints, never fixes.
+ * @returns {string[]}
+ */
+export function readmeFileHints(dir, text, published = null) {
+  if (typeof text !== "string" || !text.trim()) return [];
+  const hints = fileHints(text, published ?? filesPlan(dir).published);
+  const rows = howToUseRows(text);
+  const usage = rows.length ? sectionHint(rows) : null;
+  if (usage) hints.push(usage);
+  return hints;
 }
 
 /** What the public repository should not hold, each with a path that stands for it and why. */

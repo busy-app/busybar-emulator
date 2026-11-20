@@ -1,19 +1,22 @@
 // The update's pop-up (packages/app/src/update-popup.mjs): when the emulator opens, or finds later while it is open,
 // a newer version, a dialog over the window offers it, so that a hotfix is not missed in the top bar's small notice.
 //
-//   BUSY Bar Emulator <version> is available       You have <current>. Two or three lines of the release's notes.
-//   Update now   Later                             Update now is the top bar's Update to <version>: the download's
-//                                                  progress shows here and there, then Restart to update, which the
-//                                                  app confirms in its own dialog. Later (or Esc) closes it; the
-//                                                  notice stays, and the app offers it again at the next start, or a
-//                                                  day later if it stays open.
-//   Download     Later                             Where this copy cannot replace itself (the disk image, Downloads,
+//   BUSY Bar Emulator <version> is available       You have <current>. The release's notes, whole up to their
+//   [the release's notes]                          Files, in an area of their own that scrolls when they are long.
+//   Release notes   Later   Update now             Release notes opens the release's page in the browser; the
+//                                                  pop-up stays. Update now is the top bar's Update to <version>:
+//                                                  the download's progress shows here and there, then Restart to
+//                                                  update, which the app confirms in its own dialog. Later (or Esc)
+//                                                  closes it; the notice stays, and the app offers it again at the
+//                                                  next start, or a day later if it stays open.
+//   Release notes   Later   Download               Where this copy cannot replace itself (the disk image, Downloads,
 //                                                  a folder it may not write to): why, and the release page instead.
 //
 // It waits for the first run's greeting and for any other dialog of the window to close, and the app says no while it
 // builds, runs a development loop, publishes, records or a program waits on it (update.popup); the pop-up asks again
 // then. The app shows it once per version in a run. Only in the desktop app: a browser has no update. Everything from
-// the release is put on the page as text.
+// the release is put on the page as text: the notes come parsed (update-check.mjs parseReleaseNotes), and their lists
+// are built here of elements whose words are set with textContent.
 (() => {
   const actions = () => window.emulatorActions;
   if (!actions()?.available?.().shell || !actions().update?.popup) return;
@@ -23,6 +26,8 @@
   const RELEASES = "https://github.com/busy-app/busybar-emulator/releases/tag/";
   /** While something covers the window, the pop-up looks again this soon. */
   const COVERED_RETRY_MS = 1500;
+  /** Lists in the notes nest this deep at most (update-check.mjs, NOTES_DEPTH). */
+  const NOTES_DEPTH = 3;
 
   let state = null; // the update's state, as update.state() gives it
   let offer = null; // what the open pop-up shows (update.popup's answer); null while it is closed
@@ -66,6 +71,58 @@
     a.append(icon("download"), make("span", "", "Download"));
     a.addEventListener("click", () => setTimeout(close, 0));
     return a;
+  }
+
+  /** Release notes: the same page, for reading what is new; the pop-up stays open. */
+  function notesLink(version) {
+    const a = make("a", "btn quiet update-popup-page");
+    a.href = `${RELEASES}v${version}`;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.id = "update-popup-page";
+    a.append(icon("open-in-new"), make("span", "", "Release notes"));
+    return a;
+  }
+
+  const said = (value) => (typeof value === "string" ? value : "");
+  /** One item of the notes: its bold opening words, the rest, and its own items under it. */
+  function noteItem(item, depth) {
+    const li = make("li");
+    const lead = said(item?.lead);
+    const text = said(item?.text);
+    if (lead) li.append(make("strong", "", lead));
+    if (text) li.append(document.createTextNode(lead ? ` ${text}` : text));
+    if (item?.list && depth < NOTES_DEPTH) {
+      const inner = noteList(item.list, depth + 1);
+      if (inner) li.append(inner);
+    }
+    return lead || text ? li : null;
+  }
+  function noteList(list, depth) {
+    const items = (Array.isArray(list?.items) ? list.items : []).map((item) => noteItem(item, depth)).filter(Boolean);
+    if (!items.length) return null;
+    const node = make(list.ordered === true ? "ol" : "ul");
+    node.append(...items);
+    return node;
+  }
+  /** The release's notes: headings and paragraphs as lines of text, the lists as lists; null when there are none. */
+  function notesArea(notes, version) {
+    const area = make("div", "update-popup-notes");
+    area.id = "update-popup-notes";
+    area.setAttribute("role", "region");
+    area.setAttribute("aria-label", `What is new in ${version}`);
+    // Its own scroll: the keys reach it once it has the focus.
+    area.tabIndex = 0;
+    for (const block of Array.isArray(notes?.blocks) ? notes.blocks : []) {
+      if (block?.type === "heading" && said(block.text)) area.append(make("p", "update-popup-notes-heading", block.text));
+      else if (block?.type === "paragraph" && said(block.text)) area.append(make("p", "", block.text));
+      else if (block?.type === "list") {
+        const list = noteList(block, 1);
+        if (list) area.append(list);
+      }
+    }
+    if (notes?.more === true) area.append(make("p", "update-popup-notes-more", "The rest is on the release page."));
+    return area.childElementCount ? area : null;
   }
 
   /** What covers the window now: another dialog (the greeting, Create app, Publish, Report a Bug, Delete), or null. */
@@ -141,7 +198,7 @@
         e.preventDefault();
         close();
       } else if (e.key === "Tab") {
-        const all = [...el.querySelectorAll("button, a[href]")].filter((one) => one.getAttribute("aria-disabled") !== "true");
+        const all = [...el.querySelectorAll("button, a[href], #update-popup-notes")].filter((one) => one.getAttribute("aria-disabled") !== "true");
         const at = all.indexOf(document.activeElement);
         e.preventDefault();
         all[(at + (e.shiftKey ? -1 : 1) + all.length) % all.length]?.focus();
@@ -190,13 +247,8 @@
     head.append(logo, words);
     const parts = [head];
 
-    const summary = offer.summary && Array.isArray(offer.summary.lines) ? offer.summary.lines.filter((l) => typeof l === "string" && l) : [];
-    if (summary.length && stage !== "ready") {
-      const notes = make(offer.summary.kind === "list" ? "ul" : "div", "update-popup-notes");
-      notes.id = "update-popup-notes";
-      for (const line of summary.slice(0, 3)) notes.append(make(offer.summary.kind === "list" ? "li" : "p", "", line));
-      parts.push(notes);
-    }
+    const notes = stage !== "ready" && offer.notes ? notesArea(offer.notes, version) : null;
+    if (notes) parts.push(notes);
 
     if (!offer.canInstall) {
       const why = make("p", "update-popup-why");
@@ -227,6 +279,7 @@
     }
 
     const foot = make("div", "update-popup-foot");
+    foot.append(notesLink(version));
     const laterButton = button("btn", stage === "working" ? "Hide" : stage === "failed" ? "Close" : "Later", null, close);
     laterButton.id = "update-popup-later";
     if (stage === "working") laterButton.title = "The download goes on; the top bar shows it";
@@ -237,7 +290,10 @@
     parts.push(foot);
 
     const focusedId = document.activeElement && box.contains(document.activeElement) ? document.activeElement.id : null;
+    // Drawn again for the download's stages: the notes stay where the person scrolled them.
+    const scrolled = box.querySelector("#update-popup-notes")?.scrollTop ?? 0;
     box.replaceChildren(...parts);
+    if (notes && scrolled) notes.scrollTop = scrolled;
     const again = focusedId ? box.querySelector(`#${focusedId}`) : null;
     (again ?? box.querySelector(".update-popup-foot .solid") ?? laterButton).focus({ preventScroll: true });
   }

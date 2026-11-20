@@ -72,7 +72,7 @@ export const TOOLS = [
     timeout: 180_000,
     title: "Start the emulator",
     description:
-      "Starts BUSY Bar Emulator with its window and waits (up to a minute) until its BUSY Bar answers; if it is running already, brings its window to the front. Every other tool except status, list_examples, projects and check needs it running; they answer `not_running` otherwise. Errors: `no_app` (the emulator is not installed: the person installs it, see https://github.com/busy-app/busybar-emulator), `start_timeout`, `start_interrupted` (call start again), `port_busy`, `move_app` (the hint says what the person does).",
+      "Starts BUSY Bar Emulator with its window and waits (up to a minute) until its BUSY Bar answers; if it is running already, brings its window to the front. Every other tool except status, list_examples, projects and check needs it running; they answer `not_running` otherwise. Errors: `no_app` (the emulator is not installed: the person installs it, see https://github.com/busy-app/busybar-emulator), `data_format_newer` (a newer version moved the data folder on: the person installs the newest version), `start_timeout`, `start_interrupted` (call start again), `port_busy`, `move_app` (the hint says what the person does).",
     inputSchema: NONE,
     annotations: { ...CHANGES, idempotentHint: true },
     words: () => ["start"],
@@ -187,7 +187,7 @@ export const TOOLS = [
     timeout: 30_000,
     parallel: true,
     title: "Read the BUSY Bar's log",
-    description: "The emulated BUSY Bar's latest log lines (`lines`, each `time`, `kind`, `text`): what apps print with console.log, the runtime's errors, and why an app ended. Call it when the screen shows nothing or the app ended. Changes nothing.",
+    description: "The emulated BUSY Bar's latest log lines (`lines`, each `time`, `kind`, `text`, and `note` where the emulator explains a line the firmware wrote, such as the first launch's Failed to open file for the app's localstorage.json: normal): what apps print with console.log, the runtime's errors, and why an app ended. Call it when the screen shows nothing or the app ended. Changes nothing.",
     inputSchema: { type: "object", properties: { lines: { type: "integer", minimum: 1, maximum: 500, description: "How many of the latest lines (50 unless given)." } }, additionalProperties: false },
     annotations: READ_ONLY,
     words: (input) => ["logs", ...option("--lines", input.lines)],
@@ -318,7 +318,7 @@ export const TOOLS = [
     timeout: 5 * MINUTE,
     title: "Check the project against the catalog",
     description:
-      "What the BUSY Apps Catalog's checks would answer for the project and its built package: `result` (pass or fail), `counts`, and `checks`, each with `status` (pass, fail, unchecked), `found` and `change` (what to do). The text lists the failures first. It writes only catalog.json, the empty form for the catalog's texts (category, descriptions, changelog), when the project has none: the person's words go there. The emulator need not run. A failure is `check_failed` with the same fields: fix what `change` says, build, check again.",
+      "What the BUSY Apps Catalog's checks would answer for the project and its built package: `result` (pass or fail), `counts`, and `checks`, each with `status` (pass, fail, unchecked), `found` and `change` (what to do). The text lists the failures first. It writes only catalog.json, the empty form for the catalog's texts (category, descriptions, changelog), when the project has none: the person's words go there; it is committed with the project (submit writes the catalog's manifest from it). The emulator need not run. A failure is `check_failed` with the same fields: fix what `change` says, build, check again.",
     inputSchema: projectTool(),
     annotations: ADDS_ONCE,
     words: (input, env) => ["check", known(input.folder, env, "check")],
@@ -340,7 +340,7 @@ export const TOOLS = [
     parallel: false,
     title: "Read or write the app's catalog texts",
     description:
-      "The Application Info step of publishing: the app's `name` (written into its manifest) and the catalog's four texts in the project's catalog.json: `category` (one id of `rules.categories`, each with what belongs in it), `short_description` (plain text, 10 to 120 characters), `description` (50 to 4000, basic Markdown) and `changelog`. Without any of them it only reads; with some it writes those and keeps the rest. Answers `texts`, `problems` (null for a text the catalog takes, else what is wrong), `taken` (all four taken) and `rules`. The person's words: write what they said the app is, ask them when you do not know. Errors: `details_unreadable`, `bad_name`.",
+      "The Application Info step of publishing: the app's `name` (written into its manifest) and the catalog's four texts in the project's catalog.json: `category` (one id of `rules.categories`, each with what belongs in it), `short_description` (plain text, 10 to 120 characters), `description` (50 to 4000, basic Markdown; or `@CATALOG.md`, a Markdown file of the app's folder written for the catalog, checked on its text; not the README `publish readme` writes) and `changelog`. Without any of them it only reads; with some it writes those and keeps the rest. Answers `texts`, `problems` (null for a text the catalog takes, else what is wrong), `taken` (all four taken) and `rules`. The person's words: write what they said the app is, ask them when you do not know. Errors: `details_unreadable`, `bad_name`.",
     inputSchema: projectTool({
       name: { type: "string", minLength: 1, description: "The app's name, as the APPS menu and the catalog show it." },
       category: { type: "string", minLength: 1, description: "A category id from rules.categories." },
@@ -436,10 +436,10 @@ export const TOOLS = [
     title: "Publish the app: prepare it, then send it to the catalog",
     description: [
       "Publishing as the emulator's Publish dialog does it, one `step` a call (the command line's publish <step>; every answer has what the step needs next).",
-      "Stage 1, on this computer, nothing sent: status (where every step stands; call it first), screenshots (`take` front|back from the display now, or `upload` PNGs inside the project or saved by the screenshot tool, `order`, `remove`), readme (`readme_action` get|preview|set; `controls` the How to use rows, one per control of the BUSY Bar, Start, Wheel turn, Wheel press, Back, each with a sentence, and `usage` a sentence after them; `title`, `intro`; or `mode` markdown with `markdown`), license (`license` MIT|Apache-2.0|GPL-3.0|other, `author`, `year`: the person's choice, ask them, never pick one; `other` with `from`, their own license file in the project), files (what the public repository will hold; `write` adds the missing .gitignore lines and the README; `keep_out`, `keep_in`), check (the catalog's checks), package (writes submission/; needs a build), prepare (license, files, build and package in one go). The catalog texts and the icons are the catalog_texts and icon tools.",
-      "Stage 2, done by the emulator's app, which must be running with its window; the person confirms each step there: signin (with GitHub CLI's accounts on the computer the answer is `choose_account` with `accounts`: ask the person which one, then signin with `use_existing` and `user`, or `new_account`; a new sign-in answers at once with `userCode` and `verificationUri` for the person, then call signin with `wait` once they say they entered it), push (`name` of the public repository; the person confirms in the app; the upload's progress comes as progress notifications when the client asks for them), pr (`ai` none|partly|full: how AI was used, ask the person; the person reads the catalog's author checklist and ticks it in the app, its optional items such as the contest's included, never you; the answer's `optional` says which optional items are ticked), signout.",
+      "Stage 1, on this computer, nothing sent: status (where every step stands; call it first), screenshots (`take` front|back from the display now, or `upload` PNGs inside the project or saved by the screenshot tool, `order`, `remove`), readme (`readme_action` get|preview|set; `title`, `intro`; optional `controls`, the How to use rows, one per control of the BUSY Bar the app answers to, Start, Wheel turn, Wheel press, Back, each with a sentence, and `usage` a sentence after them; or `mode` markdown with `markdown`; or `keep`, the project's README.md as it is, never written, its checks as `file_hints`; How to use is optional, the catalog does not show it yet; `controls` and `usage` rows are checked, a section of the person's own Markdown is only a hint), license (`license` MIT|Apache-2.0|GPL-3.0|other, `author`, `year`: the person's choice, ask them, never pick one; `other` with `from`, their own license file in the project), files (what the public repository will hold; `write` adds the missing .gitignore lines and the README; `keep_out`, `keep_in`), check (the catalog's checks), package (writes submission/; needs a build), prepare (license, files, build and package in one go). The catalog texts and the icons are the catalog_texts and icon tools.",
+      "Stage 2, done by the emulator's app, which must be running with its window; the person confirms each step there: signin (with GitHub CLI's accounts on the computer the answer is `choose_account` with `accounts`: ask the person which one, then signin with `use_existing` and `user`, or `new_account`; a new sign-in answers at once with `userCode` and `verificationUri` for the person, then call signin with `wait` once they say they entered it), push (`name` of the public repository; `email`: the address the commit is signed with, the person's choice, `noreply` for GitHub's private address of the account, the default, or one of the person's own; kept for the account; the person confirms in the app, whose question names the commit's author; the upload's progress comes as progress notifications when the client asks for them), pr (`ai` none|partly|full: how AI was used, ask the person; with partly or full also `ai_note`, what AI made and what it does, written with the person; the person reads the catalog's author checklist and ticks it in the app, its optional items such as the contest's included, never you; the answer's `optional` says which optional items are ticked), signout.",
       "check builds the app and checks its types first: a build or type error is a failing check with `file` and `line`.",
-      "Errors: `check_failed` (fix what `change` says), `not_built`, `readme_incomplete`, `not_checked` and `changed_since_check` / `changed_since_package` (push and pr: a file changed since check or package, named in `changed`; run check and package again), `choose_account`, `refused` (the person chose Cancel: do not ask again unless they say so), `window_hidden`, `not_running`, `github_unavailable`, `usage`.",
+      "Errors: `check_failed` (fix what `change` says), `not_built`, `readme_incomplete`, `not_checked` and `changed_since_check` / `changed_since_package` (push and pr: a file changed since check or package, named in `changed`; run check and package again), `choose_account`, `email_not_offered` (push, after the person's yes: the account cannot sign with that address, nothing was sent), `email_private` (GitHub refused the commit: the account keeps that address private; ask the person, then push with email noreply), `email_refused` (GitHub refused a commit signed with the private address: try again later), `refused` (the person chose Cancel: do not ask again unless they say so), `window_hidden`, `not_running`, `github_unavailable`, `usage`.",
     ].join(" "),
     inputSchema: {
       type: "object",
@@ -449,7 +449,7 @@ export const TOOLS = [
         license: { type: "string", enum: ["MIT", "Apache-2.0", "GPL-3.0", "other"], description: "license, prepare: the person's choice." },
         author: { type: "string", minLength: 1, description: "license, prepare: who holds the copyright." },
         from: { type: "string", minLength: 1, description: "license, prepare with license other: the person's own license file, inside the project's folder." },
-        replace: { type: "boolean", description: "license with from: put it in place of the license file there (that one goes to .busy/removed)." },
+        replace: { type: "boolean", description: "license with from: put it in place of the license file there (that one goes to .busy/removed). readme set: write the README over a README.md kept as it is (keep)." },
         year: { type: "integer", minimum: 1970, maximum: 9999 },
         write: { type: "boolean", description: "files: write .gitignore's missing lines and the README." },
         keep_out: { type: "string", minLength: 1, description: "files: a path inside the project to keep out of the repository." },
@@ -460,7 +460,8 @@ export const TOOLS = [
         order: { type: "object", properties: { front: { type: "array", items: { type: "string" } }, back: { type: "array", items: { type: "string" } } }, additionalProperties: false, description: "screenshots: the order, by the paths status lists; the first front one is the cover." },
         remove: { type: "string", minLength: 1, description: "screenshots: one to remove, by its path as listed." },
         readme_action: { type: "string", enum: ["get", "preview", "set"], description: "readme: get (the default), preview (the Markdown, nothing written) or set (writes README.md)." },
-        mode: { type: "string", enum: ["fields", "markdown"] },
+        mode: { type: "string", enum: ["fields", "markdown", "file"], description: "readme: made from the fields, the Markdown given, or file: the project's README.md as it is (as keep)." },
+        keep: { type: "boolean", description: "readme with readme_action set: use the project's README.md as it is, written elsewhere; never written or changed, its checks come as file_hints. Another README over it later needs replace." },
         title: { type: "string", minLength: 1 },
         intro: { type: "string", minLength: 1, description: "readme: what the app does, a paragraph." },
         controls: {
@@ -468,12 +469,14 @@ export const TOOLS = [
           minItems: 1,
           maxItems: 4,
           items: { type: "object", properties: { control: { type: "string", enum: ["Start", "Wheel turn", "Wheel press", "Back"] }, text: { type: "string", minLength: 1 } }, required: ["control", "text"], additionalProperties: false },
-          description: "readme: How to use, one row per control of the BUSY Bar with what it does in the app.",
+          description: "readme, optional: How to use, one row per control of the BUSY Bar the app answers to, with what it does in the app.",
         },
-        usage: { type: "string", minLength: 1, description: "readme: How to use's text; with controls, the sentence after the rows." },
+        usage: { type: "string", minLength: 1, description: "readme, optional: How to use's text; with controls, the sentence after the rows." },
         markdown: { type: "string", minLength: 1, description: "readme with mode markdown: the whole README." },
         name: { type: "string", minLength: 1, description: "push: the public repository's name." },
+        email: { type: "string", minLength: 1, maxLength: 254, description: "push: the address the commit is signed with, as the person chose: noreply (GitHub's private address of the account, the default) or an address GitHub has verified for the account (or the one git config user.email gives). Kept for the account's next commits." },
         ai: { type: "string", enum: ["none", "partly", "full"], description: "pr: how AI was used in the app; the person says." },
+        ai_note: { type: "string", minLength: 1, maxLength: 1000, description: "pr, required with ai partly or full: what AI made and what it does, as the catalog's template asks; a sentence or two written with the person (the emulator's dialog shows it to them)." },
         catalog: { type: "string", minLength: 1, description: "pr, for development and tests only: another catalog than busy-app/busy-apps-catalog (the default, the BUSY catalog), as owner/name. The person confirms one that is not BUSY's." },
         use_existing: { type: "boolean", description: "signin: one of GitHub CLI's accounts, as the person chose." },
         user: { type: "string", minLength: 1, description: "signin: that account's login, from `accounts`." },
@@ -527,17 +530,20 @@ function publishWords(input, env) {
     prepare: ["license", "author", "year", "from"],
     files: ["write", "keep_out", "keep_in"],
     screenshots: ["take", "upload", "display", "order", "remove"],
-    readme: ["readme_action", "mode", "title", "intro", "controls", "usage", "markdown"],
-    push: ["name"],
-    pr: ["ai", "catalog"],
+    readme: ["readme_action", "keep", "replace", "mode", "title", "intro", "controls", "usage", "markdown"],
+    push: ["name", "email"],
+    pr: ["ai", "ai_note", "catalog"],
     signin: ["use_existing", "user", "new_account", "wait"],
   }[step] ?? [];
   const extra = Object.keys(input).filter((key) => key !== "step" && key !== "folder" && !allowed.includes(key));
   if (extra.length) throw new CliError("usage", `publish: ${step} takes no ${extra.join(", ")}.`, allowed.length ? `${step} takes ${allowed.join(", ")}.` : `${step} takes only folder.`);
+  // The catalog asks "Partly" and "Fully" to say what AI made and what it does (EMU-359): refused here, as the command does.
+  if (step === "pr" && (input.ai === "partly" || input.ai === "full") && !String(input.ai_note ?? "").trim()) throw new CliError("usage", `publish: pr with ai ${input.ai} needs ai_note: the catalog's template asks ${input.ai === "full" ? "what the generated code does" : "which parts AI made, and what they do"}.`, "Write it with the person, in a sentence or two (up to 1000 characters); the emulator's dialog shows it to them before anything is sent.");
   words.push(...option("--license", input.license), ...option("--author", input.author), ...option("--year", input.year));
   // The person's own license file: from the project's folder only, as every file a tool reads.
   if (input.from !== undefined) words.push(`--from=${inside(input.from, [dir], "from")}`);
   if (input.replace) words.push("--replace");
+  if (input.keep) words.push("--keep");
   if (input.write) words.push("--write");
   words.push(...option("--keep-out", input.keep_out), ...option("--keep-in", input.keep_in), ...option("--take", input.take));
   // Screenshots come only from the project or from the screenshot tool's own folder (no file of the person's elsewhere).
@@ -546,7 +552,7 @@ function publishWords(input, env) {
   if (input.order !== undefined) words.push(`--order=${JSON.stringify(input.order)}`);
   words.push(...option("--remove", input.remove), ...option("--mode", input.mode), ...option("--title", input.title), ...option("--intro", input.intro));
   if (input.controls !== undefined) words.push(`--controls=${JSON.stringify(input.controls)}`);
-  words.push(...option("--usage", input.usage), ...option("--markdown", input.markdown), ...option("--name", input.name), ...option("--ai", input.ai), ...option("--catalog", input.catalog));
+  words.push(...option("--usage", input.usage), ...option("--markdown", input.markdown), ...option("--name", input.name), ...option("--email", input.email), ...option("--ai", input.ai), ...option("--ai-note", input.ai_note), ...option("--catalog", input.catalog));
   if (input.use_existing) words.push("--use-existing");
   words.push(...option("--user", input.user));
   if (input.new_account) words.push("--new-account");

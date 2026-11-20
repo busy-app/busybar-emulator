@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, test } from "./node-test.mjs";
 
 import { FAKE_GH } from "../fixtures/fake-gh.mjs";
 import { launch } from "./harness.mjs";

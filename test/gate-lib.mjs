@@ -54,7 +54,7 @@ export function tallyEvents(text) {
       problems.push(`test/gate-reporter.mjs wrote a line that is not JSON: ${line.slice(0, 80)}`);
       continue;
     }
-    if (f.running || f.ended) continue; // the progress lines; see stillRunning
+    if (f.running || f.ended || f.failed) continue; // the progress lines (see stillRunning) and the failures (failuresOf)
     if (f.finished < f.registered) {
       const names = f.unfinished.slice(0, 3).map((n) => `"${n}"`).join(", ") + (f.unfinished.length > 3 ? ` and ${f.unfinished.length - 3} more` : "");
       problems.push(`${f.file}: ${f.registered - f.finished} of ${f.registered} registered tests never finished (${names}): the file's process ended before them (process.exit in it or in a module it imports?)`);
@@ -232,12 +232,14 @@ export function tallyExport(text) {
 }
 
 /**
- * What makes a run less than the whole gate, or null for a whole run: { only, comparison, firmware, skip } as given.
+ * What makes a run less than the whole gate, or null for a whole run: { only, comparison, firmware, skip } as given,
+ * and `files`, the number of test files of a targeted run (--files, --changed).
  * `expectedSkips`: suites a run on this machine leaves out by design (gate:win: the shell's windows and the export
  * check); leaving out exactly those is still a whole run of that machine.
  */
-export function partialScope({ only = null, comparison = false, firmware = null, skip = [], expectedSkips = [] }) {
+export function partialScope({ only = null, comparison = false, firmware = null, skip = [], expectedSkips = [], files = null }) {
   const parts = [];
+  if (files) parts.push(`targeted: ${files} test files`);
   if (only) parts.push(`--only ${only.join(",")}`);
   if (comparison) parts.push("--comparison");
   if (firmware) parts.push(`--firmware ${firmware.join(",")}`);
@@ -257,4 +259,169 @@ export function lockIsStale(text, { alive, ageMs = Infinity, graceMs = 5000 }) {
   const pid = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
   if (!Number.isSafeInteger(pid) || pid <= 1) return ageMs >= graceMs;
   return !alive(pid);
+}
+
+/**
+ * The known flakes: tests that fail now and then for a reason that is not the change under test, each with the open
+ * backlog task that is to fix it (EMU-330). A failure that matches an entry — its suite, system, file, test and error
+ * all — is printed on a line of its own with the task's key and does not make the result red; any other failure does.
+ * An entry is taken out once its test has passed 10 runs in a row after the fix; gate-lib.test.mjs checks that every
+ * key names a task of the backlog that is not done.
+ *   suite: the gate's suite; on: the systems where the failure is known; file: the test file, from the suite's folder,
+ *   with "/"; test: the test's name; error: its error (the first line of its message).
+ */
+export const KNOWN_FLAKES = Object.freeze([
+  {
+    key: "EMU-328",
+    suite: "app",
+    on: ["win32"],
+    file: "test/app/stage3d.test.mjs",
+    test: /^the RGB LEDs at the ends of Start follow the state the page gives/,
+    error: /The 3D view did not answer \(probe full\)/,
+    why: "a full probe of the hidden 3D view waits for an animation frame, and Windows gives a hidden window one a second",
+  },
+]);
+
+/**
+ * The failures gate-reporter.mjs wrote (its "failed" lines), but the ones that only say that something inside them
+ * failed (a describe block, a test whose subtest failed): [{ file, name, nesting, type, error }].
+ */
+export function failuresOf(text) {
+  const failures = [];
+  for (const line of (text ?? "").split("\n")) {
+    let f;
+    try {
+      f = JSON.parse(line).failed;
+    } catch {
+      continue;
+    }
+    if (f && f.type !== "subtestsFailed") failures.push(f);
+  }
+  return failures;
+}
+
+/**
+ * Sorts a suite's failures into the known flakes and the rest. `cwd`: the suite's folder, against which an entry's
+ * file is read. Returns { known: [{ key, why, file, name, error }], unknown: [failure] }.
+ */
+export function sortFailures(failures, { suite, cwd, platform = process.platform, ledger = KNOWN_FLAKES }) {
+  const known = [];
+  const unknown = [];
+  const relativeOf = (file) => {
+    const a = String(file).replaceAll("\\", "/");
+    const b = `${String(cwd).replaceAll("\\", "/").replace(/\/$/, "")}/`;
+    return a.toLowerCase().startsWith(b.toLowerCase()) ? a.slice(b.length) : a;
+  };
+  for (const f of failures) {
+    const file = relativeOf(f.file);
+    const entry = ledger.find((e) => e.suite === suite && (!e.on || e.on.includes(platform)) && e.file === file && e.test.test(f.name) && e.error.test(f.error));
+    if (entry) known.push({ key: entry.key, why: entry.why, file, name: f.name, error: f.error });
+    else unknown.push(f);
+  }
+  return { known, unknown };
+}
+
+/**
+ * Whether a red tap suite's failures are all known flakes, so that the suite counts as green (gate.mjs), and how its
+ * failures sort. Green only when there was at least one failure, every failure matched an entry, no test the files
+ * registered was left unfinished (a file that stopped midway: `unfinished`, tallyEvents), the tally found no other
+ * problem, and the number of failed tests is the number of matched failures: a known flake must not hide anything
+ * else (EMU-330 review). Returns { green, known, unknown }.
+ */
+export function flakeVerdict({ failures, unfinished = [], problems = [], fail, suite, cwd, platform = process.platform, ledger = KNOWN_FLAKES }) {
+  const { known, unknown } = sortFailures(failures, { suite, cwd, platform, ledger });
+  const green = failures.length > 0 && unknown.length === 0 && unfinished.length === 0 && problems.length === 0 && fail === known.length;
+  return { green, known, unknown };
+}
+
+/**
+ * What one gate run did with a test file, for gate:repeat (tools/gate/repeat.mjs): "passed" when at least one of its
+ * tests passed, none failed (a known flake is a failure here) and none was left unfinished; "failed" when it failed
+ * or the run was red with no test failing (a time limit, a process left behind: nobody can say the file passed);
+ * "not run" when the run has no record of the file (a suite this machine leaves out, a file that skipped all its
+ * tests) (EMU-330 review: exit code 3 or 0 counted as passed). `texts`: the run's <suite>.tests.jsonl; `file`: from
+ * emulator/, with "/"; `runOk`: the run's verdict was green.
+ */
+export function fileOutcome(texts, file, runOk) {
+  const name = `/${file.replaceAll("\\", "/").replace(/^emulator\//, "")}`;
+  const mine = (path) => String(path).replaceAll("\\", "/").endsWith(name);
+  let failed = false;
+  let anyFailure = false;
+  let passed = 0;
+  let unfinished = 0;
+  for (const text of texts) {
+    for (const f of failuresOf(text)) {
+      anyFailure = true;
+      if (mine(f.file)) failed = true;
+    }
+    for (const line of (text ?? "").split("\n")) {
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!entry?.file || entry.registered === undefined || !mine(entry.file)) continue;
+      passed += entry.passed ?? 0;
+      unfinished += entry.unfinished?.length ?? 0;
+    }
+  }
+  if (failed || unfinished || (!runOk && !anyFailure)) return "failed";
+  return passed > 0 ? "passed" : "not run";
+}
+
+/** The files a module names: what it imports (import, export from, import()) and what it reads by new URL(…, import.meta.url). */
+export function referencesOf(source) {
+  const found = new Set();
+  for (const re of [/\b(?:import|export)\s[^;]*?\bfrom\s*["']([^"']+)["']/g, /\bimport\s*["']([^"']+)["']/g, /\bimport\(\s*["']([^"']+)["']\s*\)/g, /\bnew URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g]) {
+    for (const m of source.matchAll(re)) if (m[1].startsWith(".")) found.add(m[1]);
+  }
+  return [...found];
+}
+
+/**
+ * The test files a change touches, for a targeted run (gate --changed): the changed test files, and the test files
+ * that reach a changed file through what they import or read (referencesOf), however many steps away. `changed` and
+ * `tests`: paths from emulator/, with "/"; `read(file)`: a file's text, or null. Returns { files, why: file → reason }.
+ * What a test reaches only through a process it starts (the window's code under the shell, the server under a
+ * test's launch) is not seen: those tests are named with --files.
+ */
+export function touchedTests(changed, tests, read) {
+  const changedSet = new Set(changed);
+  const memo = new Map();
+  const norm = (p) => {
+    const parts = [];
+    for (const part of p.split("/")) {
+      if (part === "..") parts.pop();
+      else if (part && part !== ".") parts.push(part);
+    }
+    return parts.join("/");
+  };
+  /** The changed file a module reaches, or null. */
+  const reaches = (file, seen) => {
+    if (memo.has(file)) return memo.get(file);
+    if (seen.has(file)) return null;
+    seen.add(file);
+    let hit = null;
+    const text = read(file);
+    if (text !== null) {
+      for (const ref of referencesOf(text)) {
+        const target = norm(`${file.split("/").slice(0, -1).join("/")}/${ref}`);
+        if (changedSet.has(target)) hit = target;
+        else hit = /\.(mjs|js|cjs)$/.test(target) ? reaches(target, seen) : null;
+        if (hit) break;
+      }
+    }
+    memo.set(file, hit);
+    return hit;
+  };
+  const why = new Map();
+  for (const t of tests) {
+    if (changedSet.has(t)) why.set(t, "changed");
+    else {
+      const hit = reaches(t, new Set());
+      if (hit) why.set(t, `reaches ${hit}`);
+    }
+  }
+  return { files: [...why.keys()], why };
 }

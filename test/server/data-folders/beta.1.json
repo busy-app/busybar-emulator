@@ -1,0 +1,99 @@
+{
+ "release": "beta.1",
+ "version": "0.1.0-beta.1",
+ "commit": "96c2342d",
+ "format": 1,
+ "firmwares": [
+  "1.3.1",
+  "dev"
+ ],
+ "apps": {
+  "1.3.1": [
+   "app.chain.probe"
+  ],
+  "dev": [
+   "app.chain.other"
+  ]
+ },
+ "recorded": "2026-11-18",
+ "by": "test/server/data-folders/record.mjs",
+ "files": {
+  "app-settings.json": {
+   "text": "{\n  \"welcomed\": true,\n  \"updateCheck\": true\n}\n"
+  },
+  "bar/": null,
+  "bar/1.3.1/": null,
+  "bar/1.3.1/ext/": null,
+  "bar/1.3.1/ext/apps_data/": null,
+  "bar/1.3.1/ext/apps_data/js_app_installer/": null,
+  "bar/1.3.1/ext/apps_data/js_app_installer/staging/": null,
+  "bar/1.3.1/ext/apps_data/js_apps/": null,
+  "bar/1.3.1/ext/apps_data/js_apps/app.chain.probe/": null,
+  "bar/1.3.1/ext/apps_data/js_apps/app.chain.probe/progress.json": {
+   "text": "{\"sessions\":7}\n"
+  },
+  "bar/1.3.1/ext/apps_data/jsrunner/": null,
+  "bar/1.3.1/ext/apps_data/jsrunner/app.chain.probe.settings.json": {
+   "text": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"minutes\":\t40,\n\t\t\"tree\":\t\"sakura\",\n\t\t\"sound\":\tfalse\n\t}\n}"
+  },
+  "bar/1.3.1/ext/user_assets/": null,
+  "bar/1.3.1/ext/user_assets/app.chain.probe/": null,
+  "bar/1.3.1/ext/user_assets/app.chain.probe/appmeta/": null,
+  "bar/1.3.1/ext/user_assets/app.chain.probe/appmeta/manifest.json": {
+   "text": "{\"format_version\":1,\"id\":\"app.chain.probe\",\"name\":\"app.chain.probe\",\"version\":\"0.1.0\",\"api_version\":\"27.14.0\"}"
+  },
+  "bar/1.3.1/ext/user_assets/app.chain.probe/appmeta/settings.json": {
+   "text": "{\"format_version\":1,\"version\":1,\"fields\":{\"minutes\":{\"type\":\"integer\",\"label\":\"Minutes\",\"default\":25,\"min\":1,\"max\":180},\"tree\":{\"type\":\"enum\",\"label\":\"Tree\",\"default\":\"apple\",\"options\":[{\"value\":\"apple\",\"label\":\"Apple\"},{\"value\":\"sakura\",\"label\":\"Sakura\"}]},\"sound\":{\"type\":\"boolean\",\"label\":\"Sound\",\"default\":true}}}"
+  },
+  "bar/1.3.1/ext/user_assets/app.chain.probe/scripts/": null,
+  "bar/1.3.1/ext/user_assets/app.chain.probe/scripts/main.js": {
+   "text": "setInterval(function () {}, 1000);\n"
+  },
+  "bar/dev/": null,
+  "bar/dev/ext/": null,
+  "bar/dev/ext/apps_data/": null,
+  "bar/dev/ext/apps_data/js_app_installer/": null,
+  "bar/dev/ext/apps_data/js_app_installer/staging/": null,
+  "bar/dev/ext/apps_data/jsrunner/": null,
+  "bar/dev/ext/apps_data/jsrunner/app.chain.other.settings.json": {
+   "text": "{\n\t\"version\":\t1,\n\t\"values\":\t{\n\t\t\"minutes\":\t15,\n\t\t\"tree\":\t\"apple\",\n\t\t\"sound\":\ttrue\n\t}\n}"
+  },
+  "bar/dev/ext/user_assets/": null,
+  "bar/dev/ext/user_assets/app.chain.other/": null,
+  "bar/dev/ext/user_assets/app.chain.other/appmeta/": null,
+  "bar/dev/ext/user_assets/app.chain.other/appmeta/manifest.json": {
+   "text": "{\"format_version\":1,\"id\":\"app.chain.other\",\"name\":\"app.chain.other\",\"version\":\"0.1.0\",\"api_version\":\"27.14.0\"}"
+  },
+  "bar/dev/ext/user_assets/app.chain.other/appmeta/settings.json": {
+   "text": "{\"format_version\":1,\"version\":1,\"fields\":{\"minutes\":{\"type\":\"integer\",\"label\":\"Minutes\",\"default\":25,\"min\":1,\"max\":180},\"tree\":{\"type\":\"enum\",\"label\":\"Tree\",\"default\":\"apple\",\"options\":[{\"value\":\"apple\",\"label\":\"Apple\"},{\"value\":\"sakura\",\"label\":\"Sakura\"}]},\"sound\":{\"type\":\"boolean\",\"label\":\"Sound\",\"default\":true}}}"
+  },
+  "bar/dev/ext/user_assets/app.chain.other/scripts/": null,
+  "bar/dev/ext/user_assets/app.chain.other/scripts/main.js": {
+   "text": "setInterval(function () {}, 1000);\n"
+  },
+  "format": {
+   "text": "1\n"
+  },
+  "install.json": {
+   "text": "{\n  \"app\": \"$APP\",\n  \"cli\": \"$HOME/.busy-emulator/bin/busy-emulator\",\n  \"version\": \"0.1.0-beta.1\"\n}\n"
+  },
+  "logs/": null,
+  "logs/shell.log": {
+   "text": "[shell] started: BUSY Bar Emulator 0.1.0-beta.1\n"
+  },
+  "projects/": null,
+  "projects/registry.json": {
+   "text": "{\n  \"version\": 1,\n  \"projects\": [\n    {\n      \"path\": \"$PROJECTS/focus\",\n      \"volume\": \"$VOLUME\",\n      \"id\": \"app.example.focus_timer\",\n      \"name\": \"Focus Timer\",\n      \"at\": \"2026-11-18T12:49:01.791Z\"\n    }\n  ]\n}\n"
+  },
+  "projects/trusted.json": {
+   "text": "{\n  \"version\": 2,\n  \"projects\": [\n    {\n      \"path\": \"$PROJECTS/focus\",\n      \"dev\": \"1\",\n      \"ino\": \"2\",\n      \"how\": \"created\",\n      \"at\": \"2026-11-18T12:49:01.792Z\"\n    }\n  ]\n}\n"
+  },
+  "run/": null,
+  "shell/": null,
+  "shell/Local Storage/": null,
+  "shell/Local Storage/leveldb/": null,
+  "shell/Local Storage/leveldb/000003.log": {
+   "text": "window storage\n"
+  }
+ }
+}

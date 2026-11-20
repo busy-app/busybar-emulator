@@ -133,7 +133,7 @@ Then ask, for example: "Make me a BUSY Bar app that counts down to my next meeti
 | `record` | A short clip of the app for a post |
 | `check`, `submit` | The apps catalog's checks; the files of the catalog's pull request |
 | `icon`, `catalog_texts` | The app's icons; its name, category and descriptions for the catalog |
-| `publish` | The whole Publish path, one step a call: screenshots, README with How to use, license, the repository's files, package; then sign in to GitHub, the public repository, the pull request to the catalog, each of which you confirm in the emulator's window |
+| `publish` | The whole Publish path, one step a call: screenshots, README (How to use optional), license, the repository's files, package; then sign in to GitHub, the public repository, the pull request to the catalog, each of which you confirm in the emulator's window |
 | `projects`, `uninstall` | The project folders the emulator knows; take an app off the emulated BUSY Bar |
 
 Every tool has a time limit: half a minute to a minute for those that read, 15 minutes for `build`, `refresh` and

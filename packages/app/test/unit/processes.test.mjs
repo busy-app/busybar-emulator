@@ -46,6 +46,7 @@ const WRITERS = {
   "src/capture-actions.mjs": "screenshots and clips: in a project's screenshots/ or where the person chose in the save dialog",
   "src/capture-window.mjs": "a clip the server asked for, in the data folder's captures/",
   "src/github/publish-flow.mjs": "the GitHub sign-in note in the data folder",
+  "src/github/local-git.mjs": "nothing: it opens files under a project's .git read-only (O_RDONLY | O_NONBLOCK, EMU-358), and openSync is how it gets a descriptor to fstat",
   "src/github/publish-record.mjs": "the publish record in the data folder",
   "src/install-files.mjs": "the command line's launcher and the pointer file (ADR-0002 §7)",
   "src/main.mjs": "GitHub CLI's state, data and cache folders in the data folder",

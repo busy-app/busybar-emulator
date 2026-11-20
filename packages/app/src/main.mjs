@@ -18,11 +18,13 @@ import { buildKindOf, inSourceTree, readBuildMarker } from "./build-kind.mjs";
 import { cliEnvironment, startCliProcess } from "./cli-process.mjs";
 import { APP_ID, APP_NAME, LOCAL_WEB_PARTITION, resolveConfig } from "./config.mjs";
 import { createCaptureActions, createSaveDialog } from "./capture-actions.mjs";
+import { dataFolderProblem, EXIT_NEWER_DATA_FORMAT, failedMove, refusalWords } from "./data-format.mjs";
 import { CAPTURE_PARTITION, createClipEncoder } from "./capture-window.mjs";
 import { createOpener, DOCS_URLS } from "./external.mjs";
 import { createFolderDialogs } from "./folder-dialogs.mjs";
 import { createGestures } from "./gestures.mjs";
-import { askRequest, createGithubPublish, parseCatalog } from "./github/publish-flow.mjs";
+import { aiNoteProblem, askRequest, createGithubPublish, parseCatalog, signerSentence } from "./github/publish-flow.mjs";
+import { EMAIL } from "./github/local-git.mjs";
 import { createPublishRecord } from "./github/publish-record.mjs";
 import { ghEnvironment, ghFolders, ghRunner } from "./github/gh.mjs";
 import { createIconAnswers, isIconRequest } from "./icons.mjs";
@@ -89,6 +91,17 @@ configureShellPrograms({ node: config.nodePath, gh: config.github.gh, windowsDir
 
 app.setName(APP_NAME);
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
+// A data folder this version cannot use (a newer emulator moved it on; a broken format record): refused before anything
+// is written there, so that it stays exactly as it is (data-format.mjs; ADR-0013). Said on the error output and,
+// unless the run is hidden, in a dialog.
+const folderProblem = dataFolderProblem(config.dataDir);
+if (folderProblem) {
+  const { title, message } = refusalWords({ dataDir: config.dataDir, problem: folderProblem, version: app.getVersion(), moved: failedMove(config.dataDir) });
+  process.stderr.write(`${message}\n`);
+  if (!config.hidden) dialog.showErrorBox(title, message);
+  app.exit(EXIT_NEWER_DATA_FORMAT);
+  process.exit(EXIT_NEWER_DATA_FORMAT);
+}
 // The data folder for the user alone (0700), before Electron, the log or the server make anything inside it.
 const dataFolderIs = ownDataFolder(config.dataDir);
 app.setPath("userData", config.shellDataDir);
@@ -193,6 +206,7 @@ const github = createGithubPublish({
   configDir: config.github.configDir,
   record: createPublishRecord(config.dataDir),
   downloads: config.github.downloads ? { origins: [{ protocol: "http:", host: new URL(config.github.downloads).host }] } : null,
+  git: config.github.git,
   openExternal: (address) => {
     if (!/^https:\/\/github\.com\//.test(address)) return log("[github] refused to open an address that is not github.com's");
     if (config.hidden || config.testHook) offScreen.browsed.push(address);
@@ -760,6 +774,13 @@ async function githubForCli(question, signal) {
       return flowAnswer(() => github.waitSignIn());
     case "signout":
       return flowAnswer(() => github.signOut({ open: false }));
+    case "signer":
+      // What kind of address the account's commits are signed with (EMU-366): no address, no name, no list: this asks
+      // nothing of the person, and its answer goes to a program.
+      return flowAnswer(async () => {
+        const { signer } = await github.signerOf({});
+        return { signer: { kind: signer.kind, ...(signer.fallback ? { fallback: signer.fallback } : {}) } };
+      });
     case "push":
     case "request": {
       if (typeof question.folder !== "string") return failed("usage", "Name the project's folder.");
@@ -774,9 +795,21 @@ async function githubForCli(question, signal) {
         where = planned.value;
         // The person's own repository, not published to from here, and one with commits the project lacks (catalog-update):
         // publishing into it is confirmed in the window, which names what changes.
-        if (where.mode === "existing") return failed("confirm_existing", `You have github.com/${where.owner}/${where.name} already, and this project was not published to it from here.`, "Publish into it from the app's window (Publish, GitHub), which asks first; or run it with --name <another name>.");
-        if (where.mode === "diverged") return failed("remote_ahead", `github.com/${where.owner}/${where.name} has commits this project doesn't have, made on GitHub or on another computer. Nothing was sent.`, "Import it again in Create app (Import from GitHub), carry the changes over and publish from there.");
+        if (where.mode === "existing") return failed("confirm_existing", `You have github.com/${where.owner}/${where.name} already, and this project was not published to it from here.${where.named === "remote" ? " The project's git remote names it." : ""}`, "Publish into it from the app's window (Publish, GitHub), which asks first; or run it with --name <another name>.");
+        if (where.mode === "diverged") return failed("remote_ahead", `github.com/${where.owner}/${where.name} has commits this project doesn't have, made on GitHub or on another computer. Nothing was sent.`, where.base === "git" && where.named === "remote" ? "Get them with git pull in the project's folder, then publish again." : "Import it again in Create app (Import from GitHub), carry the changes over and publish from there.");
         if (where.mode === "taken") return failed("name_taken", `You have a repository named ${where.name} already, and this project was not published to it from here.`, where.suggestion ? `Run it with --name ${where.suggestion}, a free name.` : "Run it with --name <another name>.");
+      }
+      // Who the commit is signed by, named in the question (EMU-366): the account's choice, or publish push --email's
+      // address as the program asks for it. That address is checked only after the person's yes (the push), so that the
+      // answer before it never says which addresses are the account's.
+      let signer = null;
+      if (push && question.email !== undefined && question.email !== null && (typeof question.email !== "string" || (question.email !== "noreply" && !EMAIL.test(question.email)))) return failed("usage", "--email takes noreply or an e-mail address.");
+      try {
+        const now = await github.signerOf({ folder: question.folder });
+        signer = !push || typeof question.email !== "string" ? now.signer : question.email === "noreply" ? now.noreply : { name: now.noreply.name, email: question.email, kind: "asked" };
+      } catch (e) {
+        // No question without the signature it names: a request is refused as a push is.
+        return failed(e?.code ?? "failed", String(e?.message ?? e), e?.hint ?? null);
       }
       const target = push ? null : github.requestTarget(question.folder);
       // The catalog as the request will name it, parsed before the person sees it (security review F6).
@@ -805,17 +838,20 @@ async function githubForCli(question, signal) {
       // first and asked about again by its name (security review L3). Only the person's ticks are sent.
       if (!push) {
         const named = `${catalog.owner}/${catalog.name}`;
-        const asked = await askRequest({ confirm: askPerson.confirm, folder: question.folder, catalog, target, ai: question.ai, list }, signal);
+        // The explanation of the AI usage is the person's to read in the dialog: none, none asked (EMU-359).
+        const noteRefused = aiNoteProblem(question.ai, question.aiNote ?? null);
+        if (noteRefused) return failed(noteRefused.code, noteRefused.message, "Run it with --ai-note \"<what AI made and what it does>\", written with the person.");
+        const asked = await askRequest({ confirm: askPerson.confirm, folder: question.folder, catalog, target, ai: question.ai, aiNote: question.aiNote ?? null, list, signer }, signal);
         if (asked.answer === "unavailable") return failed("window_hidden", `The person could not be asked: ${asked.reason}.`, "Open the BUSY Bar Emulator window, then run this again.");
         if (asked.answer === "not_ticked") return failed("not_ticked", "The person did not tick the catalog's checklist: nothing was sent.", null);
         if (asked.answer !== "yes") return failed("refused", `The person chose Cancel: nothing was sent${asked.other ? ` to ${named}` : ""}.`, "Do not ask again unless the person tells you to.");
-        return asAction(await actions.call("github.request", { folder: question.folder, catalog: named, ticked: asked.ticked, ai: question.ai, ...(asked.other ? { otherCatalog: named } : {}) }));
+        return asAction(await actions.call("github.request", { folder: question.folder, catalog: named, ticked: asked.ticked, ai: question.ai, aiNote: question.aiNote ?? null, ...(asked.other ? { otherCatalog: named } : {}) }));
       }
       const asked = await askPerson.confirm(
         {
           about: `publish push ${question.folder}`,
           message: where.mode === "replace" ? `Replace the files of github.com/${where.owner}/${where.name}?` : `Publish this app to a new public repository, github.com/${where.owner}/${where.name}?`,
-          detail: `${question.folder}\n\nA program on this computer (busy-emulator publish push, most likely your coding agent) asks to publish the project's files to ${where.mode === "replace" ? `github.com/${where.owner}/${where.name}, which this project was published to before: its files become the project's` : `a new public repository of your GitHub account, github.com/${where.owner}/${where.name}`}. Anyone can see them.`,
+          detail: `${question.folder}\n\nA program on this computer (busy-emulator publish push, most likely your coding agent) asks to publish the project's files to ${where.mode === "replace" ? `github.com/${where.owner}/${where.name}, which this project was published to before: its files become the project's` : `a new public repository of your GitHub account, github.com/${where.owner}/${where.name}`}. Anyone can see them.\n\n${signerSentence(signer)}`,
           buttons: ["Cancel", "Publish"],
           yes: 1,
           checkboxLabel: null,
@@ -824,7 +860,7 @@ async function githubForCli(question, signal) {
       );
       if (asked.answer === "unavailable") return failed("window_hidden", `The person could not be asked: ${asked.reason}.`, "Open the BUSY Bar Emulator window, then run this again.");
       if (asked.answer !== "yes") return failed("refused", "The person chose Cancel: nothing was sent.", "Do not ask again unless the person tells you to.");
-      return asAction(await actions.call("github.push", { folder: question.folder, name: where.name }));
+      return asAction(await actions.call("github.push", { folder: question.folder, name: where.name, ...(typeof question.email === "string" ? { email: question.email } : {}) }));
     }
     default:
       return failed("usage", "No such step.");

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { until } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";

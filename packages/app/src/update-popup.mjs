@@ -18,7 +18,7 @@ export const BUSY_RETRY_MS = 3000;
  * @param {object} o
  * @param {boolean} o.enabled                  config.updatePopup
  * @param {() => object} o.state               the updater's state (updater.state)
- * @param {() => object | null} o.notice       the update check's notice ({ version, page, summary? }), for the summary
+ * @param {() => object | null} o.notice       the update check's notice ({ version, page, notes? }), for the notes
  * @param {() => string | null} o.busy         what the app does that a restart would break, or null
  * @param {(line: string) => void} [o.log]
  * @param {() => number} [o.now]
@@ -27,7 +27,7 @@ export function createUpdatePopup({ enabled, state, notice, busy, log = () => {}
   const shown = new Map(); // version → when the window showed it in this run
 
   /**
-   * Whether the window shows the pop-up now: { show: true, version, current, canInstall, why?, page, summary? }, or
+   * Whether the window shows the pop-up now: { show: true, version, current, canInstall, why?, page, notes? }, or
    * { show: false, retryMs }: ask again in that many milliseconds (null: only when the update's state changes).
    */
   function ask() {
@@ -41,7 +41,7 @@ export function createUpdatePopup({ enabled, state, notice, busy, log = () => {}
     shown.set(s.version, now());
     log(`[shell] update: the pop-up offers ${s.version}${s.canInstall ? "" : " to download"}`);
     const n = notice();
-    const summary = n?.version === s.version && n.summary ? n.summary : null;
+    const notes = n?.version === s.version && n.notes ? n.notes : null;
     return {
       show: true,
       version: s.version,
@@ -49,7 +49,7 @@ export function createUpdatePopup({ enabled, state, notice, busy, log = () => {}
       canInstall: Boolean(s.canInstall),
       ...(s.canInstall ? {} : { why: s.why ?? null }),
       page: releasePage(s.version),
-      ...(summary ? { summary } : {}),
+      ...(notes ? { notes } : {}),
     };
   }
 

@@ -301,7 +301,10 @@ test("a folder that cannot be moved (no step, or a step fails) is set aside, not
     assert.ok(existsSync(opened.lockFile), what);
     const line = opened.notices.find((notice) => notice.includes("could not be moved"));
     assert.match(line ?? "", why, what);
-    assert.ok(line.includes(aside) && line.endsWith("the emulator starts with an empty BUSY Bar and no projects."), line);
+    assert.ok(line.includes(aside) && line.includes("the emulator starts with an empty BUSY Bar and no projects."), line);
+    // Where the apps went, by name.
+    assert.ok(line.endsWith(`Its apps are there too: app.kept in ${join(aside, "bar", "1.3.1", "ext", "user_assets")}.`), line);
+    assert.equal(existsSync(join(root, "set-aside", "moving.json")), false, `${what}: the record of the setting aside is gone`);
     opened.release();
   }
 });

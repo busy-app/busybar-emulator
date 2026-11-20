@@ -9,7 +9,9 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 
+import { execProgram } from "../../../engine/programs.mjs";
 import { alive, gone, hangingTool, personEnvironment, pidsIn, poisonedFolder } from "./test-support.mjs";
 import {
   busyCliScript,
@@ -183,10 +185,11 @@ test("Windows: one PATH, with the system's System32 after the Node's folder, and
 
 test("npm and npx for a project's scripts take the Node and npm from the environment, not from the file", () => {
   const posix = shimFiles("darwin");
-  assert.deepEqual(Object.keys(posix).sort(), ["npm", "npx"]);
+  assert.deepEqual(Object.keys(posix).sort(), ["npm", "npx", "tar"]);
   assert.equal(posix.npm.split("\n")[0], "#!/bin/sh");
   assert.match(posix.npm, /^exec "\$BUSY_EMULATOR_NODE" "\$BUSY_EMULATOR_NPM_CLI" "\$@"$/m);
   assert.match(posix.npx, /^exec "\$BUSY_EMULATOR_NODE" "\$BUSY_EMULATOR_NPX_CLI" "\$@"$/m);
+  assert.deepEqual(Object.keys(shimFiles("linux")).sort(), ["npm", "npx"]);
   const win = shimFiles("win32");
   assert.deepEqual(Object.keys(win).sort(), ["npm", "npm.cmd", "npx", "npx.cmd"]);
   assert.equal(win["npm.cmd"], '@"%BUSY_EMULATOR_NODE%" "%BUSY_EMULATOR_NPM_CLI%" %*\r\n');
@@ -198,6 +201,28 @@ test("npm and npx for a project's scripts take the Node and npm from the environ
   assert.deepEqual(readdirSync(dir).sort(), Object.keys(shimFiles(process.platform)).sort());
   writeShims(data, process.platform);
   assert.deepEqual(readdirSync(dir).sort(), Object.keys(shimFiles(process.platform)).sort(), "written again, nothing left beside them");
+});
+
+// EMU-345: the system's tar packs a file's extended attributes (macOS puts com.apple.provenance and com.apple.quarantine
+// on the files of a folder under /private/tmp) as PAX headers even with COPYFILE_DISABLE=1; the `tar` of tools/bin does not.
+test("macOS: busy-cli's tar packs no PaxHeader and no ._ entries from a folder with extended attributes", { skip: process.platform !== "darwin" && "macOS: the system's tar and its extended attributes" }, () => {
+  const work = realpathSync(temporary());
+  const folder = path.join(work, "app", "id");
+  mkdirSync(path.join(folder, "scripts"), { recursive: true });
+  writeFileSync(path.join(folder, "scripts", "main.js"), "// app\n");
+  for (const target of [folder, path.join(folder, "scripts"), path.join(folder, "scripts", "main.js")]) {
+    execProgram("/usr/bin/xattr", ["-w", "com.apple.provenance", "x", target]);
+    execProgram("/usr/bin/xattr", ["-w", "com.apple.quarantine", "0081;00000000;x;", target]);
+  }
+  const names = (archive) => gunzipSync(readFileSync(archive)).toString("latin1");
+  const shims = writeShims(path.join(work, "data"), "darwin");
+  const pack = (out, path_) => execProgram("tar", ["-czf", out, "-C", path.join(work, "app"), "id"], { env: { PATH: path_, COPYFILE_DISABLE: "1" } });
+  pack(path.join(work, "plain.tgz"), "/usr/bin");
+  assert.match(names(path.join(work, "plain.tgz")), /PaxHeader/, "the cause: the system's tar, whatever COPYFILE_DISABLE says");
+  pack(path.join(work, "ours.tgz"), `${shims}:/usr/bin`);
+  const ours = names(path.join(work, "ours.tgz"));
+  assert.doesNotMatch(ours, /PaxHeader|\._|LIBARCHIVE/);
+  assert.match(ours, /id\/scripts\/main\.js/);
 });
 
 // ------------------------------------------------------------------------------------------- running, with a project

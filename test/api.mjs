@@ -18,18 +18,20 @@
 // The others only read the bar and send requests that it refuses; on a firmware that opens /api/storage to apps (1.4.1)
 // they also install a probe app, which works in its own folder (test/app-storage.mjs), and remove it and its folder
 // after: a bar is left as it was.
+// The emulator alone also runs test/app-files.mjs: an app's binary bodies, sounds and writes against what a BUSY Bar
+// did with them (EMU-337), never on a bar.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 
 import { commandLine } from "../packages/server/arguments.mjs";
 import { probeSource } from "../packages/server/bar-speed.mjs";
+import { compareAppFiles, probeAppFiles } from "./app-files.mjs";
 import { compareAppStorage, probeAppStorage } from "./app-storage.mjs";
-import { emulatorFor, totals } from "./own-emulator.mjs";
+import { emulatorFor, recordingsRoot, totals } from "./own-emulator.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const recordDir = join(here, "api");
+// test/api, or the folder EMU_RECORDINGS names (own-emulator.mjs, recordingsRoot).
+const recordDir = join(recordingsRoot(), "api");
 const args = process.argv.slice(2);
 await commandLine(process.argv, { values: ["--addr", "--firmware"], optional: ["--bar"], flags: ["--record"] });
 const option = (name, fallback) => (args.includes(name) ? (args[args.indexOf(name) + 1]?.startsWith("--") === false ? args[args.indexOf(name) + 1] : fallback) : null);
@@ -332,6 +334,11 @@ async function emulatorAlone() {
   const major = (await call(addr, "GET", "version")).json.api_semver.split(".")[0];
   check("a client of the same major API version is served", (await versioned(`${major}.0.0`)) === 200);
   check("a client of another major API version is refused", (await versioned(`${Number(major) + 1}.0.0`)) === 405);
+
+  // An app's binary bodies, sounds and writes where the firmware falls short (app-files.mjs, EMU-337): against what a
+  // BUSY Bar did, a line for each firmware.
+  const version = (await call(addr, "GET", "status/firmware")).json?.version;
+  for (const line of compareAppFiles(version, await probeAppFiles(addr))) check(...line);
 
   await sleep(100);
   console.log(failed ? `${failed} checks failed` : "all checks passed");

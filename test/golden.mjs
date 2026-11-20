@@ -5,7 +5,7 @@
 //   node emulator/test/golden.mjs --record [--bar 10.0.4.20]   play each scene on the bar, save its frames as goldens
 //   node emulator/test/golden.mjs [--firmware 1.3.1]             play each scene in an emulator of its own, compare with goldens
 //   node emulator/test/golden.mjs --emu 127.0.0.1:8640         the same in an emulator that is already running
-//   ... [--only <scene>]                                        one scene
+//   ... [--only <scene>[,<scene>...]]                           those scenes
 //   ... [--images]                                              write the comparison image for matching scenes too
 //
 // The system scenes need the apps the goldens' bar had. An emulator of its own gets them from test/apps (set.json says
@@ -17,6 +17,11 @@
 // emulator reports): the bar they came from and its front and back frames, as GET /api/screen returns them. On a
 // mismatch the tool writes bar | emulator | difference to <scene>.png in a folder of the system's temporary folder
 // (EMU_TEST_OUT when the gate runs it) and prints its path.
+//
+// Scenes recorded at the BUSY Bar session (bar-session/run.mjs, EMU-348 and EMU-350: an app's own pictures, text outside
+// ASCII, an app that fails while it runs) are AWAITING until their golden is there: without one they are not played
+// and the line says so; with one they are compared like any other. The pictures are made here (bar-session/png.mjs)
+// and uploaded to the scene's app before it draws them.
 //
 // One scene is not compared whole: the SETUP hint names the bar's USB address, http://10.0.4.20, and the emulator the
 // address it answers on (patches.mjs). The address is left out (golden-compare.mjs, SCENE_MASKS); "Set up via", the
@@ -35,6 +40,8 @@ import { commandLine } from "../packages/server/arguments.mjs";
 import { appSetOf, emulatorFor, firmwareAt, outputDir, recordingsDir, totals } from "./own-emulator.mjs";
 import { compare, diffImage, maskOf, SCENE_MASKS } from "./golden-compare.mjs";
 import { targz } from "./package.mjs";
+import { errorApp } from "./bar-session/apps.mjs";
+import { png } from "./bar-session/png.mjs";
 
 
 const args = process.argv.slice(2);
@@ -45,7 +52,7 @@ const option = (name, fallback) => {
 };
 const record = args.includes("--record");
 const appsDir = join(dirname(fileURLToPath(import.meta.url)), "apps");
-const only = option("--only", null);
+const only = option("--only", null)?.split(",") ?? null;
 
 const APP = "golden";
 
@@ -53,6 +60,28 @@ const xpm = (rows, colors) =>
   ["! XPM2", `${rows[0].length} ${rows.length} ${Object.keys(colors).length} 1`, ...Object.entries(colors).map(([k, v]) => `${k} c ${v}`), ...rows].join("\n");
 
 const text = (font, extra = {}) => [{ id: "t", type: "text", text: "Aa0 BUSY!", font, x: 0, y: 0, ...extra }];
+
+// An app's own pictures (EMU-348), one of each kind a PNG can be: uploaded to the scene's app, drawn by `path`.
+const PICTURES = {
+  "front-72x16.png": png({ width: 72, height: 16, type: 2, pixel: (x, y) => [(x * 255) / 71, y * 16, 255 - (x * 255) / 71] }),
+  "dot-16x16.png": png({ width: 16, height: 16, type: 6, pixel: (x, y) => [255, 220, 0, Math.max(0, Math.min(255, Math.round((7.5 - Math.hypot(x - 7.5, y - 7.5)) * 64)))] }),
+  "back-160x80.png": png({ width: 160, height: 80, type: 2, pixel: (x, y) => [(x * 255) / 159, (y * 255) / 79, ((x ^ y) & 16) * 15] }),
+  "large-100x24.png": png({ width: 100, height: 24, type: 2, pixel: (x, y) => (((x >> 2) + (y >> 2)) & 1 ? [255, 255, 255] : [0, 80, 255]) }),
+  "palette-24x12.png": png({ width: 24, height: 12, type: 3, palette: [[0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 0, 255]], alpha: [0], pixel: (x, y) => [(x >> 3) + (y >= 6 ? 1 : 0)] }),
+  "gray-32x16.png": png({ width: 32, height: 16, type: 0, pixel: (x) => [x * 8] }),
+  "gray-alpha-16x16.png": png({ width: 16, height: 16, type: 4, pixel: (x, y) => [200, ((x + y) & 1) * 255] }),
+};
+// Text outside ASCII, by code point: the public tree carries no Cyrillic text (npm run check:export).
+const HELLO = String.fromCodePoint(0x41f, 0x440, 0x438, 0x432, 0x435, 0x442);
+const nonAscii = (font, text) => [{ id: "t", type: "text", text, font, x: 0, y: 2 }];
+const picture = (path, extra = {}) => ({ id: "p", type: "image", path, x: 0, y: 0, ...extra });
+
+// Recorded at the BUSY Bar session (EMU-348, EMU-350): played and compared once their golden is there.
+const AWAITING = new Set([
+  "png-front-full", "png-alpha-over-rect", "png-back", "png-too-large", "png-palette", "png-gray", "png-gray-alpha",
+  "text-cyrillic-small", "text-cyrillic-normal", "text-cyrillic-large", "text-diacritics", "text-symbols", "text-emoji",
+  "system-error-throw", "system-error-handler", "system-error-rejection",
+]);
 
 // Static scenes: nothing in them moves, so a frame taken a moment after drawing is the same on both sides.
 export const scenes = {
@@ -103,6 +132,28 @@ export const scenes = {
     { id: "i", type: "image", display: "back", stock_path: "images/checkmark_back_11x11.image", x: 120, y: 30 },
     { id: "t", type: "text", display: "back", text: "superscript", font: "superscript", x: 110, y: 60, align: "center" },
   ],
+  "png-front-full": [picture("front-72x16.png")],
+  "png-alpha-over-rect": [
+    { id: "r", type: "rectangle", x: 0, y: 0, width: 72, height: 16, fill: "solid", fill_colors: ["#2040FFFF"], border_width: 0 },
+    picture("dot-16x16.png", { x: 28, z_index: 10 }),
+  ],
+  "png-back": [{ id: "f", type: "text", text: "front", font: "normal", x: 0, y: 0 }, picture("back-160x80.png", { display: "back" })],
+  "png-too-large": [picture("large-100x24.png")],
+  "png-palette": [
+    { id: "r", type: "rectangle", x: 0, y: 0, width: 72, height: 16, fill: "solid", fill_colors: ["#808080FF"], border_width: 0 },
+    picture("palette-24x12.png", { x: 4, y: 2, z_index: 10 }),
+  ],
+  "png-gray": [picture("gray-32x16.png", { x: 20 })],
+  "png-gray-alpha": [
+    { id: "r", type: "rectangle", x: 0, y: 0, width: 72, height: 16, fill: "solid", fill_colors: ["#FF0000FF"], border_width: 0 },
+    picture("gray-alpha-16x16.png", { x: 28, z_index: 10 }),
+  ],
+  "text-cyrillic-small": nonAscii("small", HELLO),
+  "text-cyrillic-normal": nonAscii("normal", HELLO),
+  "text-cyrillic-large": nonAscii("large", HELLO),
+  "text-diacritics": nonAscii("normal", "caf\u00e9 \u00fc\u00f1"),
+  "text-symbols": nonAscii("normal", "\u00b0 \u20ac \u2014 \u2713"),
+  "text-emoji": nonAscii("normal", "a\u{1F600}b"),
 };
 
 // Walks through the system screens. Each starts from the apps list: an app launched through the API and quit again
@@ -153,6 +204,24 @@ export const flows = {
     await call("POST", `apps/launch?app_id=${PROBE}`);
     await sleep(2500);
   },
+  // An app that fails while it runs (EMU-350): what the BUSY Bar shows 5 s after the start, well past the failure.
+  "system-error-throw": async () => {
+    await installProbe({ "scripts/main.js": errorApp("throw", PROBE) });
+    await call("POST", `apps/launch?app_id=${PROBE}`);
+    await sleep(5000);
+  },
+  "system-error-handler": async () => {
+    await installProbe({ "scripts/main.js": errorApp("handler", PROBE) });
+    await call("POST", `apps/launch?app_id=${PROBE}`);
+    await sleep(1500);
+    await call("POST", "input?key=ok");
+    await sleep(3500);
+  },
+  "system-error-rejection": async () => {
+    await installProbe({ "scripts/main.js": errorApp("rejection", PROBE) });
+    await call("POST", `apps/launch?app_id=${PROBE}`);
+    await sleep(5000);
+  },
   // SETUP of 1.4.1 (0a11d1f9), of the second app in the list (Weather): its settings, the wheel moved to a switch, and
   // the hint OK opens on its first setting, a place, which the bar cannot edit. Not the first app's (Clock): the front
   // display scrolls a label that does not fit ("Time Format"), and its frame depends on the moment it is taken.
@@ -170,6 +239,9 @@ export const flows = {
   },
 };
 
+// The apps of the error scenes (EMU-350): bar-session/apps.mjs, the same ones the BUSY Bar session watches. Each draws a
+// line first, so that what the BUSY Bar does with a failing app is seen over the app's own screen; the one with the
+// rejection draws it again each second.
 // The firmware a scene came with: it is played on that firmware and later ones (a bar on 1.3.1 has another SETUP).
 const SINCE = {
   "system-setup": "1.4.1",
@@ -190,6 +262,9 @@ async function toSetup(index = 0) {
   await keys("up", "ok");
   await sleep(1000);
 }
+
+// The system scenes that show the apps menu, and so need the apps of test/apps/set.json; the error scenes do not.
+const needsAppsList = (name) => Boolean(flows[name]) && !name.startsWith("system-error");
 
 // After the error screen: back to the list, the probe uninstalled.
 async function removeProbe() {
@@ -223,32 +298,38 @@ async function frame(display) {
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-async function capture(elements) {
+async function capture(elements, refusable = false) {
   await call("DELETE", `display/draw?application_name=${APP}`);
+  // The scene's own pictures, in the app's assets.
+  for (const path of new Set(elements.map((e) => e.path).filter(Boolean))) {
+    const r = await fetch(`http://${addr}/api/assets/upload?application_name=${APP}&file=${path}`, { method: "POST", body: PICTURES[path] });
+    if (r.status !== 200) throw new Error(`upload ${path}: ${r.status} ${await r.text()}`);
+  }
   await sleep(150);
   const r = await call("POST", "display/draw", { application_name: APP, priority: 100, elements });
-  if (r.status !== 200) throw new Error(`draw: ${r.status} ${r.text}`);
+  // A scene of the BUSY Bar session may be refused (a picture larger than the display): the answer is then part of it.
+  if (r.status !== 200 && !refusable) throw new Error(`draw: ${r.status} ${r.text}`);
   // Two LVGL refresh periods and the back display's mirror timer are well under this.
   await sleep(400);
-  return { front: await frame(0), back: await frame(1) };
+  return { ...(r.status !== 200 ? { refused: { status: r.status, text: r.text } } : {}), front: await frame(0), back: await frame(1) };
 }
 
 // ---------------------------------------------------------------- main
 
 const all = [...Object.keys(scenes), ...Object.keys(flows)];
-if (only && !all.includes(only)) throw new Error(`no scene ${only}: ${all.join(", ")}`);
+for (const one of only ?? []) if (!all.includes(one)) throw new Error(`no scene ${one}: ${all.join(", ")}`);
 // The bar, or the emulator: one at --emu, else one of this test's own (with the apps of test/apps for the system scenes).
-const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : await emulatorFor(args, { apps: !only || Boolean(flows[only]), name: "golden" });
+const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : await emulatorFor(args, { apps: !only || only.some(needsAppsList), name: "golden" });
 const addr = target.addr;
 // The firmware the bar or the emulator runs: its goldens, and its scenes.
 const firmware = target.firmware ?? (await firmwareAt(addr));
 const goldenDir = recordingsDir("golden", firmware);
-const names = all.filter((n) => (!only || n === only) && (!SINCE[n] || later(firmware, SINCE[n])));
-if (!names.length) throw new Error(`the scene ${only} came with firmware ${SINCE[only]}; this is ${firmware}`);
+const names = all.filter((n) => (!only || only.includes(n)) && (!SINCE[n] || later(firmware, SINCE[n])));
+if (!names.length) throw new Error(`the scenes ${only.join(", ")} came with a later firmware than ${firmware}`);
 
 /** Plays a scene and takes its frames; a system scene cleans up after itself. */
 async function play(name) {
-  if (scenes[name]) return capture(scenes[name]);
+  if (scenes[name]) return capture(scenes[name], AWAITING.has(name));
   // Nothing left on the canvas from the draw scenes.
   await call("DELETE", `display/draw?application_name=${APP}`);
   await flows[name]();
@@ -261,7 +342,7 @@ if (record) {
   console.log(`recording from the bar at ${target.addr}, firmware ${info.version} ${info.commit_hash}, into ${goldenDir}`);
   // The system scenes show the bar's apps by name and icon: the bar must list the names of the set the emulator installs
   // for this firmware, in its order (a stand-in may have another id).
-  if (names.some((n) => flows[n])) {
+  if (names.some(needsAppsList)) {
     const listed = JSON.parse((await call("GET", "apps/list")).text).apps.filter((a) => !a.is_debug).map((a) => a.name);
     const set = appSetOf(firmware).map((id) => JSON.parse(readFileSync(join(appsDir, id, "appmeta", "manifest.json"), "utf8")).name);
     if (listed.join() !== set.join()) throw new Error(`the bar lists ${listed.join(", ")}; test/apps/set.json has ${set.join(", ")} for ${firmware}`);
@@ -272,14 +353,24 @@ if (record) {
     // The bar is named by its model only: the recordings are published, and a serial number is the owner's (EMU-163).
     const source = { bar: "BUSY Bar", firmware: info.commit_hash, recorded: new Date().toISOString() };
     const what = scenes[name] ? { elements: scenes[name] } : { flow: name };
-    writeFileSync(join(goldenDir, `${name}.json`), JSON.stringify({ source, ...what, ...frames }, null, 2) + "\n");
+    // Text outside ASCII as \u escapes: the same JSON, and the public tree carries no Cyrillic text.
+    const text = JSON.stringify({ source, ...what, ...frames }, null, 2).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    writeFileSync(join(goldenDir, `${name}.json`), text + "\n");
     console.log(`  ${name}`);
   }
   await call("DELETE", `display/draw?application_name=${APP}`);
+  await call("DELETE", `assets/upload?application_name=${APP}`);
 } else {
   let failed = 0;
+  let awaiting = 0;
   for (const name of names) {
     const file = join(goldenDir, `${name}.json`);
+    if (!existsSync(file) && AWAITING.has(name)) {
+      // Not a check yet: the BUSY Bar session records it (docs/bar-session.md).
+      awaiting++;
+      console.log(`  wait ${name}: no golden of ${firmware} yet; the BUSY Bar session records it (node emulator/test/bar-session/run.mjs)`);
+      continue;
+    }
     if (!existsSync(file)) {
       // A scene that cannot be compared is not a scene that agrees.
       failed++;
@@ -290,16 +381,22 @@ if (record) {
     const actual = await play(name);
     const mask = maskOf(name, firmware);
     const d = compare(golden, actual, mask);
-    const ok = d.front === 0 && d.back === 0;
+    // A refused draw must be refused alike, with the same answer.
+    const refusal = JSON.stringify(golden.refused ?? null) === JSON.stringify(actual.refused ?? null) ? "" : `; the draw: bar ${JSON.stringify(golden.refused ?? "200")}, emulator ${JSON.stringify(actual.refused ?? "200")}`;
+    // A refused draw draws nothing: what shows is the device's own screen, which is not the scene's. Its answer is.
+    if (golden.refused) d.front = d.back = 0;
+    const ok = d.front === 0 && d.back === 0 && !refusal;
     if (!ok) failed++;
     const image = !ok || args.includes("--images") ? join(outputDir("golden"), `${name}.png`) : null;
     if (image) writeFileSync(image, diffImage(golden, actual, mask));
     const left = SCENE_MASKS[name] ? " (the address not compared)" : "";
-    console.log(`  ${ok ? "ok  " : "DIFF"} ${name}${ok ? left : `: front ${d.front} px, back ${d.back} px differ${left} (${image})`}`);
+    console.log(`  ${ok ? "ok  " : "DIFF"} ${name}${ok ? left : `: front ${d.front} px, back ${d.back} px differ${left}${refusal} (${image})`}`);
   }
   await call("DELETE", `display/draw?application_name=${APP}`);
-  console.log(failed ? `${failed} of ${names.length} scenes differ from the bar on ${firmware}` : `all ${names.length} scenes match the bar on ${firmware}`);
+  await call("DELETE", `assets/upload?application_name=${APP}`);
+  const played = names.length - awaiting;
+  console.log(`${failed ? `${failed} of ${played} scenes differ from the bar on ${firmware}` : `all ${played} scenes match the bar on ${firmware}`}${awaiting ? `; ${awaiting} wait for the BUSY Bar session` : ""}`);
   if (args.includes("--images")) console.log(`images: ${outputDir("golden")}`);
   await target.stop();
-  totals({ pass: names.length - failed, fail: failed });
+  totals({ pass: played - failed, fail: failed });
 }

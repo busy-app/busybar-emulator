@@ -9,7 +9,9 @@
 //            unpacked and checked by the app, is renamed into its place, and the new version is started. Once the
 //            new version writes the plan's `started` mark, the old bundle and the staging folder go. If the new
 //            version ends before it writes the mark, the old bundle is put back and started again, and the result
-//            says why.
+//            says why; but not when the new version moved the data folder to a newer format first (its server does
+//            that before the mark): the old version could not open the folder any more (data-format.mjs), so the new
+//            one stays, the old bundle is kept in the staging folder, and the result says what happened.
 //   Windows  the release's setup.exe runs silently into the install folder (/S /D=<folder>, /NoShortcut for a copy
 //            outside the default folder). Exit code 3 is the setup's "a file of the folder is in use": the helper
 //            waits and tries again for a while (the app's server, a command line or an agent's MCP server may still
@@ -150,6 +152,20 @@ function launch(exe, log) {
   return child;
 }
 
+/**
+ * The format of the data folder the plan's folder lies in (<data>/tmp/update-<version>/): the number its record names,
+ * null when there is none or it names none. Read as data-folder.mjs reads it; only reads.
+ */
+export function dataFormatOf(plan) {
+  const file = path.join(path.dirname(path.dirname(path.dirname(plan.result))), "format");
+  try {
+    const first = readFileSync(file, "utf8").split(/\r?\n/, 1)[0].trim();
+    return /^\d{1,9}$/.test(first) ? Number(first) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Waits for the new version's mark, or for its process to end, or for the time to pass: "started" | "ended" | "late". */
 async function waitStarted(plan, child) {
   let ended = false;
@@ -194,6 +210,7 @@ async function swapMac(plan, log, result) {
     return;
   }
   log(`${plan.version} is in place, the old version is kept at ${plan.previous}`);
+  const formatBefore = dataFormatOf(plan);
   const child = launch(plan.exe, log);
   const how = await waitStarted(plan, child);
   child.unref();
@@ -206,6 +223,22 @@ async function swapMac(plan, log, result) {
   if (how === "late") {
     // Still starting (under Rosetta the first start takes long): it cleans up after itself once it is up.
     result({ ok: true, version: plan.version, late: true });
+    return;
+  }
+  const formatNow = dataFormatOf(plan);
+  if (formatNow !== null && (formatBefore === null || formatNow > formatBefore)) {
+    // The new version moved the data folder on before it ended: the old one would refuse the folder. Neither is
+    // started again (the new one ended once already); the next start of the app is the new version's.
+    log(`${plan.version} moved the data folder from format ${formatBefore ?? "none"} to ${formatNow} and ended before it was up: it stays, the old version is kept at ${plan.previous}`);
+    result({
+      ok: false,
+      code: "ended_after_move",
+      version: plan.version,
+      from: plan.from,
+      format: formatNow,
+      message: `version ${plan.version} moved the data folder to its format ${formatNow} and then ended before it was up; ${plan.from} cannot open that folder any more, so ${plan.version} stays in place`,
+      hint: `Open BUSY Bar Emulator again. If it ends again, report a bug with its log (logs/shell.log in the data folder); ${plan.from} is kept at ${plan.previous} but cannot open the folder.`,
+    });
     return;
   }
   log(`${plan.version} ended before it was up: the old version goes back`);

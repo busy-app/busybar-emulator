@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import dgram from "node:dgram";
 import { createServer } from "node:http";
-import { after, before, beforeEach, test } from "node:test";
+import { after, before, beforeEach, test } from "./node-test.mjs";
 
 import { PORTS, sleep, until } from "../helpers.mjs";
 import { launch, VISIBLE } from "./harness.mjs";

@@ -252,7 +252,8 @@
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         state.answers.delete(id);
-        reject(new Error("The 3D view did not answer"));
+        // What was asked is in the text: a test's known flake goes by it (EMU-328: "probe full" on Windows).
+        reject(new Error(`The 3D view did not answer (${[message?.type, message?.full ? "full" : null].filter(Boolean).join(" ")})`));
       }, timeoutMs);
       state.answers.set(id, (answer) => {
         clearTimeout(timer);

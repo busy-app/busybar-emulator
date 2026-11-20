@@ -6,7 +6,7 @@
 //
 //   node --test emulator/packages/server/publish/test/publish-flow.test.mjs
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -20,6 +20,7 @@ import * as steps from "../../legacy-window/publish-steps.mjs";
 import { makeProject, pngOf } from "../../readiness/test/project-fixture.mjs";
 import { nameProblem } from "../../readiness/rules.mjs";
 import { textProblems } from "../../readiness/texts.mjs";
+import { readmeFileHints } from "../files.mjs";
 import { defaultReadme, firstParagraph, README_MARK, readmeMarkdown, readmeProblem, templateLeft } from "../readme.mjs";
 import { displayOf, frameOf, readScreenshotFile } from "../upload.mjs";
 
@@ -33,11 +34,11 @@ function tempDir(t) {
   return dir;
 }
 
-async function cli(home, argv) {
+async function cli(home, argv, { json = true } = {}) {
   const ctx = resolveContext({ env: { BUSY_EMULATOR_DATA: path.join(home, "data") }, platform: process.platform, homeDir: home, scriptPath: CLI, execPath: process.execPath, nodeVersion: process.versions.node });
   const out = [];
-  const code = await main([...argv, "--json"], { ctx, sys: system, out: (line) => out.push(line), err: () => {} });
-  return { code, json: JSON.parse(out.join("\n")) };
+  const code = await main(json ? [...argv, "--json"] : argv, { ctx, sys: system, out: (line) => out.push(line), err: () => {} });
+  return { code, json: json ? JSON.parse(out.join("\n")) : null, stdout: out.join("\n") };
 }
 
 /** A finished project but for what stage 1 makes, with the template's README and a settings file. */
@@ -93,8 +94,8 @@ test("Next is off with a short reason while a step is not complete, and writes w
   assert.equal(steps.nextBlock("screenshots", status), "Add a front screenshot");
   assert.equal(steps.nextBlock("screenshots", { screenshots: { front: [{ path: "a" }, { path: "b", problem: "it is 70×16" }], back: [] } }), "Remove the screenshot marked red");
 
-  // README: how to use it is the author's to write; Next writes README.md.
-  assert.equal(steps.nextBlock("readme", status, {}, RULES), "Write how to use it");
+  // README: how to use it is optional (EMU-364), rows written are checked; Next writes README.md.
+  assert.equal(steps.nextBlock("readme", status, {}, RULES), null, "no How to use holds nothing back");
   const readme = { ...status.readme.config, usage: "- The wheel sets the brightness" };
   assert.equal(steps.nextBlock("readme", status, { readme }, RULES), null);
   assert.deepEqual(steps.saveOnNext("readme", status, { readme, readmeDirty: true }), { kind: "readme", readme });
@@ -124,11 +125,18 @@ test("Next is off with a short reason while a step is not complete, and writes w
 
 // ---------------------------------------------------------------- the README
 
+test("a description that names a file is no paragraph for the README: the short description is taken (EMU-333)", () => {
+  const start = defaultReadme({ name: "Desk Clock", texts: { ...TEXTS, description: "@README.md" } });
+  assert.equal(start.intro, TEXTS.short_description.trim());
+  assert.doesNotMatch(JSON.stringify(start), /@README/);
+});
+
 test("the README is made from the project: title, paragraph, screenshots, How to use, settings, license; never the template's", () => {
   const facts = { name: "Desk Clock", id: "io.github.jane.desk_clock", texts: TEXTS, screenshots: { front: [{ path: "screenshots/front-1.png", scaled: "screenshots/front-1@8x.png" }], back: [{ path: "screenshots/back-1.png", scaled: null }] }, settings: [{ label: "Digits", about: "How big the digits are.", default: "Big" }], license: "MIT" };
   const start = defaultReadme(facts);
   assert.deepEqual(start, { mode: "fields", title: "Desk Clock", intro: "A clock for the desk that shows the time in big digits.", usage: "", markdown: "" });
-  assert.equal(readmeProblem(start, facts), "Write how to use it");
+  assert.equal(readmeProblem(start, facts), null, "How to use is optional (EMU-364)");
+  assert.doesNotMatch(readmeMarkdown(start, facts), /How to use/, "and left out when it is empty");
   const text = readmeMarkdown({ ...start, usage: "- Start shows the date\n- Back quits" }, facts);
   assert.ok(text.startsWith(`${README_MARK}\n\n# Desk Clock\n\nA clock for the desk that shows the time in big digits.\n\n<img src="screenshots/front-1@8x.png" width="576"`), text);
   assert.match(text, /<img src="screenshots\/back-1\.png" width="480" alt="Desk Clock, the back display">/);
@@ -150,10 +158,13 @@ test("publish readme: preview, set and get; the template's README is replaced, t
   const { home, dir } = project(t);
   await cli(home, ["catalog-texts", "set", dir, `--category=${TEXTS.category}`, `--short-description=${TEXTS.short_description}`, `--description=${TEXTS.description}`, `--changelog=${TEXTS.changelog}`]);
   const got = (await cli(home, ["publish", "readme", "get", dir])).json;
-  assert.deepEqual([got.state, got.ready, got.saved, got.config.mode, got.problem, got.left.map((one) => one.id)], ["template", false, false, "fields", "Write how to use it", ["intro", "controls"]]);
+  assert.deepEqual([got.state, got.ready, got.saved, got.config.mode, got.problem, got.left.map((one) => one.id)], ["template", false, false, "fields", null, ["intro", "controls"]]);
+  assert.match(got.how_to_use_hint, /optional/, "no How to use: a hint");
   assert.deepEqual(got.facts.settings, [{ label: "Digits", about: "How big the digits are.", default: "Big" }, { label: "Seconds", about: "", default: "on" }]);
-  const refused = (await cli(home, ["publish", "readme", "set", dir])).json;
-  assert.deepEqual([refused.ok, refused.code], [false, "readme_incomplete"]);
+  // How to use written wrong is refused, with what is wrong and how to fix it (EMU-364).
+  const refused = (await cli(home, ["publish", "readme", "set", dir, "--usage=- Press it to begin"])).json;
+  assert.deepEqual([refused.ok, refused.code, refused.problem], [false, "readme_incomplete", "How to use, row 1: name a control of the BUSY Bar, Start, Wheel turn, Wheel press or Back"]);
+  assert.match(refused.hint, /--controls.*optional/);
   const preview = (await cli(home, ["publish", "readme", "preview", dir, "--usage=- Start shows the date"])).json;
   assert.match(preview.markdown, /## How to use\n\n- Start shows the date/);
   assert.match(readFileSync(path.join(dir, "README.md"), "utf8"), /generated from the BUSY JS app template/, "preview writes nothing");
@@ -289,16 +300,126 @@ test("publish license --from: the person's own license's text copied in as LICEN
   assert.equal((await cli(home, ["publish", "license", dir, "--license=MIT", `--from=${mine}`])).json.code, "usage", "--from is your own license");
 });
 
-test("publish status: the app's two icons as they are in the project, and How to use holds the README step until it has a row", async (t) => {
+test("publish status: the app's two icons as they are in the project; How to use is optional, a wrong one holds the README step (EMU-364)", async (t) => {
   const { home, dir } = project(t);
   const status = (await cli(home, ["publish", "status", dir])).json;
   assert.match(status.icon.front ?? "", /^data:image\/png;base64,iVBORw0KGgo/);
   assert.equal(status.icon.back, null, "the project has no back icon");
   await cli(home, ["catalog-texts", "set", dir, `--category=${TEXTS.category}`, `--short-description=${TEXTS.short_description}`, `--description=${TEXTS.description}`, `--changelog=${TEXTS.changelog}`]);
-  // A README without the section is written (an agent's free text is taken), but the step is not done.
+  // A README without rows is written (an agent's free text is taken), and the step is done: a hint says why rows help.
   const loose = (await cli(home, ["publish", "readme", "set", dir, "--usage=Use it as you like."])).json;
-  assert.deepEqual([loose.ok, loose.state, loose.ready, loose.how_to_use], [true, "ours", false, "Add a control to How to use"]);
+  assert.deepEqual([loose.ok, loose.state, loose.ready, loose.how_to_use], [true, "ours", true, null]);
+  assert.match(loose.how_to_use_hint, /How to use is optional.*The catalog does not show it yet\./);
+  // The person's own README with no How to use section at all, the owner's case of 20.11: ready, and status says so.
+  writeFileSync(path.join(dir, "README.md"), "# Desk Clock\n\nA clock for the desk.\n\n## Features\n\n- Press Start to see the date\n- Turn the wheel to change the city\n");
+  const own = (await cli(home, ["publish", "status", dir])).json;
+  assert.deepEqual([own.readme.state, own.readme.ready, own.readme.how_to_use, own.steps.readme], ["yours", true, null, "done"]);
+  assert.match(own.readme.how_to_use_hint, /optional/);
+  // A README from elsewhere with install steps under How to use: a hint that names the rows, never a block, and
+  // "Start a session" is no row of Start.
+  writeFileSync(path.join(dir, "README.md"), "# Desk Clock\n\nA clock for the desk.\n\n## How to use\n\n- Install it from the catalog\n- Start a session\n");
+  const steps = (await cli(home, ["publish", "status", dir])).json;
+  assert.deepEqual([steps.readme.ready, steps.readme.how_to_use, steps.steps.readme], [true, null, "done"]);
+  assert.match(steps.readme.how_to_use_hint, /^How to use: rows 1 and 2 name no control of the BUSY Bar, so the section reads as plain text, which is fine\. Rows of controls look like - \*\*Start\*\*: Starts the timer/);
+  writeFileSync(path.join(dir, "README.md"), "# Desk Clock\n\nA clock for the desk.\n\n## How to use\n\n- **Start**:\n");
+  const empty = (await cli(home, ["publish", "status", dir])).json;
+  assert.deepEqual([empty.readme.ready, empty.readme.how_to_use], [true, null]);
+  assert.match(empty.readme.how_to_use_hint, /^How to use: write what Start does\. The section is optional, so this does not hold the step\.$/);
+  // What does hold a README.md that is there is said beside the step in the text: the file's, not the configuration's.
+  writeFileSync(path.join(dir, "README.md"), "# Desk Clock\n\nA clock for the desk.\n\n## Layout\n\nsrc/ is the app.\n");
+  const text = await cli(home, ["publish", "status", dir], { json: false });
+  assert.match(text.stdout, /^readme: todo \(take out the template's sections for developers\)$/m);
   const rows = (await cli(home, ["publish", "readme", "set", dir, "--usage=- **Start**: Shows the date\n- **Wheel turn**: Changes the city"])).json;
   assert.deepEqual([rows.ready, rows.how_to_use], [true, null]);
   assert.match(readFileSync(path.join(dir, "README.md"), "utf8"), /## How to use\n\n- \*\*Start\*\*: Shows the date\n- \*\*Wheel turn\*\*: Changes the city\n/);
+});
+
+// ---------------------------------------------------------------- the project's README.md as it is (EMU-365)
+
+/**
+ * The owner's case of 20.11: an app in app/ of a larger repository, its README written elsewhere, linking up. With
+ * CRLF and a byte that is not UTF-8: any writing of it, even of the text as read, changes its bytes.
+ */
+const OWN_README = Buffer.concat([Buffer.from("Caf\xe9 note\r\n", "latin1"), Buffer.from("# Desk Clock\r\n\r\nA clock for the desk.\r\n\r\n![Front](screenshots/front-1.png)\r\n\r\nSee [the plugin](../plugin) and [the whole project](../README.md), [the source](src/main.ts), [the build](dist/app.tgz) and [busy.app](https://busy.app).\r\n\r\n```sh\r\ncat ../not-a-link.md\r\n```\r\n\r\n<img src=\"docs/missing.png\">\r\n", "utf8")]);
+
+test("the project's README.md as it is: mode file writes nothing, its problem is only that it is missing or empty", () => {
+  const facts = { name: "Desk Clock", id: "x", texts: TEXTS, screenshots: { front: [], back: [] }, settings: [], license: null };
+  assert.equal(readmeProblem({ mode: "file" }, { ...facts, file: null }), "There is no README.md in the project");
+  assert.equal(readmeProblem({ mode: "file" }, { ...facts, file: " \n" }), "README.md is empty");
+  assert.equal(readmeProblem({ mode: "file" }, { ...facts, file: "# Mine, with no How to use\n" }), null);
+  assert.equal(readmeProblem({ mode: "file" }, { ...facts, file: '# X\n\nA JavaScript app for the BUSY Bar, generated from the BUSY JS app template.\n' }), null, "what is left of the template is a hint, not a block");
+  assert.equal(readmeMarkdown({ mode: "file" }, { ...facts, file: "a\r\nb" }), "a\r\nb", "the file as it is");
+});
+
+test("hints of a README.md used as it is: links out of the app's folder, files not published, the template, How to use", (t) => {
+  const dir = tempDir(t);
+  const text = OWN_README.toString("utf8");
+  const hints = readmeFileHints(dir, text, ["README.md", "src/main.ts", "screenshots/front-1.png"]);
+  assert.equal(hints.length, 2, hints.join("\n"));
+  assert.match(hints[0], /^Links outside the app's folder will break on GitHub, where the public repository holds this folder alone: \.\.\/plugin, \.\.\/README\.md\./);
+  assert.equal(hints[1], "Links to files the public repository will not hold (kept out, or not in the project): dist/app.tgz, docs/missing.png.");
+  assert.doesNotMatch(hints.join(" "), /not-a-link|busy\.app/, "code and addresses are not links to check");
+  assert.deepEqual(readmeFileHints(dir, "# X\n\n[docs](docs/) and [top](#x)\n", ["docs/a.md"]), [], "a folder the repository holds, an anchor");
+  assert.deepEqual(readmeFileHints(dir, "# X\n\n## How to use\n\n- **Start**:\n", []), ["How to use: write what Start does. The section is optional, so this does not hold the step."]);
+  // No false hints (review of EMU-365): what the flow makes itself, footnotes, comments, code of every kind, escapes.
+  const quiet = [
+    "[License](LICENSE) and [.gitignore](.gitignore), ![Front](screenshots/front-1@8x.png)",
+    "A claim.[^1]\n\n[^1]: Footnote text, not a link",
+    "<!-- [old](old/notes.md) -->",
+    "    [indented](../code.md)",
+    "- A step:\n\n  ```sh\n  cat [x](../in-a-list.md)\n  ```",
+    "Run ``[x](../double.md)`` here.",
+    "[Plus](docs/notes%2Bv2.md)",
+  ].join("\n\n");
+  assert.deepEqual(readmeFileHints(dir, quiet, ["docs/notes+v2.md"]), [], "nothing to say");
+});
+
+test("publish readme set --keep: README.md stays byte for byte through the README step, Repository files and the package's plan", async (t) => {
+  const { home, dir } = project(t);
+  await cli(home, ["catalog-texts", "set", dir, `--category=${TEXTS.category}`, `--short-description=${TEXTS.short_description}`, `--description=${TEXTS.description}`, `--changelog=${TEXTS.changelog}`]);
+  const file = path.join(dir, "README.md");
+  rmSync(file);
+  const none = (await cli(home, ["publish", "readme", "set", dir, "--keep"])).json;
+  assert.deepEqual([none.ok, none.code, none.problem], [false, "readme_incomplete", "There is no README.md in the project"]);
+  writeFileSync(file, "\n");
+  assert.equal((await cli(home, ["publish", "readme", "get", dir])).json.keep_problem, "README.md is empty", "the reason the switch is off");
+  writeFileSync(file, OWN_README);
+  assert.equal((await cli(home, ["publish", "readme", "set", dir, "--keep", "--intro=x"])).json.code, "usage", "--keep takes no text");
+  assert.equal((await cli(home, ["publish", "readme", "set", dir, "--mode=file", "--usage=- **Start**: Go"])).json.code, "usage", "nor --mode file");
+  assert.deepEqual((await cli(home, ["publish", "readme", "get", dir])).json.file_hints, [], "the file's hints only once it is used as it is");
+  const stamp = statSync(file).mtimeMs;
+  const kept = await cli(home, ["publish", "readme", "set", dir, "--keep"], { json: false });
+  assert.match(kept.stdout, /^Uses .*README\.md as it is: nothing was written\.\n {2}Hint: Links outside the app's folder will break on GitHub/);
+  assert.ok(readFileSync(file).equals(OWN_README), "not touched");
+  assert.equal(statSync(file).mtimeMs, stamp, "not even written again");
+  const status = (await cli(home, ["publish", "status", dir])).json;
+  assert.deepEqual([status.readme.state, status.readme.kept, status.readme.ready, status.steps.readme, status.readme.config.mode], ["kept", true, true, "done", "file"]);
+  assert.equal(status.readme.markdown, OWN_README.toString("utf8"), "the preview is the file as it is");
+  assert.equal(status.readme.file_hints.length, 2);
+  // Repository files: the README is published as it is, not made again.
+  const files = (await cli(home, ["publish", "files", dir, "--write"])).json;
+  assert.deepEqual([files.readme, files.written.includes("README.md"), files.published.some((one) => one.path === "README.md")], ["kept", false, true]);
+  assert.ok(readFileSync(file).equals(OWN_README), "Repository files kept it");
+  assert.equal(statSync(file).mtimeMs, stamp);
+  // Another README over it only with --replace; Markdown alone takes the file's own text, and writes nothing.
+  const over = (await cli(home, ["publish", "readme", "set", dir, "--mode=fields", "--title=Desk Clock"])).json;
+  assert.deepEqual([over.ok, over.code], [false, "readme_kept"]);
+  assert.ok(readFileSync(file).equals(OWN_README));
+  const markdown = (await cli(home, ["publish", "readme", "set", dir, "--mode=markdown"])).json;
+  assert.deepEqual([markdown.ok, markdown.kept, markdown.config.mode], [true, false, "markdown"]);
+  assert.ok(readFileSync(file).equals(OWN_README), "the same text, line ends and all: not written");
+  // Kept again, then replaced on purpose.
+  await cli(home, ["publish", "readme", "set", dir, "--keep"]);
+  const replaced = (await cli(home, ["publish", "readme", "set", dir, "--mode=fields", "--title=Desk Clock", "--replace"])).json;
+  assert.deepEqual([replaced.ok, replaced.state, replaced.kept], [true, "ours", false]);
+  assert.match(readFileSync(file, "utf8"), /^<!-- Made by BUSY Bar Emulator/);
+  assert.match(replaced.moved, /^\.busy\/removed\/\d+-README\.md$/);
+  assert.ok(readFileSync(path.join(dir, replaced.moved)).equals(OWN_README), "the one used as it is went to .busy/removed/, as it was");
+  // Kept, then the file deleted: Repository files does not make one from the fields behind the person's back.
+  writeFileSync(file, OWN_README);
+  await cli(home, ["publish", "readme", "set", dir, "--keep"]);
+  rmSync(file);
+  const gone = (await cli(home, ["publish", "files", dir, "--write"])).json;
+  assert.deepEqual([gone.ok, gone.code, existsSync(file)], [false, "readme_gone", false]);
+  assert.match(gone.hint, /Put the file back, or choose another README/);
 });

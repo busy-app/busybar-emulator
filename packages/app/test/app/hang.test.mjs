@@ -3,7 +3,7 @@
 // server without the app).
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { test } from "node:test";
+import { test } from "./node-test.mjs";
 
 import { CHROMIUM_GONE_WITHIN_MS, describeProcess, listening, PORTS, removeFolder, survivors } from "../helpers.mjs";
 import { loadHelpersAgain, runHanging } from "../hanging.mjs";

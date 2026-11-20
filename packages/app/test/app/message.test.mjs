@@ -2,7 +2,7 @@
 // bridge.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { alive, listening, PORTS, sleep, until } from "../helpers.mjs";
 import { launch } from "./harness.mjs";

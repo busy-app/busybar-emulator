@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { readMp4 } from "../../src/capture-mp4.mjs";
 import { HAS_REAL_SERVER, removeFolder, sleep, temporaryFolder, until } from "../helpers.mjs";
@@ -44,10 +44,7 @@ after(async () => {
 });
 
 const bare = (code) => app.page(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message } }))`);
-const act = async (code) => {
-  await app.press();
-  return bare(code);
-};
+const act = (code) => app.act(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message } }))`);
 const q = (value) => JSON.stringify(value);
 const said = () => app.page(`document.querySelector("#capture-toast").hidden ? null : document.querySelector("#capture-said").textContent`);
 /** A click as the person makes it: the pointer comes to the button, then presses (a press with no move before it, at

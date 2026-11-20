@@ -163,6 +163,11 @@ const withManifest = (change) => (dir) => {
 };
 const withDetails = (change) => (dir) => makeProject(dir, { files: (files) => (files["catalog.json"] = JSON.stringify({ ...DETAILS, ...change })) });
 const withFiles = (change) => (dir) => makeProject(dir, { files: change });
+/** A finished project whose description is `@<named>`, a file of the project holding `text` (null: no file). */
+const withReadme = (text, named = "README.md", file = named) => withFiles((files) => {
+  files["catalog.json"] = JSON.stringify({ ...DETAILS, description: `@${named}` });
+  if (text !== null) files[file] = text;
+});
 const withBuilt = (more) => (dir) => makeProject(dir, { built: builtFiles(MANIFEST, more) });
 /** A finished project whose git index holds what `change` makes of the committed files' paths. */
 const withIndex = (change) => (dir) => {
@@ -196,6 +201,14 @@ const DEFECTS = [
   ["descriptions", "a short description of two lines", withDetails({ short_description: "A large clock\nwith the date" }), ["manifest_schema"], [], /one line/],
   ["descriptions", "a description left empty", withDetails({ description: "" }), ["manifest_schema"], [], /description: not written yet/],
   ["descriptions", "a description of 20 characters", withDetails({ description: "Too short a text. Ok" }), ["text_resolve"], [], /20 characters, the catalog takes 50 to 4000/],
+  // The description may name a file of the app's folder, as the catalog allows (EMU-333): it is checked on the file's text.
+  ["descriptions", "a description in README.md of 10 characters", withReadme("Too short."), ["text_resolve"], [], /the description in README\.md is 10 characters, the catalog takes 50 to 4000 of the file's text/],
+  ["descriptions", "a description in a file that is not there", withReadme(null, "docs/ABOUT.md"), ["text_resolve"], [], /names docs\/ABOUT\.md, which is not in the project/],
+  ["descriptions", "a description in a file outside the project", withReadme(DETAILS.description, "../README.md", "README.md"), ["manifest_references"], [], /description names a file outside the app's folder/],
+  ["descriptions", "a description file of 50 bytes, 49 characters as the catalog reads it (\\r\\n is one)", withReadme(`${"x".repeat(47)}\r\nx`), ["text_resolve"], [], /the description in README\.md is 49 characters/],
+  ["descriptions", "a description file of 4002 bytes, 4001 characters as the catalog reads it", withReadme(`${"x".repeat(4000)}\r\n`), ["text_resolve"], [], /the description in README\.md is 4001 characters/],
+  ["descriptions", "a description file in Latin-1", withReadme(Buffer.from(`${DETAILS.description} Gr\xfc\xdfe`, "latin1")), ["text_resolve"], [], /names README\.md, which is not a UTF-8 text file/],
+  ["descriptions", "a picture in the description's file", withReadme(`${DETAILS.description}\n\n![the clock](https://example.com/clock.png)`), ["markdown"], [], /description, line 10: an image/],
   ["descriptions", "a changelog of 3 characters", withDetails({ changelog: "New" }), ["changelog_text"], [], /3 characters, the catalog takes 10 to 4000/],
   ["descriptions", "a picture in the description", withDetails({ description: `${DETAILS.description}\n\n![the clock](https://example.com/clock.png)` }), ["markdown"], [], /description, line 10: an image/],
   ["descriptions", "code in the changelog", withDetails({ changelog: "Added `tick()` to the clock." }), ["markdown"], [], /changelog, line 1: code/],
@@ -236,6 +249,7 @@ const DEFECTS = [
   ["source", "a source manifest larger than the catalog reads", (dir) => makeProject(dir, { files: (files) => (files["src/appmeta/manifest.json"] = JSON.stringify({ ...MANIFEST, notes: "n".repeat(4200) })) }), ["app_id_match"], [], /bytes; the catalog reads the id from a file of up to 4096/],
   ["committed", "a screenshot that is not added to git", withIndex((paths) => paths.filter((name) => name !== "screenshots/front-2.png")), ["referenced_file"], [], /screenshots\/front-2\.png is not added to git, so it is not in the commit the catalog reads/],
   ["committed", "a screenshot that git has under another letter case", withIndex((paths) => paths.map((name) => (name === "screenshots/front-1.png" ? "Screenshots/Front-1.png" : name))), ["referenced_file"], [], /screenshots\/front-1\.png is in git as Screenshots\/Front-1\.png: the letter case differs/],
+  ["committed", "the description's file not added to git", (dir) => (withReadme(DETAILS.description)(dir), writeIndex(dir, [...COMMITTED])), ["text_resolve"], [], /README\.md is not added to git, so it is not in the commit the catalog reads/],
   ["committed", "a license that is not added to git", withIndex((paths) => paths.filter((name) => name !== "LICENSE")), ["license"], [], /LICENSE is not added to git/],
   ["committed", "a lock file that is not added to git", withIndex((paths) => paths.filter((name) => name !== "package-lock.json")), ["build_lockfile"], [], /package-lock\.json is not added to git, so it is not in the commit the catalog reads: the catalog finds no lock file/],
   ["committed", "the app's manifest not added to git", withIndex((paths) => paths.filter((name) => name !== "src/appmeta/manifest.json")), ["app_id_match"], [], /src\/appmeta\/manifest\.json is not added to git/],
@@ -268,6 +282,29 @@ for (const [family, what, make, expected, expectedWarnings, says] of DEFECTS) {
     for (const check of named) assert.ok(check.change, `${check.id} says what to change`);
   });
 }
+
+test("a description named as @README.md is read from the file: the project passes, and submit keeps the reference for the catalog (EMU-333)", async (t) => {
+  const dir = tempDir(t);
+  withReadme(`${DETAILS.description}\n`)(dir);
+  writeIndex(dir, [...COMMITTED, "README.md"]);
+  const run = await cli(t, ["check", dir, "--json"]);
+  assert.deepEqual(fails(run.json), [], JSON.stringify(run.json.checks.filter((c) => c.status === "fail"), null, 1));
+  const checks = by(run.json);
+  assert.equal(checks.text_resolve.status, "pass");
+  assert.match(checks.text_resolve.found, /^the description in README\.md is \d+ characters$/);
+  assert.equal(checks.markdown.status, "pass");
+  assert.equal(checks.manifest_references.status, "pass");
+  // At both bounds, counted as the catalog counts: \r\n is one character.
+  for (const [text, n] of [[`${"x".repeat(48)}\r\nx`, 50], [`${"x".repeat(3999)}\r\n`, 4000]]) {
+    writeFileSync(path.join(dir, "README.md"), text);
+    const bound = by((await cli(t, ["check", dir, "--json"])).json);
+    assert.deepEqual([bound.text_resolve.status, bound.text_resolve.found], ["pass", `the description in README.md is ${n} characters`]);
+  }
+  writeFileSync(path.join(dir, "README.md"), `${DETAILS.description}\n`);
+  const submitted = await cli(t, ["submit", dir, "--json"]);
+  assert.equal(submitted.code, 0, submitted.out);
+  assert.match(readFileSync(path.join(dir, "submission", "applications", ID, "manifest.yml"), "utf8"), /^description: "@README\.md"$/m);
+});
 
 test("every family of checks has a planted defect", () => {
   assert.deepEqual([...new Set(DEFECTS.map(([family]) => family))], ["id", "manifest fields", "names", "descriptions", "category", "icons", "package", "screenshots", "version", "API version", "license", "lock file", "source", "committed"]);
@@ -628,7 +665,7 @@ test("submit on a project without the catalog's texts makes catalog.json, empty,
   // In words, for a person: the fields and what each takes.
   rmSync(path.join(dir, "catalog.json"));
   const text = await cli(t, ["submit", dir]);
-  assert.match(text.err, /Made .*catalog\.json for the catalog's texts\. Write in it:\n {2}category: one of productivity, clocks, /);
+  assert.match(text.err, /Made .*catalog\.json for the catalog's texts: busy-emulator submit writes the catalog's manifest from it, so commit it with the project\. Write in it:\n {2}category: one of productivity, clocks, /);
   assert.match(text.err, /Nothing was written to submission\/: 1 of the catalog's checks fails/);
   // The author's file is never written over.
   writeFileSync(path.join(dir, "catalog.json"), JSON.stringify({ ...DETAILS, category: "" }));
@@ -655,7 +692,7 @@ test("check on a new project makes catalog.json, empty, and names the fields to 
   // In words, for a person: the fields and what each takes.
   rmSync(file);
   const text = await cli(t, ["check", dir]);
-  assert.match(text.err, /Made .*catalog\.json for the catalog's texts\. Write in it:\n {2}category: one of productivity, clocks, /);
+  assert.match(text.err, /Made .*catalog\.json for the catalog's texts: busy-emulator submit writes the catalog's manifest from it, so commit it with the project\. Write in it:\n {2}category: one of productivity, clocks, /);
   // The agent's way: check, fill the texts in, check, submit.
   writeFileSync(file, JSON.stringify(DETAILS));
   const passes = await cli(t, ["check", dir, "--json"]);

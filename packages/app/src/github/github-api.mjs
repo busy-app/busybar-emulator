@@ -39,6 +39,16 @@ export function sameIfRepeated(method, path) {
   return method === "POST" && /^\/repos\/[^/]+\/[^/]+\/(git\/(blobs|trees|commits)|forks)$/.test(path);
 }
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/** GitHub's words when it refuses a commit that would show an address the account keeps private. */
+// GitHub's documented words are git's (GH007, for a push over git); what its REST API says for a commit is not
+// documented, so the match is on the words about a private address, not on one sentence (EMU-366).
+const PRIVATE_EMAIL = /GH007|private e-?mail|e-?mail (?:address )?(?:is )?private|e-?mail privacy|expos(?:e[sd]?|ing) (?:my |your |a |the )?(?:private )?e-?mail/i;
+
+/**
+ * GitHub's own address of an account, which shows no e-mail (`<id>+<login>@users.noreply.github.com`): commits signed
+ * with it are the account's on GitHub (EMU-366).
+ */
+export const noreplyAddress = ({ id, login }) => `${id}+${login}@users.noreply.github.com`;
 
 /**
  * What went wrong, for the window's text and for what to do next. `code`:
@@ -57,9 +67,14 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
  *   catalog_closed the catalog cannot be seen (private, or not there yet)
  *   fork_not_allowed  the catalog may not be forked
  *   catalog_empty  the catalog has no commit yet
- *   network        GitHub could not be reached (gh said so, or did not answer in time)
+ *   network        GitHub could not be reached (gh said so)
+ *   timeout        gh did not answer in time (`details.write`: a write, which GitHub may have done)
+ *   token_unreadable  GitHub CLI did not give the account's token
+ *   gh_failed      GitHub CLI did not start, or ended with no answer
  *   canceled      the person stopped it (a push's Cancel)
  *   no_account     GitHub CLI has no sign-in for the account the calls go as (signed out of it elsewhere)
+ *   no_scope       the sign-in may not read it (GET /user/emails without the scope user:email; `details.accepted`)
+ *   email_private  GitHub refused a commit signed with an address the account keeps private (GH007, EMU-366)
  *   server, bad_answer
  */
 export class GithubApiError extends Error {
@@ -136,10 +151,13 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
   function failure(res, body, method, path) {
     const message = `${method} ${path}: ${res.status}${body?.message ? ` ${String(body.message).slice(0, 200)}` : ""}`;
     const status = res.status;
+    // The account blocks what would show its private address (GitHub's GH007, "Block command line pushes that expose
+    // my email"), whatever the status it comes with (EMU-366).
+    if (status >= 400 && status < 500 && PRIVATE_EMAIL.test(`${body?.message ?? ""} ${JSON.stringify(body?.errors ?? [])}`)) return new GithubApiError("email_private", message, { status });
     if (status >= 300 && status < 400) return new GithubApiError("moved", message, { status });
     if (status === 401) return new GithubApiError("unauthorized", message, { status });
     if (status === 403) return new GithubApiError("forbidden", message, { status, details: { accepted: res.headers.get("x-accepted-oauth-scopes"), granted: res.headers.get("x-oauth-scopes") } });
-    if (status === 404) return new GithubApiError("not_found", message, { status });
+    if (status === 404) return new GithubApiError("not_found", message, { status, details: { accepted: res.headers.get("x-accepted-oauth-scopes"), granted: res.headers.get("x-oauth-scopes") } });
     if (status === 409) return new GithubApiError("conflict", message, { status });
     if (status === 422) {
       const errors = Array.isArray(body?.errors) ? body.errors : [];
@@ -168,6 +186,10 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
       if (res?.failure === "canceled") throw new GithubApiError("canceled", `${method} ${path}: stopped`);
       if (res?.failure === "no_account") throw new GithubApiError("no_account", `${method} ${path}: GitHub CLI has no sign-in for the account: ${String(res.detail ?? "").slice(0, 200)}`);
       if (res?.failure === "auth") throw new GithubApiError("unauthorized", `${method} ${path}: GitHub CLI has no sign-in`, { status: 401 });
+      // No answer, by why (EMU-360 review): a write that timed out may have been done; gh that failed is not the network.
+      if (res?.failure === "timeout") throw new GithubApiError("timeout", `${method} ${path}: GitHub did not answer in time`, { details: { write: writing } });
+      if (res?.failure === "token") throw new GithubApiError("token_unreadable", `${method} ${path}: GitHub CLI did not give the account's token: ${String(res.detail ?? "").slice(0, 200)}`);
+      if (res?.failure === "gh_failed") throw new GithubApiError("gh_failed", `${method} ${path}: GitHub CLI failed: ${String(res.detail ?? "").slice(0, 200)}`);
       if (res?.failure) throw new GithubApiError("network", `${method} ${path}: GitHub could not be reached: ${String(res.detail ?? res.failure).slice(0, 200)}`);
       const ok = res.status >= 200 && res.status < 300;
       let parsed = null;
@@ -209,11 +231,32 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
   const api = {
     request,
 
-    /** The person gh is signed in as: { login }. */
+    /**
+     * The person gh is signed in as: { login, id, name, email } (name and email as the profile shows them, or null; the
+     * email is the public one, which GitHub has verified).
+     */
     async user() {
       const me = await request("GET", "/user");
       if (typeof me?.login !== "string") throw new GithubApiError("bad_answer", "GET /user: no login");
-      return { login: me.login };
+      const id = Number.isSafeInteger(me.id) && me.id > 0 ? me.id : null;
+      return { login: me.login, id, name: typeof me.name === "string" && me.name.trim() ? me.name.trim().slice(0, 200) : null, email: typeof me.email === "string" && me.email ? me.email : null };
+    },
+
+    /**
+     * The account's e-mail addresses GitHub has verified: [{ email, primary, visibility }] (GET /user/emails;
+     * `visibility` "private" for the one the account keeps private, else null). A sign-in without the scope user:email
+     * (GitHub CLI's own sign-in does not ask for it) is a GithubApiError "no_scope".
+     */
+    async emails() {
+      let all;
+      try {
+        all = await request("GET", "/user/emails?per_page=100");
+      } catch (e) {
+        if ((e.code === "not_found" || e.code === "forbidden") && /\buser\b/.test(String(e.details?.accepted ?? "user"))) throw new GithubApiError("no_scope", "GET /user/emails: the sign-in may not read the account's e-mail addresses", { status: e.status, details: e.details });
+        throw e;
+      }
+      if (!Array.isArray(all)) throw new GithubApiError("bad_answer", "GET /user/emails: not a list");
+      return all.filter((one) => one?.verified === true && typeof one.email === "string").map((one) => ({ email: one.email, primary: one.primary === true, visibility: one.visibility === "private" || one.visibility === "public" ? one.visibility : null }));
     },
 
     /** A repository, or null when there is none of that name (or the token may not see it). */
@@ -282,8 +325,10 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
       return { status: got.status, ahead: Number(got.ahead_by) || 0, behind: Number(got.behind_by) || 0 };
     },
 
-    async createCommit(owner, name, { message, tree, parents }, options) {
-      const made = await request("POST", `/repos/${segment(owner)}/${segment(name)}/git/commits`, { message, tree, parents }, options);
+    /** `author`: { name, email }, the commit's author and committer both (EMU-366); without it GitHub decides. */
+    async createCommit(owner, name, { message, tree, parents, author = null }, options) {
+      const signed = author ? { author: { name: author.name, email: author.email }, committer: { name: author.name, email: author.email } } : {};
+      const made = await request("POST", `/repos/${segment(owner)}/${segment(name)}/git/commits`, { message, tree, parents, ...signed }, options);
       return made.sha;
     },
 
@@ -304,9 +349,10 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
      * `bytes` of `totalBytes` of theirs, `file` the one going up now. `signal` stops it before the branch is moved
      * (GitHub keeps blobs and trees no branch names: the repository's files stay as they were); once the branch is moved,
      * it goes to its end.
-     * @param {{ owner: string, name: string, branch: string, files: { path: string, bytes: Uint8Array, executable?: boolean }[], message: string, mode?: "replace" | "add", onProgress?: Function, signal?: AbortSignal }} o
+     * `author` ({ name, email }) signs the commit (EMU-366).
+     * @param {{ owner: string, name: string, branch: string, files: { path: string, bytes: Uint8Array, executable?: boolean }[], message: string, mode?: "replace" | "add", author?: { name: string, email: string }, onProgress?: Function, signal?: AbortSignal }} o
      */
-    async pushFiles({ owner, name, branch, files, message, mode = "replace", remove = [], onProgress = () => {}, signal = null }) {
+    async pushFiles({ owner, name, branch, files, message, mode = "replace", remove = [], author = null, onProgress = () => {}, signal = null }) {
       const tell = (fact) => {
         try {
           onProgress(fact);
@@ -361,7 +407,7 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
       }
       tell({ ...progress, phase: "commit", file: null });
       const tree = await api.createTree(owner, name, [...wanted, ...gone.map((one) => ({ path: one, mode: had.get(one).mode, sha: null }))], mode === "add" ? parent.tree.sha : null, stoppable);
-      const commit = await api.createCommit(owner, name, { message, tree, parents: [head] }, stoppable);
+      const commit = await api.createCommit(owner, name, { message, tree, parents: [head], author }, stoppable);
       if (signal?.aborted) throw new GithubApiError("canceled", "stopped before the branch was moved");
       // From here on it goes to its end: the branch moved is the push done.
       await api.moveBranch(owner, name, branch, commit);
@@ -399,10 +445,17 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
     },
 
     /** The open pull request from `head` ("user:branch"), or null. */
+    /** One pull request: { number, url, state: "open" | "closed" | "merged", commit } (its head's), or null when there is none. */
+    async pull(owner, name, number) {
+      const one = await orNull(request("GET", `/repos/${segment(owner)}/${segment(name)}/pulls/${segment(number)}`));
+      if (!one) return null;
+      return { number: one.number, url: one.html_url, state: one.merged === true || one.merged_at ? "merged" : one.state === "open" ? "open" : "closed", commit: typeof one.head?.sha === "string" ? one.head.sha : null, title: typeof one.title === "string" ? one.title : null, body: typeof one.body === "string" ? one.body : null };
+    },
+
     async openPull(owner, name, head) {
       const pulls = await request("GET", `/repos/${segment(owner)}/${segment(name)}/pulls?state=open&head=${encodeURIComponent(head)}&per_page=10`);
       const one = Array.isArray(pulls) ? pulls[0] : null;
-      return one ? { number: one.number, url: one.html_url } : null;
+      return one ? { number: one.number, url: one.html_url, commit: typeof one.head?.sha === "string" ? one.head.sha : null, title: typeof one.title === "string" ? one.title : null, body: typeof one.body === "string" ? one.body : null } : null;
     },
 
     /**
@@ -454,17 +507,28 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
      * version not merged yet), the new commit goes into it instead, and its title and description become the new
      * ones: one request per app. The branch is in the catalog itself when the person may push there (a test catalog
      * of their own, which GitHub does not let them fork), otherwise in their fork.
-     * @param {{ catalog: { owner: string, name: string }, login: string, branch: string, files: object[], message: string, title: string, body: string }} o
+     * `author` ({ name, email }) signs the commit, as the person's own repository's (EMU-366).
+     * @param {{ catalog: { owner: string, name: string }, login: string, branch: string, files: object[], message: string, title: string, body: string, author?: { name: string, email: string } }} o
      */
-    async proposeToCatalog({ catalog, login, branch, files, message, title, body, file = files[0]?.path }) {
+    async proposeToCatalog({ catalog, login, branch, files, message, title, body, author = null, file = files[0]?.path }) {
       const upstreamRepo = await api.repo(catalog.owner, catalog.name);
       if (!upstreamRepo) throw new GithubApiError("catalog_closed", `${catalog.owner}/${catalog.name} cannot be seen: it is private or not there`);
       const earlier = await api.openPullChanging(catalog.owner, catalog.name, { login, file });
       if (earlier) {
-        const pushed = await api.pushFiles({ owner: earlier.owner, name: earlier.name, branch: earlier.branch, files, message, mode: "add" });
-        await api.updatePull(catalog.owner, catalog.name, earlier.number, { title, body });
         const direct = earlier.owner.toLowerCase() === catalog.owner.toLowerCase() && earlier.name.toLowerCase() === catalog.name.toLowerCase();
-        return { number: earlier.number, url: earlier.url, commit: pushed.commit, created: false, direct, branch: earlier.branch, base: upstreamRepo.default_branch };
+        // Where a failure happened, for the window's words (EMU-360 review): pushing to the person's fork or the
+        // catalog's branch, or the pull request itself.
+        const at = (stage) => (e) => {
+          if (e && typeof e === "object") Object.assign(e, { at: stage, direct });
+          throw e;
+        };
+        const pushed = await api.pushFiles({ owner: earlier.owner, name: earlier.name, branch: earlier.branch, files, message, mode: "add", author }).catch(at("push"));
+        // `unchanged`: the open request had all of it already, the file, the title and the text with its ticks (sent
+        // before, its answer perhaps lost): nothing is changed. Any of them new: updated (EMU-360 re-review).
+        const now = pushed.unchanged ? await api.pull(catalog.owner, catalog.name, earlier.number).catch(at("pull")) : null;
+        const unchanged = Boolean(now && now.title === title && now.body === body);
+        if (!unchanged) await api.updatePull(catalog.owner, catalog.name, earlier.number, { title, body }).catch(at("pull"));
+        return { number: earlier.number, url: earlier.url, commit: pushed.commit, created: false, unchanged, direct, branch: earlier.branch, base: upstreamRepo.default_branch };
       }
       const base = upstreamRepo.default_branch;
       // A catalog with no commit yet answers 409 for its branch: there is nothing to branch from.
@@ -473,9 +537,22 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
         throw e;
       });
       if (!upstream) throw new GithubApiError("catalog_empty", `${catalog.owner}/${catalog.name} has no commit on ${base} yet`);
+      // What is made on GitHub before the pull request: a failure after it says so (`made`, EMU-360), and the next try
+      // goes on from it (the fork is GitHub's one, the branch is taken as it is, the file added once).
+      const made = { fork: null, branch: null };
+      let stage = "fork";
+      let direct = false;
+      const goesOn = (e) => {
+        if (e && typeof e === "object") {
+          if (made.fork || made.branch) e.made = { ...made };
+          Object.assign(e, { at: e.at ?? stage, direct });
+        }
+        return e;
+      };
       let target;
       if (upstreamRepo.permissions?.push === true) {
         target = { owner: upstreamRepo.owner?.login ?? catalog.owner, name: upstreamRepo.name ?? catalog.name, direct: true };
+        direct = true;
       } else {
         if (upstreamRepo.allow_forking === false) throw new GithubApiError("fork_not_allowed", `${catalog.owner}/${catalog.name} does not allow forks`);
         let fork;
@@ -486,14 +563,34 @@ export function createGithubApi({ transport, now = Date.now, sleep = defaultSlee
           throw e;
         }
         if (fork.owner.toLowerCase() !== login.toLowerCase()) throw new GithubApiError("bad_answer", `the fork is ${fork.owner}'s, not ${login}'s`);
-        await api.waitForFork(fork);
+        made.fork = `${fork.owner}/${fork.name}`;
+        try {
+          await api.waitForFork(fork);
+        } catch (e) {
+          throw goesOn(e);
+        }
         target = { owner: fork.owner, name: fork.name, direct: false };
       }
-      if (!(await api.branchHead(target.owner, target.name, branch))) await api.createBranch(target.owner, target.name, branch, upstream);
-      const pushed = await api.pushFiles({ owner: target.owner, name: target.name, branch, files, message, mode: "add" });
-      const head = `${target.owner}:${branch}`;
-      const made = await api.createPull(catalog.owner, catalog.name, { title, body, head, base });
-      return { ...made, commit: pushed.commit, created: true, direct: target.direct, branch, base };
+      try {
+        stage = "push";
+        if (!(await api.branchHead(target.owner, target.name, branch))) await api.createBranch(target.owner, target.name, branch, upstream);
+        made.branch = branch;
+        const pushed = await api.pushFiles({ owner: target.owner, name: target.name, branch, files, message, mode: "add", author });
+        const head = `${target.owner}:${branch}`;
+        stage = "pull";
+        // A request opened before whose answer was lost (a timeout): found by its head, and sent already when it names
+        // this commit; updated when it names another. Never a second one (EMU-360 review).
+        const open = await api.openPull(catalog.owner, catalog.name, head);
+        if (open) {
+          const same = open.commit === pushed.commit && open.title === title && open.body === body;
+          if (!same) await api.updatePull(catalog.owner, catalog.name, open.number, { title, body });
+          return { number: open.number, url: open.url, commit: pushed.commit, created: same, unchanged: same, direct: target.direct, branch, base };
+        }
+        const opened = await api.createPull(catalog.owner, catalog.name, { title, body, head, base });
+        return { ...opened, commit: pushed.commit, created: true, direct: target.direct, branch, base };
+      } catch (e) {
+        throw goesOn(e);
+      }
     },
   };
   return api;

@@ -550,6 +550,9 @@ test("settings reset goes back to the defaults; wrong calls; an app without sett
     assert.deepEqual([failed.code, failed.json.code], [1, code]);
   }
   assert.match((await call(["settings", "get"], ctx, fakeSystem(dir, { bar: () => answers.no_settings }))).json.hint, /src\/appmeta\/settings\.json of the project \(the format is in the project's AGENTS\.md\)/);
+  const notThere = await call(["settings", "set", "hour24=false", "--restart"], ctx, fakeSystem(dir, { bar: () => answers.not_installed }));
+  assert.match(notThere.json.hint, /^Build it and put it there: .+, then .+; the app has settings only once it is installed, so after that give .+ settings set … --restart again\.$/);
+  assert.match((await call(["settings", "set", "hour24=false"], ctx, fakeSystem(dir, { bar: () => answers.not_installed }))).json.hint, /settings set … again \(with --restart, to start the app with them\)\.$/);
   assert.equal((await call(["settings", "get"], ctx, fakeSystem(dir, { running: false }))).json.code, "not_running");
   // Outside a project, with no app running and none named.
   assert.equal((await call(["settings", "get"], ctx, fakeSystem(root, { bar: () => ({ status: 200, body: '{"running":null}' }) }))).json.code, "no_app_named");
@@ -652,6 +655,8 @@ test("trust takes no answer from its caller: it has no option or argument that g
 
 // ---------------------------------------------------------------- publish, stage 2: asked of the emulator's app
 
+/** GitHub's private address of the account "octo", number 7 (EMU-366). */
+const NOREPLY_7 = `${7}+${"octo"}@users.noreply.github.com`;
 test("publish signin, push, pr and signout ask the emulator's app through the server and say what it answered", async (t) => {
   const { root, ctx } = setup(t);
   const dir = project(root, ctx);
@@ -664,7 +669,10 @@ test("publish signin, push, pr and signout ask the emulator's app through the se
     signin: () => ({ ok: true, userCode: "WDJB-MJHT", verificationUri: "https://github.com/login/device", expiresAt: 0 }),
     "signin-wait": () => ((signedIn = true), { ok: true, login: "octo" }),
     signout: () => ((signedIn = false), { ok: true, signedIn: false, revokePage: "https://github.com/settings/applications" }),
-    push: () => ({ ok: true, owner: "octo", name: "clock", page: "https://github.com/octo/clock", commit: "a".repeat(40), files: 7, uploaded: 7, created: true, unchanged: false }),
+    push: (q) => ({ ok: true, owner: "octo", name: "clock", page: "https://github.com/octo/clock", commit: "a".repeat(40), files: 7, uploaded: 7, created: true, unchanged: false, signer: q.email && q.email !== "noreply" ? { name: "Octo", email: q.email, kind: "verified" } : { name: "Octo", email: NOREPLY_7, kind: "noreply" } }),
+    // Who commits are signed by (EMU-366): the account's choice, never the list of its addresses.
+    // The app answers a program only the kind of address, never one.
+    signer: () => ({ ok: true, signer: { kind: "noreply" } }),
     request: (q) => (q.ai === "none" ? { ok: true, url: "https://github.com/busy-app/busy-apps-catalog/pull/7", number: 7, created: true, direct: false } : { ok: false, code: "not_author", message: "The person did not tick that they are the app's author.", hint: null }),
   };
   const sys = { ...fakeSystem(root), askGithub: async (port, key, query, waitMs) => (asked.push([query, waitMs]), { status: 200, body: JSON.stringify(answers[query.op](query)) }) };
@@ -673,20 +681,42 @@ test("publish signin, push, pr and signout ask the emulator's app through the se
   assert.equal(signin.code, 0, signin.err);
   assert.match(signin.err, /Open https:\/\/github\.com\/login\/device and enter the code WDJB-MJHT/);
   assert.match(signin.out, /Signed in to GitHub as octo\./);
-  assert.deepEqual(asked.map(([q]) => q.op), ["status", "signin", "signin-wait"]);
-  assert.equal(asked.at(-1)[1], 16 * 60_000, "the wait lasts as long as GitHub's code");
+  assert.match(signin.out, /Commits are signed with GitHub's private address of the account, which shows no e-mail;/);
+  assert.deepEqual(asked.map(([q]) => q.op), ["status", "signin", "signin-wait", "signer"]);
+  assert.equal(asked.at(-2)[1], 16 * 60_000, "the wait lasts as long as GitHub's code");
   assert.equal((await call(["publish", "signin"], ctx, sys)).json.before, true, "signed in already: no new code");
 
   const pushed = await call(["publish", "push", dir, "--name", "clock"], ctx, sys);
   assert.deepEqual([pushed.code, pushed.json.page, pushed.json.commit], [0, "https://github.com/octo/clock", "a".repeat(40)]);
   assert.deepEqual(asked.at(-1)[0], { op: "push", folder: dir, name: "clock" });
+  assert.match((await call(["publish", "push", dir, "--name", "clock"], ctx, sys, { json: false })).out, /Commits are signed Octo <7\+octo@users\.noreply\.github\.com>/);
+  // --email (EMU-366): the address for this push goes to the app, which checks it is the account's; a non-address is refused here.
+  const chosen = await call(["publish", "push", dir, "--email", "octo@example.com"], ctx, sys);
+  assert.deepEqual([chosen.code, asked.at(-1)[0].email, chosen.json.signer.email], [0, "octo@example.com", "octo@example.com"]);
+  assert.equal((await call(["publish", "push", dir, "--email", "noreply"], ctx, sys)).code, 0);
+  assert.equal(asked.at(-1)[0].email, "noreply");
+  const asking = asked.length;
+  assert.equal((await call(["publish", "push", dir, "--email", "not an address"], ctx, sys)).json.code, "usage");
+  assert.equal(asked.length, asking, "the app was not asked");
 
   assert.equal((await call(["publish", "pr", dir], ctx, sys)).json.code, "usage", "--ai is never chosen for the person");
   const pr = await call(["publish", "pr", dir, "--ai", "none", "--catalog", "some-owner/busy-apps-catalog-demo"], ctx, sys);
   assert.deepEqual([pr.code, pr.json.url], [0, "https://github.com/busy-app/busy-apps-catalog/pull/7"]);
   assert.deepEqual(asked.at(-1)[0], { op: "request", folder: dir, ai: "none", catalog: "some-owner/busy-apps-catalog-demo" });
-  const refused = await call(["publish", "pr", dir, "--ai", "partly"], ctx, sys);
+  // "Partly" and "Fully" need --ai-note (EMU-359): refused before the app is asked, with what to do.
+  const before = asked.length;
+  for (const words of [["--ai", "partly"], ["--ai", "full", "--ai-note", "   "]]) {
+    const without = await call(["publish", "pr", dir, ...words], ctx, sys);
+    assert.deepEqual([without.code !== 0, without.json.code], [true, "usage"], words.join(" "));
+    assert.match(without.json.message, /needs --ai-note: the catalog's template asks/);
+    assert.match(without.json.hint, /--ai-note "<text>"/);
+  }
+  assert.match((await call(["publish", "pr", dir, "--ai", "none", "--ai-note", "Some."], ctx, sys)).json.message, /--ai-note goes with --ai partly or full/);
+  assert.match((await call(["publish", "pr", dir, "--ai", "full", "--ai-note", "word ".repeat(250)], ctx, sys)).json.message, /1249 characters long; it takes up to 1000/);
+  assert.equal(asked.length, before, "the app was not asked");
+  const refused = await call(["publish", "pr", dir, "--ai", "partly", "--ai-note", "The settings\npage."], ctx, sys);
   assert.deepEqual([refused.code !== 0, refused.json.code], [true, "not_author"]);
+  assert.equal(asked.at(-1)[0].aiNote, "The settings page.", "the explanation goes to the app, as one line");
   assert.equal("catalog" in asked.at(-1)[0], false, "without --catalog the app uses its default: the BUSY catalog (the project's status names it)");
   assert.equal((await call(["publish", "status", dir], ctx, sys)).json.catalog, "busy-app/busy-apps-catalog", "the default catalog is the public one");
 
@@ -704,7 +734,7 @@ test("publish signin, push, pr and signout ask the emulator's app through the se
   assert.equal((await call(["publish", "signin", "--use-existing", "--new-account"], ctx, sys)).json.code, "usage");
   const used = await call(["publish", "signin", "--use-existing"], ctx, sys, { json: false });
   assert.match(used.out, /Signed in to GitHub as octo-own, the account GitHub CLI on this computer is signed in as\./);
-  assert.equal(asked.at(-1)[0].op, "signin-existing");
+  assert.deepEqual(asked.slice(-2).map(([q]) => q.op), ["signin-existing", "signer"]);
   signedIn = false;
   const another = await call(["publish", "signin", "--new-account"], ctx, sys, { json: false });
   assert.match(another.out, /GitHub CLI on this computer now uses octo too, instead of octo-own\./);

@@ -14,7 +14,7 @@
 // The probe is installed, run once (about 15 s on a bar) and removed. The model is the bar's price of a byte-code
 // instruction and of a heap byte, and its API's time: the fit counts the work of the probe's pieces in the runtime
 // (the firmware's own, --firmware as for the server) and solves for the prices that give the bar's times.
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,7 +28,11 @@ import { targz } from "./package.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const PROBE = "app.probe.speed";
 const probeDir = join(here, "probes", PROBE);
-const barFile = join(here, "..", "packages", "server", "bar-speed.json");
+// EMU_RECORDINGS (own-emulator.mjs, recordingsRoot) names another folder for a trial run of the BUSY Bar session: the file
+// is copied there first and the times go into the copy.
+const repoBarFile = join(here, "..", "packages", "server", "bar-speed.json");
+const barFile = process.env.EMU_RECORDINGS ? join(process.env.EMU_RECORDINGS, "bar-speed.json") : repoBarFile;
+if (barFile !== repoBarFile && !existsSync(barFile)) copyFileSync(repoBarFile, barFile);
 
 const args = process.argv.slice(2);
 await commandLine(process.argv, { values: ["--bar", "--emu", "--firmware"], flags: ["--record", "--fit"], emulator: "--emu" });
@@ -239,6 +243,8 @@ if (fitOnly) {
   console.log(`speed probe on ${source.bar} (${source.firmware})`);
   const r = await run();
   for (const [key, label] of ROWS) console.log(`  ${label.padEnd(26)} ${fmt(r[key])}`);
+  // Measured for the model's next fit (EMU-344), not fitted yet.
+  for (const key of ["callsMs", "noCallsMs", "cheapCallsMs", "drawtimeMs", "drawtimeFrameMs"]) console.log(`  ${`measured: ${key}`.padEnd(26)} ${fmt(r[key])}`);
   await saveWithModel({ source, ...r });
 } else {
   // The bar on the firmware the emulator runs.

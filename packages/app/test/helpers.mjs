@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
 // What the tests of the shell share: paths, ports, temporary folders, and the checks that nothing is left behind.
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -207,6 +207,111 @@ export async function survivors(pids, timeoutMs = OWN_GONE_WITHIN_MS) {
     left = left.filter(alive);
   }
   return left;
+}
+
+const SYSTEM_ROOT = process.env.SystemRoot || "C:\\Windows";
+
+/** How long one look at the system's processes may take: about a second on Windows, more under load (EMU-330: 11 s). */
+export const PROCESS_LIST_MS = 60_000;
+
+/** The system's list of processes as ps or Get-CimInstance print it: [{ pid, parent, started, command }]. */
+export function parseProcessRows(text, platform = process.platform) {
+  const all = [];
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const m = platform === "win32" ? /^(\d+)\t(\d+)\t([^\t]*)\t(.*)$/.exec(line) : /^\s*(\d+)\s+(\d+)\s+(\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4})\s+(.*)$/.exec(line);
+    if (m) all.push({ pid: Number(m[1]), parent: Number(m[2]), started: Date.parse(m[3]) || null, command: m[4].trim() });
+  }
+  return all;
+}
+
+/**
+ * The processes of `all` below `roots`, with the roots. `since` (ms): when the caller started the roots; a process
+ * that started before it (by more than ps's whole second) is not one of theirs and is left out, root or not: on
+ * Windows a number is given again to a new process soon after its own ended, and that stranger would be taken for
+ * the root, its younger children for the root's (EMU-330 review).
+ */
+export function treeOf(all, roots, { since = null } = {}) {
+  const ours = (p) => since === null || (p.started !== null && p.started + 1000 >= since);
+  const found = new Map(all.filter((p) => roots.includes(p.pid) && ours(p)).map((p) => [p.pid, p]));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const p of all) {
+      // On Windows a parent's number can be given to a younger process after it ended: a child older than its
+      // "parent" is not its child.
+      const parent = found.get(p.parent);
+      if (!found.has(p.pid) && parent && p.pid !== p.parent && ours(p) && !(p.started && parent.started && p.started + 1000 < parent.started)) {
+        found.set(p.pid, p);
+        grew = true;
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+/** The system's processes now (parseProcessRows); [] when the system would not say within PROCESS_LIST_MS. */
+export function listProcesses() {
+  return new Promise((resolve) => {
+    const [file, args] =
+      process.platform === "win32"
+        ? [path.join(SYSTEM_ROOT, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", "$ProgressPreference='SilentlyContinue'; Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId)`t$($_.ParentProcessId)`t$(if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') })`t$($_.CommandLine)\" }"]]
+        : ["/bin/ps", ["-A", "-ww", "-o", "pid=,ppid=,lstart=,command="]];
+    execFile(file, args, { encoding: "utf8", windowsHide: true, timeout: PROCESS_LIST_MS, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, LC_ALL: "C" } }, (_error, stdout) => resolve(parseProcessRows(stdout ?? "")));
+  });
+}
+
+/**
+ * Every process below `roots` as the system lists them now, with the roots themselves: [{ pid, parent, started,
+ * command }] (treeOf, with its `since`).
+ * `started` is the process's start (ms; ps gives whole seconds), so that a number given to another process since is
+ * told apart (endTree). On Windows the list is the system's (Get-CimInstance Win32_Process: about a second); a
+ * process whose parent has ended keeps the number of that parent there, so the tree is found only while the parents
+ * of its members run.
+ */
+export async function processTree(roots, { since = null } = {}) {
+  return treeOf(await listProcesses(), roots, { since });
+}
+
+/**
+ * The processes the app named (its own, Chromium's) that close() may still end once the app's main process `main` has
+ * ended: all but the main process itself, whose number the system may have given to a stranger by then (EMU-330
+ * review: endTree would end it by its number alone, with no start time to tell it apart).
+ */
+export function namedAfterExit({ own, chromium, main }) {
+  return { own: [...own].filter((pid) => pid !== main), chromium: [...chromium].filter((pid) => pid !== main) };
+}
+
+/** taskkill's words for one process, not its tree: the tree is the caller's, taken while its parents ran (endTree). */
+export const taskkillArgs = (pid) => ["/PID", String(pid), "/F"];
+
+function killNow(pid) {
+  if (process.platform === "win32") {
+    // By full path: a taskkill.exe lying in the current folder must not run instead.
+    return new Promise((resolve) => execFile(path.join(SYSTEM_ROOT, "System32", "taskkill.exe"), taskkillArgs(pid), { windowsHide: true, timeout: PROCESS_LIST_MS }, (error) => resolve(!error)));
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+    return true;
+  } catch {
+    return false; // gone meanwhile
+  }
+}
+
+/**
+ * Ends, at once, the processes of a tree taken with processTree that still run as the same processes (the same
+ * start), each by itself: what is below them is in the tree already, and a /T of taskkill would walk the children
+ * of whatever process has the number now (EMU-330 review). Returns the PIDs it ended. `list` and `kill`: the
+ * system's, unless a test gives its own.
+ */
+export async function endTree(tree, { list = listProcesses, kill = killNow } = {}) {
+  if (!tree.length) return [];
+  const now = new Map((await list()).map((p) => [p.pid, p]));
+  const ended = [];
+  for (const p of tree) {
+    const same = now.get(p.pid);
+    if (!same || (p.started && same.started && Math.abs(same.started - p.started) > 1000)) continue;
+    if (await kill(p.pid)) ended.push(p.pid);
+  }
+  return ended;
 }
 
 /** True when something accepts connections on the port. */

@@ -691,7 +691,7 @@ export async function startServer({ dataDir, port = 8640, controlPort = 0, allow
     const op = url.searchParams.get("op") ?? "";
     if (!GITHUB_OPS.includes(op)) return send(res, jsonAnswer(400, { error: `op is one of ${GITHUB_OPS.join(", ")}.` }));
     const question = { kind: "github", op };
-    for (const field of ["folder", "name", "catalog", "ai", "login"]) {
+    for (const field of ["folder", "name", "catalog", "ai", "aiNote", "login"]) {
       const value = url.searchParams.get(field);
       if (value === null) continue;
       if (value.length > 4096) return send(res, jsonAnswer(400, { error: `${field} is too long.` }));

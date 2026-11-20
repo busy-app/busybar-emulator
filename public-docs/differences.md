@@ -1,8 +1,37 @@
 # How the emulator differs from a BUSY Bar
 
 A BUSY Bar sits on your network; the emulator runs on the computer where you work, next to your own services. Where
-that matters for safety, the emulator is stricter than a BUSY Bar. This page lists those differences, then the others we
-know of. The list is not complete: a BUSY Bar has the final word, so run your app on one before you rely on a detail.
+that matters for safety, the emulator is stricter than a BUSY Bar. This page first lists what your app meets
+differently, then the differences for safety, then the others we know of. The list is not complete: a BUSY Bar has the
+final word, so run your app on one before you rely on a detail.
+
+## Your app: known differences
+
+The emulator runs the BUSY Bar's own firmware for the JavaScript runtime, the displays, fonts, animations and the
+system screens, and its tests compare it with recordings made on a BUSY Bar: frames, animations in time, API answers,
+requests to the network, an app's files, speed. Where an app still meets something else in the emulator, it is here,
+with the reason.
+
+| | A BUSY Bar | The emulator | Why |
+|---|---|---|---|
+| An app's write that `/api/storage` refuses, with a body (a path outside `/ext/data`, such as the app's own `/ext/user_assets/<id>/` on firmware 1.4.1) | Answers `400`, and the app's `fetch` may never complete; the app's next requests then do not go out. | Answers `400`, the `fetch` ends with `"Incomplete response body"`, and the log says why the write was refused and that a BUSY Bar may hang here. | A fault of the firmware, seen on a BUSY Bar with a build of 1.4.1 made from the firmware's source. Repeated, it would leave your app stuck with no hint, and the path has to change either way. |
+| An app that uses busy-lib's `BusyBar` client and reads a large HTTPS response | Seen on 1.4.1: the app's requests to its own API took over 3 s, busy-lib's timeout fired, and the log showed `TypeError: Expected a function`. | The same app ran without these errors. | Being looked into. Until then, try such an app on a BUSY Bar, or call the API with `fetch` itself. |
+| Requests from your computer (a script that draws, `busy-cli`, `curl`) | Each answer takes the BUSY Bar's time, longer over Wi-Fi than over USB. | Answered at your computer's speed. | The speed model is for apps running on the BUSY Bar; the link from a computer to a BUSY Bar is not modelled. |
+| How fast your app runs | Its own speed. | A model fitted to one BUSY Bar on USB, for each firmware ([below](#other-differences-we-know-of)). | An app's time is counted from the work it does, not from your computer's speed. |
+| A large response to an app | The firmware holds the body in its memory until the app takes it; when that memory is full, the app ends. | The same, with room for about 1 MiB. The log names the response. | 1 MiB is an estimate from the BUSY Bar's memory, not yet measured. |
+| HTTPS | A handshake of about 1.4 s, then the body at the speed of the BUSY Bar's Wi-Fi. | The handshake's time, then the body at your computer's speed ([below](#other-differences-we-know-of)). | The handshake was measured on 1.3.1; the download is not modelled. |
+| A button held down | `press`, then `long`, then `repeat` while it is held, then `release`. | The same events at the times the firmware's code gives (a step of 150 ms). Back and Start held together for 2 s restart the emulated BUSY Bar. | Taken from the firmware's code, not yet measured on a BUSY Bar; the 2 s is the emulator's choice. |
+| A file in your app's package with a name outside ASCII or longer than 100 characters | Not yet checked. The archive keeps such a name in a PAX header, which the firmware's code skips, so the file may land under another name. | Skips the PAX header as the firmware's code does and unpacks the file under the name in the archive's ordinary field, cut or in another encoding. | Not yet measured on a BUSY Bar. Until then, give your app's files ASCII names under 100 characters. |
+| JavaScript that never returns | Holds the app until a long Back. | Stopped after 2 s of your computer's time ([below](#other-differences-we-know-of)). | The app's JavaScript shares a thread with the emulator. |
+| An empty `.snd` file played | By the firmware's code the file stays open, and a write to it is refused until another sound plays. | Plays nothing and is not held open. | Not yet measured on a BUSY Bar. |
+| The status lights at automatic brightness | Follow a light sensor. | Half brightness. | The emulator has no light sensor. |
+
+These parts are taken from the firmware's code but not yet compared with a BUSY Bar, so a difference there is
+possible: a sound that plays (start, replacement, stop), an app's own PNG pictures and text beyond ASCII, held buttons,
+what a BUSY Bar shows when an app throws after it starts or runs out of memory, timers, `localStorage`, `console`, and
+the status lights. On firmware 1.3.1, an app's requests to the network and its files are compared with 1.3.1's code,
+not with a BUSY Bar on 1.3.1. If your app behaves differently on a BUSY Bar,
+[open an issue](https://github.com/busy-app/busybar-emulator/issues) with what the app does and what each one showed.
 
 ## Who may call the emulator
 

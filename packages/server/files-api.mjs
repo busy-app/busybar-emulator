@@ -10,8 +10,8 @@
 // firmware's code, a path must name /ext/data, which stands for /ext/apps_data/js_apps/<id of the running app>, and
 // anything else is 400. The firmware's own test of that refusal is skipped (FW-1271); what is done here is what its
 // code says, not checked on a BUSY Bar.
-import { closeSync, existsSync, mkdirSync, openSync, renameSync, rmdirSync, rmSync, statSync, statfsSync, truncateSync, writeSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, renameSync, rmdirSync, rmSync, statSync, statfsSync, truncateSync, writeSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 
 const json = (status, value) => ({ status, headers: [["Content-Type", "application/json"]], body: new TextEncoder().encode(JSON.stringify(value) + "\n") });
 const ok = () => json(200, { result: "OK" });
@@ -73,6 +73,42 @@ const openForWriting = new Set();
 const fileKey = (local) => local.toLowerCase();
 
 /**
+ * Whether the speaker plays the file at `local` now. The bar's audio service keeps the file it plays open
+ * (audio_open_file, FSAM_READ) until the sound ends or is stopped, so a write to it is refused as to any open file:
+ * 508, with append=1 too (checked on a BUSY Bar with 1.4.1, 17.11; EMU-337). The emulator reads the sound whole when it
+ * starts. Its removal and renaming are refused too (storage_processing.c, storage_process_common_remove:
+ * FSE_ALREADY_OPEN; see storageApi): that is from the firmware's code, not measured on a BUSY Bar.
+ */
+function playing(device, local) {
+  const file = playingFile(device);
+  return file !== null && fileKey(file) === fileKey(local);
+}
+
+/** Whether the file that plays is `local` or in the folder `local`. `local` is a path of this computer (device.local, path.resolve): its separator is `sep`, a backslash on Windows. */
+function playingIn(device, local) {
+  const file = playingFile(device);
+  return file !== null && (fileKey(file) === fileKey(local) || fileKey(file).startsWith(`${fileKey(local)}${sep}`));
+}
+
+function playingFile(device) {
+  const path = device.audio?.current?.path;
+  return (path && device.local(path)) || null;
+}
+
+/** Why uploadTarget refused an app's storage/write, for the log: its checks in their order. */
+function refusal(device, query, app) {
+  const path = query.get("path");
+  const append = query.get("append");
+  if (app === null) return "no app is running";
+  if (!path) return "it names no path";
+  if (Buffer.byteLength(path) >= FILE_PATH_LEN_MAX) return `its path is ${FILE_PATH_LEN_MAX} bytes or longer`;
+  if (!sane(path.replace(/\/$/, ""))) return "its path goes up with ..";
+  if (!inAppFolder(path.replace(/\/$/, ""), app)) return "an app writes only under /ext/data";
+  if (append !== null && append !== "0" && append !== "1") return "append is neither 0 nor 1";
+  return "its folder could not be made";
+}
+
+/**
  * POST /api/storage/write and /api/assets/upload (web_server.c's http_upload_start and the data callbacks after it):
  * the file is opened when the headers have come, and the body goes into it as it comes. Returns { answer } if the file
  * cannot be opened (508, which the bar too answers from the headers), or the upload:
@@ -90,7 +126,7 @@ export function openUpload(device, path, append) {
   const cannotOpen = { answer: json(508, { error: "Failed to open file for writing" }) };
   // http_upload_start makes the folder and opens the file; a folder in the file's place cannot be opened, nor a file
   // that is open for writing already (storage_processing.c: storage_path_already_open, FSE_ALREADY_OPEN).
-  if (!local || (existsSync(local) && statSync(local).isDirectory()) || openForWriting.has(fileKey(local))) return cannotOpen;
+  if (!local || (existsSync(local) && statSync(local).isDirectory()) || openForWriting.has(fileKey(local)) || playing(device, local)) return cannotOpen;
   let fd;
   // The folders on the way to the file that are not there yet, the deepest first. (Not what mkdirSync returns: on
   // Windows that is the path in its long form, \\?\C:\...)
@@ -184,7 +220,17 @@ export function storageApi(device, method, what, query, body, app) {
       // A write the bar refuses is answered twice: by the on_headers callback (MG_REPLY_ERROR_CLOSE) and again by the
       // on_request one (MG_REPLY_BAD_REQUEST), both 400 on one connection (recorded on 1.4.1; test/app-storage.mjs).
       // An app's fetch then counts more bytes than Content-Length (runtime.mjs, localFetch).
-      return target ? upload(device, target.path, body, target.append) : { ...badRequest(), repliedTwice: true };
+      if (target) return upload(device, target.path, body, target.append);
+      // EMU-337 B: on a BUSY Bar with 1.4.1 (17.11) an app's refused write with a body of a sound file's size is
+      // answered 400 some twelve times, Mongoose then logs "socket error", and the app's fetch never completes: no
+      // answer, no error, not even the 5 s inactivity timeout, so the requests after it in a chain never go. A body of
+      // one byte ends as "Incomplete response body" (test/api/bar-1.4.1.json). That is a defect of the firmware, and the
+      // emulator does not repeat it: an app stuck on it is stuck for good, and the request is wrong anyway. It answers
+      // as for the small body and says in its log why the write is refused and what a BUSY Bar does with it.
+      if (app !== undefined && body?.length > 1) {
+        device.log(`An app's write to ${query.get("path") || "no path"} is refused with 400: ${refusal(device, query, app)}. On a BUSY Bar such a refused write of ${body.length} bytes may hang the app's fetch for good (no answer, no error), and the requests after it never go.`, "warn");
+      }
+      return { ...badRequest(), repliedTwice: true };
     }
     case "read": {
       const path = pathParameter(device, query, "path", app);
@@ -198,6 +244,10 @@ export function storageApi(device, method, what, query, body, app) {
       // storage_simply_remove_recursive(): what is not there is removed too.
       const path = pathParameter(device, query, "path", app);
       if (!path || !device.local(path)) return badRequest();
+      // The file that plays is open: storage_common_remove() refuses it (FSE_ALREADY_OPEN), and so 400. A folder with
+      // it inside: the BUSY Bar removes its files in the file system's order up to that one, then stops; here nothing
+      // of the folder is removed. From the firmware's code, not measured (EMU-337).
+      if (playingIn(device, device.local(path))) return badRequest();
       device.removePath(path);
       return ok();
     }
@@ -213,6 +263,20 @@ export function storageApi(device, method, what, query, body, app) {
       const from = device.local(pathParameter(device, query, "path", app) ?? "");
       const to = device.local(pathParameter(device, query, "new_path", app) ?? "");
       if (!from || !to || !existsSync(from)) return badRequest();
+      // storage_common_rename() copies, then removes the old name. With the file that plays (open, FSE_ALREADY_OPEN):
+      // as the new name, the copy cannot open it and nothing changes; as the old name (or in the old folder), the copy
+      // is made and the removal fails: 400, both names there. From the firmware's code, not measured (EMU-337).
+      if (fileKey(from) !== fileKey(to)) {
+        if (playingIn(device, to)) return badRequest();
+        if (playingIn(device, from)) {
+          try {
+            if (existsSync(to)) rmSync(to, { recursive: true, force: true });
+            mkdirSync(dirname(to), { recursive: true });
+            cpSync(from, to, { recursive: true });
+          } catch {}
+          return badRequest();
+        }
+      }
       try {
         // storage_common_rename() replaces what has the new name.
         if (existsSync(to) && to !== from) rmSync(to, { recursive: true, force: true });

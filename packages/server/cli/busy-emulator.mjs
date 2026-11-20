@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolveContext } from "./context.mjs";
-import { commandLine } from "./lifecycle.mjs";
+import { commandLine, dataFolderRefusal, RUN_ON_ANY_FOLDER } from "./lifecycle.mjs";
 import { CliError, emit, unknownCommand } from "./output.mjs";
 import { lineWriter } from "./console.mjs";
 import { reportBrokenFilesTo } from "../json-store.mjs";
@@ -112,6 +112,11 @@ export async function main(argv, { ctx, sys, out, err, commands, answer = () => 
     if (commandArgs.length > (command.maxArguments ?? 0)) {
       const extra = commandArgs.slice(command.maxArguments ?? 0);
       throw new CliError("usage", `${command.name} takes no argument ${extra.map((word) => JSON.stringify(word)).join(" ")}.`, `Usage: ${self} ${command.usage}`, { arguments: extra });
+    }
+    // A data folder this copy cannot use (a newer format): no command that may write into it runs (ADR-0013).
+    if (!(name === null || help) && !RUN_ON_ANY_FOLDER.includes(command.name)) {
+      const refusal = dataFolderRefusal(ctx, sys);
+      if (refusal) throw refusal;
     }
     // What a long command says while it works (installing, building): to stderr for a person, nothing with --json,
     // unless --progress asks for it (the app's window shows the lines while it waits for the one line of JSON).

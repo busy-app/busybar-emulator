@@ -594,6 +594,35 @@ test("build and dev --once say the same about a project whose path Windows' tar.
   assert.match(mac.json.hint, /^Fix what busy-cli says/);
 });
 
+test("the development loop checks the emulator's process once, at its start, and not again in its round (on Windows each check is a PowerShell)", async (t) => {
+  const { root, ctx } = setup(t);
+  const app = "/Applications/BUSY Bar Emulator.app";
+  const state = { pid: 4242, exe: app, started: 1_000_000, port: 8640, url: "http://127.0.0.1:8640", state: "ready", detail: null };
+  let clock = 0;
+  const checks = [];
+  const asked = [];
+  const sys = {
+    cwd: () => root,
+    runTool: async () => ({ code: 0, signal: null, output: "" }),
+    readRunState: () => ({ state }),
+    alive: () => true,
+    probe: async () => ({ answering: true }),
+    processInfo: (pid) => (checks.push(pid), { start: 999_500, exe: app }),
+    samePath: () => true,
+    barGet: async (port, pathname) => (asked.push(`${port} ${pathname}`), pathname === "/api/version" ? { status: 200, body: JSON.stringify({ api_semver: "27.15.0" }) } : { status: 404, body: "" }),
+    followConsole: () => ({ opened: Promise.resolve({}), close() {} }),
+    now: () => clock,
+    sleep: async (ms) => void (clock += ms),
+  };
+  const dir = path.join(root, "app");
+  trustProject(ctx.dataDir, handMadeProject(dir, { installed: true }), "trusted", { platform: ctx.platform });
+  const answer = await call(["dev", "app", "--once"], { ...ctx, appPath: app }, sys);
+  assert.equal(answer.json.ok, true, JSON.stringify(answer.json));
+  assert.deepEqual(checks, [4242], "one check of the emulator's process");
+  // The round still asks the BUSY Bar for its API version (its settings file is checked by that firmware's rules).
+  assert.ok(asked.includes("8640 /api/version"), asked.join(", "));
+});
+
 test("a build or install is refused while another process installs the same project's dependencies", async (t) => {
   const { root, ctx } = setup(t);
   const dir = path.join(root, "app");

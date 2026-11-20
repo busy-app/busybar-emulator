@@ -7,6 +7,15 @@
 //   node test/gate.mjs --only golden,api  some suites (a name without ":<firmware>" means every firmware)
 //   node test/gate.mjs --skip app         all but some
 //   EMU_GATE_SKIP='{"app": "why"}'        suites to leave out, each with the reason the summary gives
+//   node test/gate.mjs --files a,b        a targeted run: only these test files (paths from emulator/), in their suites
+//   node test/gate.mjs --changed          a targeted run: the test files the branch touches against origin/main
+//                                         (--base <ref> for another), by gate-lib.mjs touchedTests; add the window's
+//                                         tests of a change to the window's code with --files, the two add up
+//
+// A targeted run is partial: the full gate stays the last check before a merge (quality.md, the section on review).
+//
+// A failure on the list of known flakes (KNOWN_FLAKES, gate-lib.mjs: each with its open task) is printed on a line of
+// its own with the task's key and does not make the suite red; a suite with any other failure is red.
 //
 // A run that is not the whole gate (--only, --skip, --firmware, --comparison, EMU_GATE_SKIP) says so in its first line
 // and in its total line, and never ends "all green". gate:win names the suites the Windows machine cannot run in
@@ -51,7 +60,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { execProgram } from "../packages/engine/programs.mjs";
 import { commandLine } from "../packages/server/arguments.mjs";
-import { lockIsStale, machineSkipsOf, partialScope, sortSkips, stillRunning, tallyEvents, tallyExport, tallyTap, tallyTotals, verdictOf } from "./gate-lib.mjs";
+import { failuresOf, flakeVerdict, lockIsStale, machineSkipsOf, partialScope, sortFailures, sortSkips, stillRunning, tallyEvents, tallyExport, tallyTap, tallyTotals, touchedTests, verdictOf } from "./gate-lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, ".."); // emulator/
@@ -66,7 +75,7 @@ const MONOREPO_ONLY = ["export", "board", "tools"];
 
 const args = process.argv.slice(2);
 // --help prints the comment at the top; an option it does not know is a wrong call, exit code 2.
-await commandLine(process.argv, { values: ["--only", "--skip", "--firmware", "--jobs", "--out"], flags: ["--list", "--comparison", "--exit-with-stdin"] });
+await commandLine(process.argv, { values: ["--only", "--skip", "--firmware", "--jobs", "--out", "--files", "--base"], flags: ["--list", "--comparison", "--exit-with-stdin", "--changed"] });
 function usage(problem) {
   console.error(`gate.mjs: ${problem}. node test/gate.mjs --help lists what it takes.`);
   process.exit(2);
@@ -105,6 +114,7 @@ const HELPERS = {
   "gate-reporter.mjs": "the reporter beside TAP that counts the tests each file registered and finished",
   "own-emulator.mjs": "the comparison suites' own emulator",
   "app-storage.mjs": "the probe of an app's own files through /api/storage, which api.mjs runs",
+  "app-files.mjs": "the probe of an app's binary bodies, sounds and writes where the firmware falls short (EMU-337), which api.mjs runs",
   "golden-compare.mjs": "what golden.mjs compares of two frames (golden-compare.test.mjs checks it)",
   "package.mjs": "app archives for the suites",
   "mirror-apps.mjs": "copies a bar's apps (by hand, with a bar)",
@@ -132,6 +142,13 @@ const EVENTS = "<events>";
 const reporter = pathToFileURL(join(here, "gate-reporter.mjs")).href;
 const nodeTest = (list, ...extra) => ["--test", "--test-reporter=tap", "--test-reporter-destination=stdout", `--test-reporter=${reporter}`, EVENTS, ...extra, ...list];
 const appFiles = (id) => filesOf(id).map((f) => f.slice("packages/app/".length));
+/**
+ * The options packages/app's own script gives node --test (--test-concurrency=1, --test-force-exit: a file whose tests
+ * are over ends although a handle of a failed test is still open), so that the gate runs the shell's files as
+ * `npm test` there does. All but --test-timeout: Node 22 applies it to a whole file, Node 24 to each test; the window's
+ * tests take a limit of their own for each test and hook (test/app/node-test.mjs), and the suite's limit is the gate's.
+ */
+const appScriptFlags = (script) => JSON.parse(readFileSync(join(appDir, "package.json"), "utf8")).scripts[script].split(/\s+/).filter((w) => w.startsWith("--") && w !== "--test" && !w.startsWith("--test-timeout"));
 const SUITES = [
   { id: "unit", what: "unit tests of the parts: packages/**/*.test.mjs but packages/app", kind: "tap", files: filesOf("unit"), args: nodeTest(filesOf("unit")) },
   { id: "server", what: "the server's start, stop, data folder, uploads, screenshots: test/server/*.test.mjs", kind: "tap", files: filesOf("server"), args: nodeTest(filesOf("server")) },
@@ -145,7 +162,11 @@ const SUITES = [
     kind: "tap",
     cwd: appDir,
     files: appFiles("app-unit"),
-    args: nodeTest(appFiles("app-unit"), "--test-concurrency=1"),
+    // Without --test-force-exit: its tests start no app, so no test leaves the handle it is for, and on Windows (Node
+    // 24) a file's process that it ended while the file's last sockets were still closing failed on libuv's
+    // "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)", its tests all passed (gh-texts.test.mjs, gate:win
+    // 17.11; EMU-330). The window tests keep it (cascade.test.mjs).
+    args: nodeTest(appFiles("app-unit"), ...appScriptFlags("test:unit").filter((flag) => flag !== "--test-force-exit")),
     ports: 9,
   },
   {
@@ -156,7 +177,7 @@ const SUITES = [
     files: appFiles("app"),
     // gate:win --with-app: through a scheduled task in the desktop session of the user logged on to Windows, where the
     // windows can be made (tools/gate/desktop-task.mjs); its output and exit code come back as the suite's own.
-    args: [...(process.env.EMU_GATE_APP_DESKTOP === "task" ? [join(root, "tools", "gate", "desktop-task.mjs")] : []), ...nodeTest(appFiles("app"), "--test-concurrency=1")],
+    args: [...(process.env.EMU_GATE_APP_DESKTOP === "task" ? [join(root, "tools", "gate", "desktop-task.mjs")] : []), ...nodeTest(appFiles("app"), ...appScriptFlags("test:app"))],
     // The test copies of Electron live here, and a test may start the app in a process group of its own.
     strays: [join(appDir, "node_modules")],
     needs: () => (existsSync(join(appDir, "node_modules", "electron", "path.txt")) ? null : "no Electron in packages/app/node_modules (run npm install in emulator/packages/app)"),
@@ -207,6 +228,55 @@ const unplaced = [
   ...scripts.filter((f) => !HELPERS[f] && !COMPARISON.some((c) => `${c.name}.mjs` === f)).map((f) => `test/${f} (neither a comparison suite nor a helper: add it to COMPARISON or HELPERS in test/gate.mjs)`),
 ];
 
+// ---------------------------------------------------------------- a targeted run (--files, --changed)
+
+/** A path as given (from emulator/, from the repository's root, or whole) as one from emulator/, with "/". */
+const fromRoot = (given) => {
+  const whole = given.replaceAll("\\", "/");
+  const rootSlash = `${root.replaceAll("\\", "/").replace(/\/$/, "")}/`;
+  if (whole.startsWith(rootSlash)) return whole.slice(rootSlash.length);
+  return whole.replace(/^\.\//, "").replace(/^emulator\//, "");
+};
+const targeted = new Map(); // test file from emulator/ → why it is in the run
+for (const f of list("--files") ?? []) {
+  const file = fromRoot(f);
+  if (!files.includes(file)) usage(`--files: ${f} is not a test file of the tree (node test/gate.mjs --list counts them)`);
+  targeted.set(file, "named");
+}
+if (args.includes("--changed")) {
+  const base = option("--base") ?? "origin/main";
+  const since = git("merge-base", base, "HEAD");
+  if (!since) usage(`--changed: no common commit of ${base} and HEAD`);
+  // What the branch changed since it left the base, and what is changed in the working tree on top.
+  const changed = [...new Set([...(git("diff", "--name-only", "--relative", since, "--") ?? "").split("\n"), ...(git("ls-files", "-mo", "--exclude-standard", "--", ".") ?? "").split("\n")].filter(Boolean))];
+  const touched = touchedTests(changed, files, (f) => {
+    try {
+      return readFileSync(join(root, f), "utf8");
+    } catch {
+      return null;
+    }
+  });
+  for (const f of touched.files) if (!targeted.has(f)) targeted.set(f, touched.why.get(f));
+  console.log(`gate --changed: ${changed.length} files changed against ${base}; ${touched.files.length} test files touched`);
+}
+if ((list("--files") || args.includes("--changed")) && !targeted.size) usage("a targeted run with no test file in it");
+if (targeted.size) {
+  for (const s of SUITES) {
+    if (s.kind !== "tap") {
+      s.targetedOut = true;
+      continue;
+    }
+    const prefix = s.cwd ? `${relative(root, s.cwd).split(sep).join("/")}/` : "";
+    const kept = s.files.filter((f) => targeted.has(prefix + f));
+    if (!kept.length) s.targetedOut = true;
+    else {
+      s.args = [...s.args.filter((a) => !s.files.includes(a)), ...kept];
+      s.files = kept;
+    }
+  }
+  for (const [f, why] of targeted) console.log(`        ${f}${why === "named" ? "" : ` (${why})`}`);
+}
+
 if (args.includes("--list")) {
   for (const s of SUITES) console.log(`${s.id.padEnd(16)} ${s.load ? "load-sensitive " : ""}${s.what}`);
   console.log(`\n${files.length} test files, each in one suite above${unplaced.length ? `, except:\n  ${unplaced.join("\n  ")}` : ""}`);
@@ -238,11 +308,12 @@ const partial = partialScope({
   comparison: args.includes("--comparison"),
   firmware: list("--firmware"),
   skip: [...(list("--skip") ?? []), ...Object.keys(requestedSkips)],
+  files: targeted.size || null,
 });
 const machineText = Object.keys(machineSkips).length ? `without ${Object.keys(machineSkips).join(", ")}, which this machine does not run (see skipped)` : null;
 const matches = (s, names) => names.some((n) => s.id === n || s.id.split(":")[0] === n);
 for (const n of [...(only ?? []), ...skipped]) if (!SUITES.some((s) => matches(s, [n]))) usage(`no suite ${n} (--list names them)`);
-const chosen = SUITES.filter((s) => (!only || matches(s, only)) && (!args.includes("--comparison") || s.comparison));
+const chosen = SUITES.filter((s) => !s.targetedOut && (!only || matches(s, only)) && (!args.includes("--comparison") || s.comparison));
 const results = new Map(); // id → { state: "pass"|"fail"|"skip", pass, fail, skip, ms, note, reasons, load }
 // The check that every test file is in a suite comes first, whatever was chosen.
 const FILES = { id: "files", what: "every test file of the tree is in a suite" };
@@ -600,12 +671,11 @@ async function runHeld(s) {
   const load = stopLoad?.();
   const text = readFileSync(logOf(s), "utf8");
   const c = counts(s, text);
-  // Tests a file registered that never finished: its process ended midway, which TAP does not show.
-  if (s.kind === "tap" && code === 0 && !timedOut && !interrupted) {
-    const unfinished = tallyEvents(existsSync(events) ? readFileSync(events, "utf8") : null);
-    c.problems = [...(c.problems ?? []), ...unfinished];
-    c.fail += unfinished.length;
-  }
+  // Tests a file registered that never finished: its process ended midway, which TAP does not show. Looked at
+  // whatever the exit code: a red suite whose failures are known flakes must not hide them (flakeVerdict).
+  const unfinished = s.kind === "tap" && !timedOut && !interrupted ? tallyEvents(existsSync(events) ? readFileSync(events, "utf8") : null) : [];
+  c.problems = [...(c.problems ?? []), ...unfinished];
+  c.fail += unfinished.length;
   let state = code === 0 && !timedOut ? "pass" : "fail";
   let note = "";
   if (timedOut) {
@@ -624,6 +694,23 @@ async function runHeld(s) {
     state = "fail";
     note = c.fail ? `${c.fail} failed with exit code 0` : "nothing was checked";
   }
+  // Failures that are all known flakes (gate-lib.mjs, KNOWN_FLAKES) do not make the suite red; they are said, each on a
+  // line with its task. Anything else failing, or a problem the tally found, keeps it red.
+  // A red suite names its failures under its line, the known flakes among them apart, so that the reader sees what
+  // broke without opening the log.
+  let flakes = [];
+  let named = { known: [], unknown: [] };
+  if (s.kind === "tap" && state === "fail" && !interrupted && existsSync(events)) {
+    const failures = failuresOf(readFileSync(events, "utf8"));
+    const verdict = flakeVerdict({ failures, unfinished, problems: c.problems ?? [], fail: c.fail, suite: s.id, cwd: s.cwd ?? root });
+    named = verdict;
+    if (!timedOut && !Number.isNaN(c.pass) && verdict.green) {
+      flakes = named.known;
+      named = { known: [], unknown: [] };
+      state = "pass";
+      note = `${flakes.length === 1 ? "the failure is a known flake" : `the ${flakes.length} failures are known flakes`} (${[...new Set(flakes.map((f) => f.key))].join(", ")}), not counted`;
+    }
+  }
   // Tests leave nothing behind (quality.md): not after a run that ended by itself.
   const leftovers = [];
   if (!timedOut && !interrupted && left.length) leftovers.push(`left in its temporary folder: ${left.slice(0, 5).join(", ")}${left.length > 5 ? ` and ${left.length - 5} more` : ""}`);
@@ -632,9 +719,13 @@ async function runHeld(s) {
     state = "fail";
     note = [note, ...leftovers].filter(Boolean).join("; ");
   }
-  const result = { state, ...c, ms, note, load, code, ports, images: s.images && existsSync(env.EMU_TEST_OUT) ? env.EMU_TEST_OUT : null };
+  const result = { state, ...c, ms, note, load, code, ports, flakes, images: s.images && existsSync(env.EMU_TEST_OUT) ? env.EMU_TEST_OUT : null };
   results.set(s.id, result);
   console.log(line(s, result));
+  for (const f of flakes) console.log(flakeLine(s, f));
+  for (const f of named.unknown.slice(0, 10)) console.log(`        failed: ${failedFile(s, f.file)}: "${f.name}": ${f.error}`);
+  if (named.unknown.length > 10) console.log(`        and ${named.unknown.length - 10} more failures (the log)`);
+  for (const f of named.known) console.log(`${flakeLine(s, f)} (the suite is red for the failures above)`);
   if (!timedOut && !interrupted) for (const one of strays) console.log(`        ended ${one.pid}: ${one.command.length > 300 ? `${one.command.slice(0, 300)}…` : one.command}`);
   if (load) console.log(`        load: ${loadText(load)}`);
   for (const p of c.problems ?? []) console.log(`        ${p}`);
@@ -642,6 +733,13 @@ async function runHeld(s) {
   return result;
 }
 
+/** A failed test's file, from the suite's folder, with "/". */
+const failedFile = (s, file) => {
+  const a = String(file).replaceAll("\\", "/");
+  const b = `${String(s.cwd ?? root).replaceAll("\\", "/").replace(/\/$/, "")}/`;
+  return a.toLowerCase().startsWith(b.toLowerCase()) ? a.slice(b.length) : a;
+};
+const flakeLine = (s, f) => `        known flake ${f.key}: ${s.id} ${f.file}: "${f.name}": ${f.error}`;
 const secs = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s` : `${(ms / 1000).toFixed(1)} s`);
 function countText(r) {
   if (r.state === "skip") return `skipped: ${r.note}`;
@@ -766,6 +864,9 @@ for (const { s, r } of counted) console.log(`  ${s.id}: the whole suite — ${r.
 for (const [why, n] of sorted.unexpected) console.log(`  ${[...new Set(reasonSuites.get(why))].join(", ")}: ${n} tests — ${why} (not on the list of allowed reasons, test/gate-lib.mjs ALLOWED_SKIPS)`);
 if (lockWaits.some((w) => w.ms >= 1000)) console.log("\nwaits for the machine's locks (other gates of this machine held them)");
 for (const w of lockWaits.filter((x) => x.ms >= 1000)) console.log(`  ${w.id.padEnd(16)} ${secs(w.ms)} for the ${w.lock} lock`);
+const flaky = all.filter(({ r }) => r.flakes?.length);
+if (flaky.length) console.log("\nknown flakes: failed, not counted against the verdict (each has its task; gate-lib.mjs KNOWN_FLAKES)");
+for (const { s, r } of flaky) for (const f of r.flakes) console.log(flakeLine(s, f).replace(/^ {8}/, "  "));
 const loads = all.filter(({ r }) => r.load);
 if (loads.length) console.log("\nmachine load during the load-sensitive suites (all processes of the machine)");
 for (const { s, r } of loads) console.log(`  ${s.id.padEnd(16)} ${loadText(r.load)}`);

@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { fakeRegistry } from "../fixtures/fake-registry.mjs";
 import { HAS_REAL_SERVER, temporaryFolder, until } from "../helpers.mjs";

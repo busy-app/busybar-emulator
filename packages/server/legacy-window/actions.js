@@ -126,12 +126,14 @@
       icon: ({ folder, front, back }) => call("publish.icon", { folder, front, back: back ?? null }),
       /** `upload`: true for either display, or "front" or "back" for that display's button. */
       screenshots: ({ folder, take, upload, order, remove }) => call("publish.screenshots", { folder, take, upload: upload === true || upload === "front" || upload === "back" ? upload : undefined, order, remove }),
-      readme: ({ folder, readme }) => call("publish.readme", { folder, readme }),
+      readme: ({ folder, readme, replace }) => call("publish.readme", { folder, readme, replace: replace === true ? true : undefined }),
       /** With `upload: true` (Another license): the system's dialog for the file; `replace: true` answers "replace it?". */
       license: ({ folder, license, author, upload, replace }) => call("publish.license", { folder, license, author, upload: upload === true ? true : undefined, replace: replace === true ? true : undefined }),
       files: ({ folder, write, keepOut, keepIn, readme }) => call("publish.files", { folder, write, keepOut, keepIn, readme }),
       /** With { build: true }: Build and package, the build first, in the one action of the click. */
       package: (folder, options) => call("publish.package", options && options.build === true ? { folder, build: true } : folder),
+      /** Send to catalog's AI usage and its explanation, noted in the project so that the step opens with them again. */
+      ai: ({ folder, ai, note = null }) => call("publish.ai", { folder, ai, ...(typeof note === "string" ? { note } : {}) }),
     }),
     /** The canvas's Screenshot and Record buttons; `target` is { folder, name } of the running app (folder null: none). */
     capture: Object.freeze({
@@ -153,15 +155,20 @@
       openCodePage: () => call("github.code.open"),
       signOut: ({ signOutCli = false, switchBack = false } = {}) => call("github.signout", { signOutCli: signOutCli === true, switchBack: switchBack === true }),
       checkName: ({ folder, name }) => call("github.name", { folder, name }),
+      /** Sign commits with (EMU-366): the address commits get now, and the ones the account may choose. */
+      signers: ({ folder = null, fresh = false } = {}) => call("github.signers", { folder: typeof folder === "string" ? folder : null, fresh: fresh === true }),
+      chooseSigner: ({ email, folder = null }) => call("github.signer", { email: String(email ?? ""), folder: typeof folder === "string" ? folder : null }),
       // `into`: { head, deleteOthers } once the person confirmed Publish into their own repository (catalog-update).
       push: ({ folder, name, into = null }) => call("github.push", { folder, name: name ?? null, ...(into ? { into: { head: into.head, deleteOthers: into.deleteOthers === true } } : {}) }),
       /** Cancel of an upload under way. */
       cancel: () => call("github.cancel"),
       /** The catalog's author checklist: its pull request template, read now (or the copy bundled with the app). */
       checklist: ({ catalog }) => call("github.checklist", { catalog }),
-      request: ({ folder, catalog, ticked, ai, changelog = null, otherCatalog = null }) => call("github.request", { folder, catalog, ticked: Array.isArray(ticked) ? ticked.filter((one) => typeof one === "string") : [], ai, ...(typeof changelog === "string" ? { changelog } : {}), ...(typeof otherCatalog === "string" ? { otherCatalog } : {}) }),
+      request: ({ folder, catalog, ticked, ai, aiNote = null, changelog = null, otherCatalog = null }) => call("github.request", { folder, catalog, ticked: Array.isArray(ticked) ? ticked.filter((one) => typeof one === "string") : [], ai, ...(typeof aiNote === "string" ? { aiNote } : {}), ...(typeof changelog === "string" ? { changelog } : {}), ...(typeof otherCatalog === "string" ? { otherCatalog } : {}) }),
       /** What the catalog has of the app now: an update or not, the published version and What's new (catalog-update). */
       entry: ({ folder, catalog }) => call("github.entry", { folder, catalog: catalog ?? null }),
+      /** Where the pull request the project's record names stands on GitHub now: open, closed or merged (EMU-360). */
+      pull: ({ folder }) => call("github.pull", { folder }),
       /** The repository Import from GitHub would get. */
       lookup: (repo) => call("github.lookup", { repo }),
       /** Import from GitHub: downloaded into { parent, folder }, then opened as Open existing opens a project. */
@@ -185,9 +192,9 @@
      * The built-in update: state() → { state, version, current, canInstall, why?, received?, total?, message?, hint? }
      * (state: none, available, downloading, preparing, ready, restarting, failed); download() is Update to <version>,
      * restart() is Restart to update, which the app confirms in a dialog of its own. popup() → whether the update's
-     * pop-up shows now: { show: true, version, current, canInstall, why?, page, summary? } (summary: { kind: "list" or
-     * "text", lines }), or { show: false, retryMs } (ask again then; null: when the state changes). A yes is given
-     * once per version in a run.
+     * pop-up shows now: { show: true, version, current, canInstall, why?, page, notes? } (notes: { blocks, more }, the
+     * release's notes as packages/app/src/update-check.mjs parseReleaseNotes gives them, plain text), or
+     * { show: false, retryMs } (ask again then; null: when the state changes). A yes is given once per version in a run.
      */
     update: Object.freeze({
       state: () => call("update.state"),

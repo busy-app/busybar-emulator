@@ -271,7 +271,15 @@ const DECIDERS = {
     const { details, answer } = detailsOr(f);
     if (answer) return answer;
     if (!filled(details.description)) return waiting("the description is not written yet (see manifest_schema)");
-    if (details.description.startsWith("@")) return unchecked("the description names a file; this check reads only a text written in place", `Write the description itself in ${DETAILS_FILE}.`);
+    const file = f.descriptionFile;
+    if (file) {
+      if (!file.safe) return waiting("the description names a file outside the app's folder (see manifest_references)");
+      if (file.text === null) return fail(`the description names ${file.path}, which ${file.unread}`, file.inGit || file.outside ? "Name a file of the app's folder itself." : `Name a UTF-8 Markdown file of the app's folder, or write the description itself in ${DETAILS_FILE}.`);
+      const n = length(file.text);
+      if (!file.text.trim() || n < LIMITS.description[0] || n > LIMITS.description[1]) return fail(`the description in ${file.path} is ${n} characters, the catalog takes ${LIMITS.description.join(" to ")} of the file's text`, `Change ${file.path}.`);
+      if (notKept(file.git)) return fail(notKeptText(file.path, file.git), `Run git add ${file.path}, commit and push: the catalog reads the file at the commit.`);
+      return pass(`the description in ${file.path} is ${n} characters`);
+    }
     const n = length(details.description);
     if (n < LIMITS.description[0] || n > LIMITS.description[1]) return fail(`the description is ${n} characters, the catalog takes ${LIMITS.description.join(" to ")} (its bot names this "manifest fields")`, `Change "description" in ${DETAILS_FILE}.`);
     return pass(`the description is ${n} characters`);
@@ -279,11 +287,13 @@ const DECIDERS = {
   markdown: (f) => {
     const { details, answer } = detailsOr(f);
     if (answer) return answer;
-    const texts = ["description", "changelog"].filter((key) => filled(details[key]) && !details[key].startsWith("@"));
+    // A description named as @<file> is checked on the file's text, as the catalog checks it.
+    const textOf = (key) => (key === "description" && f.descriptionFile ? f.descriptionFile.text : details[key]);
+    const texts = ["description", "changelog"].filter((key) => filled(textOf(key)) && !(key === "changelog" && details[key].startsWith("@")));
     if (!texts.length) return waiting("the description and the changelog are not written yet (see manifest_schema)");
     const unsure = [];
     for (const key of texts) {
-      const found = markdownProblem(details[key]);
+      const found = markdownProblem(textOf(key));
       if (found.problem) return fail(`${key}, ${found.problem}`, "The catalog takes only level 1–2 headings, bold, italic, lists and http(s) links there: take the rest out.");
       if (found.unsure) unsure.push(`${key}, ${found.unsure}`);
     }

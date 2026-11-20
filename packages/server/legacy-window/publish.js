@@ -10,11 +10,16 @@
 //
 // Everything that comes from the project (names, paths, texts, messages) is shown as text, never as markup.
 (() => {
+  // `prompt`: what the catalog's template asks "Partly" and "Fully" to explain (EMU-359), when its own lines do not say.
   const AI_CHOICES = [
-    { id: "none", name: "No AI was used" },
-    { id: "partly", name: "Partly AI-assisted" },
-    { id: "full", name: "Fully AI-generated" },
+    { id: "none", name: "No AI was used", prompt: null },
+    { id: "partly", name: "Partly AI-assisted", prompt: "Describe which parts were AI-generated and what they do" },
+    { id: "full", name: "Fully AI-generated", prompt: "Describe what the generated code does" },
   ];
+  /** The longest explanation of the AI usage the request sends (publish-flow.mjs MAX_AI_NOTE). */
+  const MAX_AI_NOTE = 1000;
+  const needsNote = (ai) => ai === "partly" || ai === "full";
+  const noteLength = (text) => String(text ?? "").replace(/\s+/g, " ").trim().length;
   const FILE_MANAGER = /win/i.test(globalThis.navigator?.platform ?? "") ? "Explorer" : "Finder";
   const NO_GESTURE = "no_gesture";
 
@@ -76,11 +81,9 @@
       const [s, t, r, m, h] = await Promise.all([import("/emulator/publish-steps.mjs"), import("/emulator/readiness/texts.mjs"), import("/emulator/readiness/rules.mjs"), import("/emulator/publish/readme.mjs"), import("/emulator/publish/how-to-use.mjs")]);
       steps = s;
       howToUse = h;
-      // The README here needs How to use as rows, at least one (the command line takes a plain text too, for agents).
-      const readmeProblem = (config, facts) => {
-        const base = m.readmeProblem(config, facts);
-        return base === "Write how to use it" ? h.problem(rowsOfReadme(config)) : (base ?? h.problem(rowsOfReadme(config)));
-      };
+      // How to use is optional (EMU-364: the catalog does not read it yet). Only rows made in the step's own editor
+      // (fields) are checked; a section written in Markdown is said as a hint, never a block.
+      const readmeProblem = (config, facts) => m.readmeProblem(config, facts) ?? ((config?.mode ?? "fields") === "fields" ? h.sectionProblem(rowsOfReadme(config)) : null);
       rules = { textProblems: t.textProblems, nameProblem: r.nameProblem, readmeProblem };
       readme = m;
       return true;
@@ -182,6 +185,8 @@
   }
 
   function close() {
+    // A send under way is seen to its end (EMU-360): the dialog stays until GitHub has answered.
+    if (sending()) return;
     root.hidden = true;
     document.body.classList.remove("publishing");
     globalThis.dispatchEvent?.(new Event("publish-closed"));
@@ -225,8 +230,10 @@
     }
     if (!saved && flow.step === "texts" && step !== "texts" && iconDrafted()) saveIcon();
     flow.picking = false;
+    if (flow.outcome && flow.outcome.step !== step && flow.outcome.kind !== "sending") flow.outcome = null;
     flow.step = step;
     flow.said = null;
+    flow.readmeAsk = null;
     if (flow.changed && flow.changed.step !== step) flow.changed = null;
     render();
     enter(step);
@@ -243,7 +250,15 @@
     // The texts go on at once: they are checked here by the catalog's own rules already; the writing runs behind.
     if (id === "texts" && iconDrafted()) saveIcon();
     if (save?.kind === "texts") saveTexts(save);
-    else if (save?.kind === "readme") ok = await saveReadme(save);
+    else if (save?.kind === "readme") {
+      // A README.md used as it is is not written over before the person says so (EMU-365).
+      if (replacesKept(save.readme)) {
+        flow.readmeAsk = { save };
+        render();
+        return;
+      }
+      ok = await saveReadme(save);
+    }
     else if (save?.kind === "license") ok = await writeLicense(save.license, save.author);
     else if (save?.kind === "files") ok = await planFiles({ write: true });
     if (!ok || !flow) return;
@@ -463,9 +478,20 @@
     });
   }
 
-  function saveReadme(save) {
-    return busy("Writing README.md", async () => {
-      const answer = await act(() => actions().publish.readme({ folder: flow.folder, readme: save.readme }));
+  function saveReadme(save, { replace = false } = {}) {
+    const keep = save.readme?.mode === "file";
+    return busy(keep ? "Saving" : "Writing README.md", async () => {
+      // The file as it is takes no text: the fields stay in the record as they were.
+      const readme = keep ? { mode: "file" } : save.readme;
+      const answer = await act(() => actions().publish.readme({ folder: flow.folder, readme, ...(replace ? { replace: true } : {}) }));
+      if (answer.ok) flow.readmeAsk = null;
+      // A window that did not know the file is used as it is (chosen on the command line meanwhile): it asks the
+      // person, as Next does when it knows; the project is read again after the work.
+      if (!answer.ok && answer.code === "readme_kept" && !replace) {
+        flow.readmeAsk = { save };
+        flow.said = null;
+        return false;
+      }
       if (answer.ok) flow.drafts.readmeDirty = false;
       flow.said = said(answer);
       return answer.ok;
@@ -541,7 +567,8 @@
     if (!flow) return;
     flow.gh = answer.ok === false ? { failure: answer } : answer;
     if (!flow.gh.signedIn && !flow.gh.signing) flow.accountMode = false;
-    if (flow.gh.signedIn) await planName();
+    if (!flow.gh.signedIn || !sameLogin(flow.signers?.login, flow.gh.login)) flow.signers = null;
+    if (flow.gh.signedIn) await Promise.all([planName(), loadSigners()]);
     render();
     if (flow.gh.signedIn && flow.step === "catalog") void loadChecklist();
   }
@@ -566,9 +593,10 @@
     typing = setTimeout(() => void planName(), 400);
   }
   /** The words under the name, the button's, and what the button does, for the plan as it is now. */
-  function showPlan({ about, go, what, count }) {
+  function showPlan({ about, source, go, what, count }) {
     const w = flow.where;
     const label = go.querySelector("span");
+    if (source) source.textContent = w && w.name === flow.repoName ? namedWords(w) : "";
     if (!w || w.name !== flow.repoName) {
       about.textContent = w?.problem ?? "Looking at your repositories";
       go.ariaDisabled = "true";
@@ -583,6 +611,58 @@
     const blocked = flow.busy ? "Wait for the work under way" : words.blocked;
     go.ariaDisabled = blocked ? "true" : "false";
     go.title = blocked ?? "";
+  }
+
+  /**
+   * Sign commits with (EMU-366): { login, signer: { name, email, kind }, offered: [{ email, kind, primary? }], scope,
+   * grant } for the account signed in, from the app; the address each commit of the app's is signed with.
+   */
+  async function loadSigners({ fresh = false } = {}) {
+    const folder = flow.folder;
+    const answer = await act(() => actions().github.signers({ folder, fresh }));
+    if (!flow || flow.folder !== folder) return;
+    flow.signers = answer.ok === false ? { failure: [answer.message, answer.hint].filter(Boolean).join(" ") } : answer;
+  }
+  function chooseSigner(email) {
+    const folder = flow.folder;
+    return busy("Choosing the address", async () => {
+      const answer = await act(() => actions().github.chooseSigner({ email, folder }));
+      if (!flow || flow.folder !== folder) return;
+      if (answer.ok === false) flow.said = said(answer);
+      else if (flow.signers && !flow.signers.failure) flow.signers = { ...flow.signers, signer: answer.signer };
+    });
+  }
+  /** How the commit's author reads: Name <address>. */
+  const signedWords = (signer) => `${signer.name} <${signer.email}>`;
+  const SIGNER_KINDS = { noreply: "GitHub's private address", verified: "verified on GitHub", git: "git config, not verified on GitHub" };
+
+  /** Sign commits with: a choice of the account's addresses, what the chosen one means, and how to list the others. */
+  function signerPart() {
+    const s = flow.signers;
+    if (!s) return [field("Sign commits with", Object.assign(make("select", "input"), { disabled: true }), { hint: "Asking GitHub for your account's addresses" }).row];
+    if (s.failure) return [field("Sign commits with", Object.assign(make("select", "input"), { disabled: true }), { problem: s.failure }).row];
+    const select = make("select", "input");
+    select.dataset.focus = "signer";
+    for (const one of s.offered) {
+      const kind = one.kind === "verified" ? ["verified on GitHub", one.primary ? "primary" : null, one.private ? "kept private" : null].filter(Boolean).join(", ") : SIGNER_KINDS[one.kind];
+      // git config's address goes with git config's name: the option shows both.
+      const label = one.kind === "noreply" ? `${SIGNER_KINDS.noreply}: ${one.email}` : one.kind === "git" && one.name ? `${one.name} <${one.email}> (${kind})` : `${one.email} (${kind})`;
+      select.append(Object.assign(make("option", "", label), { value: one.kind === "noreply" ? "noreply" : one.email }));
+    }
+    select.value = s.signer.kind === "noreply" ? "noreply" : s.signer.email;
+    if (flow.busy) select.disabled = true;
+    select.addEventListener("change", () => void chooseSigner(select.value));
+    const fell = s.signer.fallback === "gone" ? "The address chosen before is no longer one of your account's. " : s.signer.fallback === "unconfirmed" ? "The address chosen before can't be confirmed as your account's now. " : "";
+    const hint = s.signer.kind === "noreply" ? `${fell}It shows no e-mail; GitHub counts the commits as ${s.login}'s. The name is ${s.signer.name}.` : s.signer.kind === "git" ? `GitHub has not verified it for ${s.login}: the commits may not count as yours there, and anyone can see the address. The name is git config's, ${s.signer.name}.` : s.signer.private ? "Your account keeps this address private on GitHub: if it blocks commits that show it, GitHub refuses the commit, and the emulator offers the private address. Anyone can see it on a commit." : "Anyone can see it on the commit, in your repository and in the catalog's.";
+    const { row } = field("Sign commits with", select, { hint, about: "The author of the commits Publish makes: your repository's, and the one in your copy of the catalog. Kept for this account." });
+    const out = [row];
+    if (!s.scope) {
+      const active = (flow.gh?.accounts ?? []).find((one) => one.active)?.login ?? null;
+      const more = make("div", "publish-row");
+      more.append(muted(`Your other verified addresses are not listed: GitHub CLI's sign-in may not read them. To list them, run ${s.grant} in a terminal${active && !sameLogin(active, s.login) ? ` while GitHub CLI uses ${s.login} (gh auth switch --user ${s.login})` : ""}, then Check again.`), button("btn", "Check again", () => busy("Asking GitHub for your addresses", () => loadSigners({ fresh: true })), { picture: "refresh" }));
+      out.push(more);
+    }
+    return out;
   }
 
   /** Sign in with another account (or the first): gh auth login, which adds the account to GitHub CLI. */
@@ -670,23 +750,30 @@
     flow.canceling = false;
     flow.uploadNews = Date.now();
     const watch = setInterval(() => drawUpload(), 1000);
+    flow.outcome = { step: "github", kind: "sending" };
     return busy("Publishing to GitHub", async () => {
       try {
         const answer = await act(() => actions().github.push({ folder: flow.folder, name: flow.repoName || null, into }));
+        // GitHub refused the address (GH007): the app no longer signs with it; the choice is read again (EMU-366).
+        if (answer.code === "email_private") await loadSigners();
+        flow.outcome = outcomeOf("github", answer);
+        // Try again publishes the same way: into the person's own repository when they confirmed that (catalog-update).
+        if (flow.outcome) flow.outcome.into = into;
         if (staleRefusal(answer)) return;
-        if (answer.ok === false) flow.said = said(answer);
+        if (answer.ok === false) flow.said = flow.outcome ? null : said(answer);
         else {
           flow.pushed = answer;
           flow.repoName = answer.name;
           flow.where = { owner: answer.owner, name: answer.name, page: answer.page, mode: "replace", suggestion: null, commit: answer.commit };
           const links = Array.isArray(answer.skipped) && answer.skipped.length ? ` Left out, as links: ${answer.skipped.slice(0, 5).join(", ")}${answer.skipped.length > 5 ? ", …" : ""}.` : "";
           const removed = answer.removed ? ` ${answer.removed === 1 ? "1 file" : `${answer.removed} files`} the project doesn't have deleted.` : "";
-          flow.said = { text: `${answer.unchanged ? "Up to date" : "Published"}: ${answer.page.replace(/^https:\/\//, "")}${links}${removed}` };
+          flow.outcome.notes = `${links}${removed}`.trim() || null;
           flow.reveal = true;
         }
       } finally {
         clearInterval(watch);
         if (flow) flow.upload = null;
+        if (flow?.outcome?.kind === "sending") flow.outcome = null;
       }
     }).then(afterStale);
   }
@@ -696,19 +783,292 @@
     flow.lines = [];
     flow.requested = null;
     const list = flow.checklist;
+    flow.outcome = { step: "catalog", kind: "sending", started: Date.now() };
+    flow.pull = null;
+    const ticker = setInterval(() => {
+      const line = document.getElementById("publish-waited");
+      if (line && flow?.outcome?.kind === "sending") line.textContent = waitedWords(flow.outcome);
+    }, 1000);
     return busy("Sending to the catalog", async () => {
       const changelog = flow.entry?.exists && flow.entry.for === entryKey() ? (flow.changelog ?? "") : null;
       const other = list?.busy === false && flow.otherCatalog === list.catalog ? { otherCatalog: list.catalog } : {};
-      const answer = await act(() => actions().github.request({ folder: flow.folder, catalog: flow.catalog, ticked: (list?.boxes ?? []).filter((one) => flow.ticks?.has(one)), ai: flow.ai, changelog, ...other }));
+      let answer;
+      try {
+        answer = await act(() => actions().github.request({ folder: flow.folder, catalog: flow.catalog, ticked: (list?.boxes ?? []).filter((one) => flow.ticks?.has(one)), ai: flow.ai, ...(needsNote(flow.ai) ? { aiNote: flow.aiNote ?? "" } : {}), changelog, ...other }));
+      } finally {
+        clearInterval(ticker);
+        if (flow?.outcome?.kind === "sending") flow.outcome = null;
+      }
+      if (answer.code === "email_private") await loadSigners();
+      flow.outcome = outcomeOf("catalog", answer);
       if (staleRefusal(answer)) return;
-      if (answer.ok === false) flow.said = said(answer);
+      if (answer.ok === false) flow.said = flow.outcome ? null : said(answer);
       else {
         flow.requested = answer;
         flow.entry = null;
-        flow.said = { text: `${answer.created ? "Opened" : "Updated"}: ${answer.url.replace(/^https:\/\//, "")}` };
+        flow.editing = false;
+        flow.said = null;
         flow.reveal = true;
       }
     }).then(afterStale);
+  }
+
+  // ---------------------------------------------------------------- EMU-360: what came of a send
+
+  /** True while Publish to GitHub or Send to catalog waits for GitHub: the dialog is not closed then. */
+  const sending = () => flow?.outcome?.kind === "sending" && Boolean(flow.busy);
+
+  /**
+   * What a send came to, drawn in place of the step's form (flow.outcome): { step, kind: "done" | "failed" | "stale",
+   * answer }; null for what the form says itself (a refusal for a fresh click, a stopped upload, a project changed
+   * since the check, which goes back to that step).
+   */
+  function outcomeOf(step, answer) {
+    if (!answer || answer.again) return null;
+    if (answer.ok !== false) return { step, kind: "done", answer };
+    if (changedCodes.has(answer.code) || answer.code === "canceled" || answer.code === "usage" || answer.code === "busy") return null;
+    if (answer.code === "changed_since_upload") return { step, kind: "stale", answer };
+    return { step, kind: "failed", answer };
+  }
+
+  /** The request this app last opened for the project, as its record has it, while it names the commit on GitHub now. */
+  // The project's record is the project's file: it decides nothing alone (a project can arrive with one). It counts
+  // only when it names the commit on GitHub now (the app's own record of the push) and the catalog the step sends to,
+  // and GitHub says the pull request is still open (github.pull); a closed or merged one is said as such.
+  function keptRequest() {
+    const noted = flow.status?.github?.request;
+    const repo = flow.where?.mode === "replace" ? flow.where : null;
+    const catalog = String(flow.catalog ?? flow.status?.catalog ?? "").toLowerCase();
+    if (!noted?.url || !repo?.commit || noted.commit !== repo.commit || String(noted.catalog ?? "").toLowerCase() !== catalog) return null;
+    return { url: noted.url, catalog: noted.catalog, created: noted.created !== false };
+  }
+
+  /** What GitHub says of the noted pull request (github.pull), asked once for each one: the state, or null while asked. */
+  let pullAsked = null;
+  function pullOf(kept) {
+    const known = flow.pull;
+    if (known?.url === kept.url) return known;
+    if (pullAsked === kept.url) return null;
+    pullAsked = kept.url;
+    const folder = flow.folder;
+    void act(() => actions().github.pull({ folder })).then((answer) => {
+      pullAsked = null;
+      if (!flow || flow.folder !== folder) return;
+      flow.pull = answer?.ok === false ? { url: kept.url, state: "unknown" } : { url: kept.url, state: answer.state, noted: answer.noted };
+      render();
+    });
+    return null;
+  }
+
+  /** The outcome the step shows now: the one of its last send, or, for Send to catalog, the request it has sent. */
+  function shownOutcome(step) {
+    if (flow.outcome?.step === step) return flow.outcome;
+    if (step !== "catalog" || flow.editing || !flow.gh?.signedIn) return null;
+    const kept = keptRequest();
+    if (!kept) return null;
+    const pull = pullOf(kept);
+    if (!pull) return { step, kind: "checking" };
+    if (pull.state === "open" && pull.noted === flow.where.commit) return { step, kind: "done", answer: kept };
+    if (pull.state === "merged" || pull.state === "closed") return { step, kind: pull.state, answer: kept };
+    return null;
+  }
+
+  /** People's words for a refusal of GitHub's: { title, text }, by its code (and for which step). */
+  function failureWords(step, answer) {
+    const told = [answer.message, answer.hint].filter(Boolean).join(" ");
+    const login = flow.gh?.login;
+    switch (answer.code) {
+      case "network":
+        return { title: "No connection to GitHub", text: "GitHub could not be reached. Check the internet connection, then try again." };
+      case "unauthorized":
+      case "account_gone":
+      case "changed_outside":
+        return { title: "Your GitHub sign-in has expired", text: `GitHub no longer accepts the sign-in${login ? ` of ${login}` : ""}. Sign in again, then ${step === "catalog" ? "send the request" : "publish"} again.`, signIn: true };
+      case "rate_limited":
+        return { title: "GitHub's limit is reached for now", text: `GitHub takes only so many requests an hour from one account. ${answer.hint ?? "Try again in a few minutes."}` };
+      case "forbidden": {
+        if (step !== "catalog") return { title: "GitHub refused the upload", text: told };
+        const where = answer.where ?? {};
+        if (where.at === "pull") return { title: "The catalog refused the pull request", text: `GitHub did not let your account open or change a pull request in the catalog. ${told}` };
+        if (where.direct) return { title: "No access to the catalog's branch", text: `Your account may write to the catalog, but GitHub refused this branch. ${told}` };
+        if (where.at === "push") return { title: "No access to your copy of the catalog", text: `The pull request comes from a copy of the catalog on your account (a fork), and GitHub refused the write to it. ${told}` };
+        return { title: "GitHub refused it", text: told };
+      }
+      case "fork_not_allowed":
+        return { title: "The catalog can't be forked", text: `The pull request comes from a copy of the catalog on your account (a fork), and GitHub does not make one. ${told}` };
+      case "catalog_closed":
+        return { title: "The catalog can't be reached", text: told };
+      case "catalog_empty":
+        return { title: "The catalog has no files yet", text: told };
+      case "timeout":
+        return answer.write
+          ? { title: "GitHub did not answer in time", text: `${step === "catalog" ? "The request" : "The upload"} may have reached GitHub all the same. Check again: the emulator looks at what GitHub has first, and makes nothing twice.`, again: "Check again" }
+          : { title: "GitHub did not answer in time", text: "Nothing was changed on GitHub. Try again in a moment." };
+      case "gh_failed":
+        return { title: "GitHub CLI did not run", text: told };
+      case "token_unreadable":
+        return { title: "GitHub CLI could not give your sign-in", text: told, signIn: true };
+      case "fork_pending":
+        return { title: "GitHub is still making your copy of the catalog", text: told };
+      case "email_private":
+        return { title: "GitHub keeps that address private", text: `Your account blocks commits that would show the e-mail address they are signed with. Sign them with GitHub's private address instead: it shows no e-mail, and the commits still count as ${login ?? "yours"}'s.`, privateAddress: true };
+      default:
+        return { title: step === "catalog" ? "The pull request was not opened" : "Nothing was published", text: told };
+    }
+  }
+
+  /**
+   * The facts of an outcome screen (EMU-360): one grid for every row, the labels in the first column (as wide as the
+   * longest), each value from the same left edge in the second, truncated with an ellipsis, a row's action (Copy) in
+   * the third at the right edge; every row the same height. rows: [{ label, value: Node, action?: Node }].
+   */
+  function factRows(rows) {
+    const list = make("ul", "publish-facts");
+    for (const row of rows) {
+      const item = make("li");
+      const value = make("span", "value");
+      value.append(row.value);
+      if (row.value?.textContent) value.title = row.value.textContent;
+      item.append(make("b", "label", row.label), value, row.action ?? make("span", "action"));
+      list.append(item);
+    }
+    return list;
+  }
+  /** A small Copy button for a fact's value. */
+  function copyButton(text, label) {
+    const copy = button("icon-btn small", "", () => copied(copy, text), { picture: "copy", title: "Copy" });
+    copy.ariaLabel = label;
+    copy.classList.add("action");
+    return copy;
+  }
+
+  /** How long a send has waited, said: "Waiting for GitHub: 12 s". */
+  const waitedWords = (o) => `Waiting for GitHub: ${Math.max(0, Math.round((Date.now() - (o.started ?? Date.now())) / 1000))} s`;
+
+  /** A state of its own in place of the step's form (EMU-360): its picture, title, words, link and buttons. */
+  function outcomeScreen({ kind, picture = null, title, text = null, details = [], actions: buttons = [] }) {
+    const box = make("div", `publish-outcome ${kind}`);
+    box.setAttribute("role", kind === "failed" ? "alert" : "status");
+    if (kind === "sending") box.append(make("span", "publish-spinner"));
+    else if (picture) {
+      const mark = make("span", "mark");
+      mark.innerHTML = icon(picture);
+      box.append(mark);
+    }
+    box.append(make("h3", "", title));
+    if (text) box.append(make("p", "", text));
+    for (const one of details) box.append(one);
+    if (buttons.length) {
+      const row = make("div", "publish-row");
+      row.append(...buttons);
+      box.append(row);
+    }
+    return box;
+  }
+
+  /** The outcome of Publish to GitHub or Send to catalog, drawn (outcome as shownOutcome gives it). */
+  function outcomePart(o) {
+    const back = () => button("btn", "Back", () => {
+      if (o.step === "catalog") flow.editing = true;
+      flow.outcome = null;
+      render();
+    });
+    if (o.kind === "sending" && o.step === "github") return outcomeScreen({ kind: "sending", title: "Publishing to GitHub…", text: "Uploading the project's files, then reading them back. Keep the window open.", details: [uploadPart()] });
+    if (o.kind === "sending") {
+      // No Cancel: what GitHub was asked is done or not, either way. The wait has a bound the person sees: each call
+      // that GitHub does not answer ends after 2 minutes (gh.mjs REQUEST_TIMEOUT_MS), and the screen then says so.
+      const waited = make("p", "publish-muted", waitedWords(o));
+      waited.id = "publish-waited";
+      return outcomeScreen({ kind: "sending", title: "Opening the pull request…", text: flow.lines.at(-1) ?? "Comparing the project with GitHub", details: [waited, muted("If GitHub stops answering, the emulator stops waiting after 2 minutes without an answer and says what to do.")] });
+    }
+    if (o.kind === "checking") {
+      return outcomeScreen({
+        kind: "sending",
+        title: "Reading the pull request on GitHub…",
+        text: "Whether the request sent from here is still open.",
+        actions: [button("btn", "Back", () => {
+          flow.editing = true;
+          render();
+        })],
+      });
+    }
+    if (o.kind === "merged" || o.kind === "closed") {
+      const link = factRows([{ label: "Pull request", value: githubLink(o.answer.url, o.answer.url.replace(/^https:\/\//, "")), action: copyButton(o.answer.url, "Copy the address") }]);
+      return outcomeScreen({
+        kind: "done",
+        picture: o.kind === "merged" ? "checkmark-circle-fill" : "alert",
+        title: o.kind === "merged" ? "The pull request was merged" : "The pull request was closed",
+        text: o.kind === "merged" ? "The catalog has taken the app. A new version goes in a new pull request." : "It was closed without being merged. Read why on GitHub; you can send the app again.",
+        details: [link],
+        actions: [githubLink(o.answer.url, "Open the pull request", "btn", "link"), button("btn solid", "Send again", () => {
+          flow.editing = true;
+          render();
+        })],
+      });
+    }
+    if (o.kind === "stale") {
+      return outcomeScreen({
+        kind: "failed",
+        picture: "alert",
+        title: "The project changed since it was published",
+        text: "GitHub has an older copy of its files, and the catalog builds what GitHub has. Publish the project again, then send the request.",
+        actions: [button("btn solid", "Publish again", () => go("github"), { picture: "upload" }), back()],
+      });
+    }
+    if (o.kind === "failed") {
+      const words = failureWords(o.step, o.answer);
+      const done = o.answer.done;
+      const details = [];
+      if (done?.fork || done?.branch) {
+        const made = [done.fork ? `your copy of the catalog, github.com/${done.fork}` : null, done.branch ? `the branch ${done.branch}` : null].filter(Boolean).join(", and ");
+        details.push(make("p", "publish-muted", `Made on GitHub so far: ${made}. The pull request is not open yet. Try again goes on from there: nothing is made twice.`));
+      }
+      const again = o.step === "catalog" ? () => sendToCatalog() : () => pushToGithub(o.into ?? null);
+      const first = words.signIn
+        ? button("btn solid", "Sign in again", () => {
+            flow.outcome = null;
+            flow.accountMode = true;
+            go("github");
+          })
+        : words.privateAddress
+          ? button("btn solid", o.step === "catalog" ? "Sign with the private address and send" : "Sign with the private address and publish", () => void chooseSigner("noreply").then(() => (flow.signers?.signer?.kind === "noreply" ? again() : render())), { picture: "refresh" })
+          : button("btn solid", words.again ?? "Try again", again, { picture: "refresh" });
+      return outcomeScreen({ kind: "failed", picture: "alert", title: words.title, text: words.text, details, actions: [first, back()] });
+    }
+    const a = o.answer;
+    if (o.step === "github") {
+      const commitPage = `${a.page}/commit/${a.commit}`;
+      const list = factRows([
+        { label: "Repository", value: githubLink(a.page, a.page.replace(/^https:\/\//, "")), action: copyButton(a.page, "Copy the address") },
+        { label: "Commit", value: githubLink(commitPage, a.commit), action: copyButton(a.commit, "Copy the commit") },
+        { label: "Checked", value: make("span", "", `${a.files} files on GitHub, the same as sent`) },
+      ]);
+      const details = [list];
+      if (o.notes) details.push(muted(o.notes));
+      return outcomeScreen({
+        kind: "done",
+        picture: "checkmark-circle-fill",
+        title: a.unchanged ? "Up to date on GitHub" : "Published to GitHub",
+        text: a.unchanged ? "GitHub has every file as the project has it: nothing had changed." : "The files are in your public repository, in one commit. Next, the request to the catalog.",
+        details,
+        actions: [button("btn solid", "Send to catalog", () => go("catalog"), { picture: "apps-add" }), back()],
+      });
+    }
+    const link = factRows([{ label: "Pull request", value: githubLink(a.url, a.url.replace(/^https:\/\//, "")), action: copyButton(a.url, "Copy the address") }]);
+    const edit = button("link-btn", "Change it and send again", () => {
+      flow.editing = true;
+      flow.outcome = null;
+      render();
+    });
+    return outcomeScreen({
+      kind: "done",
+      picture: "checkmark-circle-fill",
+      // `unchanged`: the open request had these changes already (sent before, its answer perhaps lost): sent, not updated.
+      title: a.created || a.unchanged ? "Pull request sent" : "Pull request updated",
+      text: a.unchanged && !a.created ? "The open pull request has all of it already, the file and the text: nothing new was sent. The catalog's checks and the review go on there." : a.created || a.unchanged ? "The catalog's checks run on GitHub, then a moderator reviews the app. GitHub tells you about both." : "The open pull request has the new changes: the catalog's checks run on it again.",
+      details: [link],
+      actions: [githubLink(a.url, "Open the pull request", "btn", "link"), button("btn solid", "Done", close), edit],
+    });
   }
 
   /** A link to a page of github.com, opened in the browser: quiet in a list, or a button (`className`). */
@@ -749,7 +1109,7 @@
     title.id = "publish-title";
     const second = steps && flow.step && steps.STEPS.find((one) => one.id === flow.step)?.stage === 2;
     titles.append(title, make("p", "", second ? "Your repository on GitHub, then the request to the catalog." : "Everything is prepared here. Nothing is sent yet."));
-    const shut = button("icon-btn", "", close, { picture: "cross", title: "Close (Esc)" });
+    const shut = button("icon-btn", "", close, { picture: "cross", title: "Close (Esc)", disabled: sending() ? "Wait until GitHub has answered" : null });
     shut.ariaLabel = "Close";
     head.append(titles, shut);
 
@@ -768,7 +1128,12 @@
       top.append(words);
       const extra = HEAD_ACTIONS[flow.step]?.();
       if (extra) top.append(extra);
-      pane.append(top, ...(PANES[flow.step]?.() ?? []));
+      // What a send came to (EMU-360): its own screen, the step's form hidden.
+      const outcome = (flow.step === "github" || flow.step === "catalog") && flow.gh?.signedIn ? shownOutcome(flow.step) : null;
+      if (outcome) {
+        pane.classList.add("outcome");
+        pane.append(outcomePart(outcome));
+      } else pane.append(top, ...(PANES[flow.step]?.() ?? []));
     }
     footer = foot();
     dialog.replaceChildren(head, body, footer);
@@ -812,8 +1177,9 @@
   }
 
   /**
-   * The footer: on the left the one line of what is going on, what came of it, or why Next is off; Back and the step's
-   * button on the right.
+   * The footer: on the left the one line of what is going on or what came of it; Back and the step's button on the
+   * right, and beside them, while Next is off, why (EMU-364: in words, not only in the button's tooltip, and also when
+   * the line on the left says something else).
    */
   function foot() {
     const box = make("footer", "publish-foot");
@@ -823,8 +1189,14 @@
     }
     // Publish to GitHub has its own buttons (an account, then Publish, then Send to catalog): no Next beside them.
     const why = flow.step === "github" ? null : blocked();
-    const line = flow.busy ? { kind: "working", text: flow.busy } : flow.said ? { kind: flow.said.failed ? "failed" : "good", text: flow.said.text } : why && !flow.busy ? { kind: "why", text: why } : { kind: "", text: "" };
+    // Next is drawn on every step but Publish to GitHub, Send to catalog (Done) and Build and package before it is done.
+    const withNext = !["github", "catalog"].includes(flow.step) && !(flow.step === "package" && !isDone("package"));
+    const line = flow.busy ? { kind: "working", text: flow.busy } : flow.said ? { kind: flow.said.failed ? "failed" : "good", text: flow.said.text } : why && !withNext ? { kind: "why", text: why } : { kind: "", text: "" };
     box.append(make("span", `publish-said ${line.kind}`.trim(), line.text));
+    // A send's screen has its own buttons (EMU-360).
+    if ((flow.step === "github" || flow.step === "catalog") && flow.gh?.signedIn && shownOutcome(flow.step)) return box;
+    // While work is under way the line on the left says so; else the reason Next is off stands beside it.
+    if (withNext && why && !flow.busy) box.append(make("span", "publish-why", why));
     const previous = steps.previousStep(flow.step);
     box.append(button("btn", "Back", () => go(previous), { disabled: previous ? (flow.busy ? "Wait for the work under way" : null) : "This is the first step" }));
     if (flow.step === "package" && !isDone("package")) {
@@ -971,8 +1343,70 @@
 
   /** The README's rows of How to use, as the README holds them (how-to-use.mjs); [] before the modules are there. */
   function rowsOfReadme(config) {
-    if (!howToUse || !config) return [];
+    if (!howToUse || !config || config.mode === "file") return [];
     return config.mode === "markdown" ? howToUse.read(config.markdown ?? "") : howToUse.rowsOf(config.usage ?? "");
+  }
+
+  /** Whether writing `config` would put another text over the project's README.md that is used as it is (EMU-365). */
+  function replacesKept(config) {
+    const r = flow.status?.readme;
+    if (!r || r.state !== "kept" || !config || config.mode === "file") return false;
+    return readme.readmeMarkdown(config, r.facts) !== String(r.facts.file ?? "").replace(/\r\n?/g, "\n");
+  }
+
+  /** The question before the README made here replaces the project's README.md that was used as it is. */
+  function readmeQuestion() {
+    const ask = flow.readmeAsk;
+    if (!ask) return [];
+    const box = make("div", "publish-ask");
+    box.setAttribute("role", "alertdialog");
+    box.append(make("b", "", "Replace README.md?"), make("span", "", "README.md was used as it is. The README made here is written in its place, and the file you have goes to .busy/removed/ in the project's folder."));
+    const row = make("div", "publish-row");
+    row.append(
+      button("btn solid", "Replace README.md", async () => {
+        if (await saveReadme(ask.save, { replace: true })) {
+          const to = steps.nextStep("readme");
+          if (to && flow) await go(to, { saved: true });
+        }
+      }),
+      button("btn", "Keep README.md as it is", () => {
+        flow.readmeAsk = null;
+        useFile(true);
+      }),
+    );
+    box.append(row);
+    return [box];
+  }
+
+  /** The switch "Use the project's README.md as it is": on, the step shows the file and writes nothing; off, the editor. */
+  function useFile(on) {
+    const d = flow.drafts;
+    const file = flow.status.readme.facts.file ?? "";
+    // Off: the file's own text in Markdown, so that nothing of it is lost and nothing is written unless it is changed.
+    d.readme = on ? { ...d.readme, mode: "file" } : { ...d.readme, mode: "markdown", markdown: file.replace(/\r\n?/g, "\n") };
+    d.rows = rowsOfReadme(d.readme);
+    d.readmeDirty = true;
+    flow.said = null;
+    render();
+  }
+
+  /** The switch's row: on or off, and when there is no file to use, off with the reason beside it. */
+  function useFilePart() {
+    const r = flow.status.readme;
+    const d = flow.drafts;
+    const box = make("label", "publish-keep");
+    const tick = make("input", "switch");
+    tick.type = "checkbox";
+    tick.checked = d.readme.mode === "file";
+    tick.dataset.part = "readme-keep";
+    const reason = r.keep_problem && d.readme.mode !== "file" ? r.keep_problem : null;
+    tick.disabled = Boolean(reason) || Boolean(flow.busy);
+    tick.addEventListener("change", () => useFile(tick.checked));
+    const words = make("span", "words");
+    words.append(make("b", "", "Use the project's README.md as it is"), make("span", "", reason ? `${reason}.` : d.readme.mode === "file" ? "Nothing is written: GitHub shows the file as it is below. What the step would check is said as hints." : "For a README you wrote elsewhere: the emulator does not write or change it."));
+    box.append(tick, words);
+    if (reason) box.classList.add("off");
+    return box;
   }
 
   /** A control's chip, drawn as the catalog draws it (Figma, Control badge): its picture and its name. */
@@ -991,7 +1425,8 @@
 
   /**
    * How to use, in the README step: rows of a control chip and one short sentence; a row's chip changes its control,
-   * rows are added by their chip, moved and removed. At least one is needed. `changed()` is called after each change.
+   * rows are added by their chip, moved and removed. Optional (EMU-364); rows written are checked. `changed()` is
+   * called after each change.
    */
   function howToUseEditor(d, changed) {
     const box = make("div", "publish-field publish-howto described");
@@ -1001,12 +1436,16 @@
     const list = make("ol", "rows");
     const add = make("div", "add");
     const below = make("span", "hint");
-    box.append(top, make("span", "about", "Each control your app answers to, and what it does, in a few words. The catalog shows them on the app's page."), list, add, below);
+    box.append(top, make("span", "about", "Optional. Each control your app answers to, and what it does, in a few words. It helps people reading the README; the catalog does not show it yet."), list, add, below);
     const busyNow = () => (flow.busy ? "Wait for the work under way" : null);
     function set() {
       counter.textContent = `${d.rows.length} / ${howToUse.MAX_ROWS}`;
-      const problem = d.rows.length ? howToUse.problem(d.rows) : null;
-      below.textContent = problem ?? "";
+      // No rows: the section is optional, and the README goes on without it (EMU-364). Rows of the fields are checked;
+      // those read from the Markdown are said as a hint.
+      const fields = d.readme.mode !== "markdown";
+      const problem = fields ? howToUse.sectionProblem(d.rows) : null;
+      const hint = fields || !d.rows.length ? null : howToUse.sectionHint(d.rows);
+      below.textContent = problem ?? hint ?? (d.rows.length ? "" : "No rows: the README goes on without How to use.");
       box.classList.toggle("bad", Boolean(problem));
     }
     function redraw(focus = null) {
@@ -1097,6 +1536,8 @@
   const HEAD_ACTIONS = {
     readme: () => {
       const d = flow.drafts;
+      // The project's own README.md as it is has no editor (EMU-365).
+      if (d.readme.mode === "file") return null;
       const tabs = make("div", "publish-tabs");
       tabs.setAttribute("role", "tablist");
       for (const [mode, label] of [["fields", "Fields"], ["markdown", "Markdown"]]) {
@@ -1265,6 +1706,18 @@
       const r = flow.status.readme;
       const d = flow.drafts;
       const facts = r.facts;
+      // The project's README.md as it is (EMU-365): the switch, the hints of what the step would check, and the file.
+      if (d.readme.mode === "file") {
+        // The hints made here, by the same rules as the command line's (readme.mjs fileHints), also before it is saved.
+        const rows = howToUse.read(facts.file ?? "");
+        const fileSaid = [...readme.fileHints(facts.file ?? "", flow.status.files?.published ?? []), ...(rows.length && howToUse.sectionHint(rows) ? [howToUse.sectionHint(rows)] : [])];
+        const hints = fileSaid.map((one) => make("p", "publish-warn", one));
+        const preview = make("div", "publish-preview");
+        preview.replaceChildren(...markdownView(facts.file ?? ""));
+        const box = make("div", "publish-preview-box");
+        box.append(make("span", "publish-caption", "README.md, as GitHub will show it"), preview);
+        return [useFilePart(), ...readmeQuestion(), ...hints, box];
+      }
       const editor = make("div", "publish-form");
       const preview = make("div", "publish-preview");
       const notes = make("div", "publish-notes");
@@ -1330,8 +1783,8 @@
       right.append(make("span", "publish-caption", "Preview"), preview);
       columns.append(editor, right);
       // How to use first, across the pane: the part only the author can write, and the one the catalog shows as cards.
-      const parts = [notes, rows.box, columns];
-      if (r.state === "yours" && !r.saved && d.readme.mode === "markdown") parts.unshift(muted("Your README.md, as it is. How to use is written into it as its own section."));
+      const parts = [useFilePart(), ...readmeQuestion(), notes, rows.box, columns];
+      if (r.state === "yours" && !r.saved && d.readme.mode === "markdown") parts.unshift(muted("Your README.md, as it is. How to use, if you add rows, is written into it as its own section."));
       return parts;
     },
 
@@ -1457,7 +1910,7 @@
       };
       const out = f.left.map((one) => (one.folder ? `${one.path}/` : one.path));
       add(`${f.published.length} files go public`, out.length ? `${out.slice(0, 4).join(", ")}${out.length > 4 ? ` and ${out.length - 4} more` : ""} stay here.` : "Nothing is left out.");
-      add("README.md", { none: "Made in the README step.", template: "The template's: the README step replaces it.", ours: "From the README step.", yours: "Yours, as it is." }[f.readme]);
+      add("README.md", { none: "Made in the README step.", template: "The template's: the README step replaces it.", ours: "From the README step.", yours: "Yours, as it is.", kept: "Yours, used as it is: never written." }[f.readme]);
       add(".gitignore", f.ignore_missing.length ? `Gets ${f.ignore_missing.join(", ")} on Next.` : "Keeps out what is not the source.");
       parts.push(summary);
       const toggle = button("link-btn", flow.showTree ? "Hide the files" : "Show the files", () => {
@@ -1586,6 +2039,9 @@
       name.spellcheck = false;
       const repoField = field("Repository", name, { count: "public" });
       const about = repoField.below;
+      // Where the name came from, when that is worth saying: the project's git remote, or why not (EMU-358).
+      const source = make("span", "hint source");
+      repoField.row.append(source);
       parts.push(repoField.row);
       const row = make("div", "publish-row");
       // .github/workflows/ is not published: the sign-in's access does not reach it, and the catalog builds the app.
@@ -1601,7 +2057,7 @@
         } else pushToGithub();
       }, { picture: "upload" });
       const what = muted("");
-      planned = { about, go: publishButton, what, count: `${count === 1 ? "1 file" : `${count} files`}${workflows ? " (.github/workflows/ stays out)" : ""}` };
+      planned = { about, source, go: publishButton, what, count: `${count === 1 ? "1 file" : `${count} files`}${workflows ? " (.github/workflows/ stays out)" : ""}` };
       showPlan(planned);
       name.addEventListener("input", () => {
         typedName(name.value);
@@ -1615,7 +2071,9 @@
         });
         repoField.row.append(use);
       }
-      row.append(publishButton, what);
+      parts.push(...signerPart());
+      const signed = flow.signers?.signer ? make("span", "hint signed", `Signed ${signedWords(flow.signers.signer)}`) : null;
+      row.append(publishButton, ...(signed ? [signed] : []), what);
       parts.push(row);
       if (flow.confirmInto && w?.mode === "existing" && w.name === flow.repoName && !flow.busy) parts.push(confirmIntoPart(w, planned.count));
       if (flow.busy === "Publishing to GitHub") parts.push(uploadPart());
@@ -2138,6 +2596,13 @@
     }
     if (list.failed) return [make("p", "publish-said failed", list.failed)];
     flow.ticks ??= new Set();
+    // The AI usage and its explanation as they were left (the project's .busy/publish.json, EMU-359).
+    const noted = flow.status?.github?.ai ?? null;
+    if (flow.ai === undefined || flow.ai === null) {
+      flow.ai = noted?.choice ?? null;
+      flow.aiNote ??= noted?.note ?? "";
+      flow.aiSaved ??= noted ? aiKey(noted.choice, noted.note) : null;
+    }
     const parts = [];
     const source = make("p", "publish-muted");
     if (list.source === "catalog") {
@@ -2155,6 +2620,7 @@
       groups.push(group);
     };
     const aiPick = (options) => {
+      const chosen = options.find((one) => one.id === flow.ai);
       const pick = make("div", "publish-choices one");
       pick.setAttribute("role", "radiogroup");
       pick.ariaLabel = "AI usage";
@@ -2167,6 +2633,7 @@
         radio.checked = flow.ai === one.id;
         radio.addEventListener("change", () => {
           flow.ai = one.id;
+          saveAi();
           render();
         });
         const w = make("span", "words");
@@ -2174,7 +2641,25 @@
         card.append(radio, w);
         pick.append(card);
       }
-      return pick;
+      if (!chosen || !needsNote(chosen.id)) return pick;
+      // "Partly" and "Fully": the catalog asks what AI made and what it does; the request says it after the option.
+      const box = make("div", "publish-ai");
+      const area = make("textarea", "input");
+      area.rows = 3;
+      area.id = "publish-ai-note";
+      area.maxLength = MAX_AI_NOTE + 200;
+      area.value = flow.aiNote ?? "";
+      const prompt = chosen.prompt ?? AI_CHOICES.find((one) => one.id === chosen.id)?.prompt ?? "Explain the AI usage";
+      const problem = (text) => (noteLength(text) > MAX_AI_NOTE ? `At most ${MAX_AI_NOTE} characters` : null);
+      const note = field(prompt, area, { about: "Required: the pull request says it after your choice, as one paragraph of plain text.", count: `${noteLength(area.value)} / ${MAX_AI_NOTE}`, problem: problem(area.value) });
+      area.addEventListener("input", () => {
+        flow.aiNote = area.value;
+        note.set({ count: `${noteLength(area.value)} / ${MAX_AI_NOTE}`, problem: problem(area.value) });
+        saveAiSoon();
+        refreshSend();
+      });
+      box.append(pick, note.row);
+      return box;
     };
     for (const block of list.blocks ?? []) {
       if (block.kind === "heading") {
@@ -2240,16 +2725,32 @@
     const required = list.required ?? list.boxes;
     const total = required.length;
     const done = required.filter((one) => flow.ticks.has(one)).length;
-    const why = flow.busy ? "Wait for the work under way" : update.blocked ?? (other && !confirmed ? `Confirm ${list.catalog}, which is not BUSY's catalog` : done < total ? `Tick every item of the checklist: ${done} of ${total} ticked` : !flow.ai ? "Choose how AI was used" : null);
+    const why = flow.busy ? "Wait for the work under way" : update.blocked ?? (other && !confirmed ? `Confirm ${list.catalog}, which is not BUSY's catalog` : done < total ? `Tick every item of the checklist: ${done} of ${total} ticked` : !flow.ai ? "Choose how AI was used" : needsNote(flow.ai) && !noteLength(flow.aiNote) ? "Explain the AI usage" : needsNote(flow.ai) && noteLength(flow.aiNote) > MAX_AI_NOTE ? `Shorten the explanation of the AI usage to ${MAX_AI_NOTE} characters` : null);
     const row = make("div", "publish-row");
     const name = flow.status?.name ?? flow.name ?? flow.status?.id;
     const opens = update.exists ? `Opens the pull request "Update ${name} to ${flow.status?.version}" to ${list.catalog}` : `Opens a pull request to ${list.catalog}`;
-    row.append(button("btn solid", update.exists ? "Send update" : "Send to catalog", sendToCatalog, { picture: "apps-add", disabled: why }), muted(`${why && !flow.busy ? `${why}. ` : ""}${opens} from your account with this checklist and your AI choice, naming github.com/${repo.owner}/${repo.name} at ${repo.commit.slice(0, 12)}.`));
+    row.append(button("btn solid", update.exists ? "Send update" : "Send to catalog", sendToCatalog, { picture: "apps-add", disabled: why }), muted(`${why && !flow.busy ? `${why}. ` : ""}${opens} from your account with this checklist and your AI ${needsNote(flow.ai) ? "choice and explanation" : "choice"}, naming github.com/${repo.owner}/${repo.name} at ${repo.commit.slice(0, 12)}.${flow.signers?.signer ? ` Its commit is signed ${signedWords(flow.signers.signer)}.` : ""}`));
     parts.push(row);
     return parts;
   }
 
   // ---------------------------------------------------------------- catalog-update: publish into an existing repository, update in the catalog
+
+  /**
+   * Where the repository's name came from, said under the field (EMU-358): the project's git remote; or, when the name
+   * is the app id's, why the remote did not give it. Nothing for a name typed, published to or imported from.
+   */
+  function namedWords(w) {
+    const r = w.remote;
+    if (w.named === "remote") return `The name is from the project's git remote${r?.remote ? `, ${r.remote}` : ""}.`;
+    if (w.named !== "id" || !r?.why) return "";
+    const said = r.remote ? `The project's git remote, ${r.remote},` : "The project's git remote";
+    if (r.why === "another_account") return `${said} is github.com/${r.repo}, another account's: the name is from the app's id.`;
+    if (r.unreadable) return `${said} is an address the emulator cannot read: the name is from the app's id.`;
+    if (!r.host) return `${said} is a folder on this computer, not GitHub: the name is from the app's id.`;
+    if (/^(?:www\.|ssh\.)?github\.com$/.test(r.host)) return `${said} names no repository on GitHub: the name is from the app's id.`;
+    return `${said} is on ${r.host}, not GitHub: the name is from the app's id.`;
+  }
 
   /** The words of the repository's plan: under the name, on the button, beside it; and why the button is off. */
   function intoWords(w, count) {
@@ -2263,7 +2764,8 @@
     if (w.mode === "existing") return { about: `You have ${at} already, not published from here.${w.base === "imported" ? " This project was imported from it." : ""}`, label: `Publish into ${w.name}`, what: `Adds a new commit to its branch ${w.branch} with ${count}. Nothing is deleted unless you agree.`, blocked: null };
     if (w.mode === "diverged") {
       const many = w.ahead === 1 ? "a commit" : w.ahead ? `${w.ahead} commits` : "commits";
-      return { about: `${at} has ${many} this project doesn't have, made on GitHub or on another computer.`, label: "Publish to GitHub", what: "Nothing is sent. Import the repository again in Create app (Import from GitHub), carry your changes over and publish from that copy.", blocked: "Get those commits first" };
+      const first = w.base === "git" && w.named === "remote" ? "Nothing is sent. Get them with git pull in the project's folder, then publish again." : "Nothing is sent. Import the repository again in Create app (Import from GitHub), carry your changes over and publish from that copy.";
+      return { about: `${at} has ${many} this project doesn't have, made on GitHub or on another computer.`, label: "Publish to GitHub", what: first, blocked: "Get those commits first" };
     }
     const why = w.reason === "archived" ? `${at} is archived, so it takes no new commits.` : w.reason === "empty" ? `${at} has no commit yet, so there is nothing to add to.` : `You have a repository named ${w.name} already: it is not touched.`;
     return { about: `${why}${w.suggestion ? ` ${w.suggestion} is free.` : ""}`, label: "Publish to GitHub", what: "Choose another name first.", blocked: "Choose another name" };
@@ -2346,18 +2848,38 @@
     return { exists: true, parts: [box], blocked };
   }
 
+  // The AI usage and its explanation, noted in the project as they are given (publish.ai, EMU-359): the step opens with
+  // them again. While another job of the project runs it is refused as busy; the next change notes them, and Send
+  // notes what it sends (github.request).
+  const aiKey = (ai, note) => `${ai}\n${needsNote(ai) ? String(note ?? "").replace(/\s+/g, " ").trim() : ""}`;
+  let aiTimer = null;
+  async function saveAi() {
+    clearTimeout(aiTimer);
+    if (!flow?.ai || !actions()?.publish?.ai) return;
+    const key = aiKey(flow.ai, flow.aiNote);
+    if (key === flow.aiSaved || noteLength(flow.aiNote) > MAX_AI_NOTE) return;
+    const folder = flow.folder;
+    const answer = await act(() => actions().publish.ai({ folder, ai: flow.ai, note: needsNote(flow.ai) ? (flow.aiNote ?? "") : null }));
+    if (flow?.folder === folder && answer?.ok !== false) flow.aiSaved = key;
+  }
+  function saveAiSoon() {
+    clearTimeout(aiTimer);
+    aiTimer = setTimeout(() => void saveAi(), 400);
+  }
+
   /** Send's state as What's new is typed, without drawing the step anew (the field keeps its caret). */
   let sendTimer = null;
   function refreshSend() {
     clearTimeout(sendTimer);
     sendTimer = setTimeout(() => {
-      const field = document.getElementById("publish-changelog");
-      const at = field && document.activeElement === field ? [field.selectionStart, field.selectionEnd] : null;
+      // What's new, or the explanation of the AI usage (EMU-359): the one typed in keeps its caret.
+      const field = ["publish-changelog", "publish-ai-note"].map((id) => document.getElementById(id)).find((one) => one && document.activeElement === one);
+      const at = field ? [field.id, field.selectionStart, field.selectionEnd] : null;
       render();
       if (at) {
-        const again = document.getElementById("publish-changelog");
+        const again = document.getElementById(at[0]);
         again?.focus();
-        again?.setSelectionRange?.(at[0], at[1]);
+        again?.setSelectionRange?.(at[1], at[2]);
       }
     }, 250);
   }

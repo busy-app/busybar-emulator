@@ -112,7 +112,9 @@ With `--json` a command says nothing else; `--json --progress` also prints to st
 doing (installing, building), a line each: the app's window shows these lines while it waits for the answer.
 Exit codes: 0 done, 1 the command failed, 2 a wrong call. The codes of failures: `usage`, `unknown_command`,
 `blocked_network` (a sandbox closes 127.0.0.1 to this process), `blocked_file` (a sandbox closes the data folder),
-`no_app` (run from the source folder, there is no app around it), `start_failed`, `start_timeout`, `start_interrupted`
+`no_app` (run from the source folder, there is no app around it), `data_format_newer` (any command but `help`, `version` and
+`status`: a newer version moved the data folder to a newer format, and this one leaves it as it is), `data_folder_unusable`
+(the same for a folder whose format record is broken), `start_failed`, `start_timeout`, `start_interrupted`
 (the app ended before its BUSY Bar was ready: a `quit` came while it was starting, a person closed it, or it failed),
 `port_busy`,
 `server_failed`, `move_app`, `quit_failed`, `quit_timeout`, `not_running` (`screenshot`, `record`, `install`, `run`, `stop`,
@@ -180,7 +182,7 @@ replaced whole (the text says "Replaced", the JSON `replaced: true`), or a folde
 relative `--out` is taken from the current folder. On Windows a `"` in `--out` is refused with what happened: PowerShell
 5.1 passes `--out "C:\my dir\" --json` as one argument with the quote in it and the words after it swallowed; the
 answer is JSON if `--json` was among them, and it says to end a folder with `/`.
-`--scale <n>` (2 to 32) also writes the frame enlarged `n` times beside it as `<name>@<n>x.png`, for people and models
+`--scale <n>` (1 to 32; 1 is the display's own size, as without the option) also writes the frame enlarged `n` times beside it as `<name>@<n>x.png`, for people and models
 that read pictures, not for the catalog. On exFAT and FAT macOS puts an AppleDouble file (`._<name>`, the attributes it
 gives every file a process writes) beside each new file and folder; the command removes those that came with its own,
 so that they do not go into the author's repository. The file is then checked by the catalog's rules (`../capture/catalog-png.mjs`)
@@ -549,6 +551,8 @@ or the author's texts are put right), `catalog` (`problem`, `fix`, or null). Exi
 blocking check fails; otherwise 1 and `{"ok":false,"code":"check_failed",…}` with the same fields. It writes one file
 only: `catalog.json`, the empty form for the author's texts, when the project has none (`made_details` names it; the
 check of those texts then names the fields to fill; a folder it may not write to is only told the file is missing).
+`catalog.json` belongs in git: `submit` writes the catalog's manifest from it, the catalog itself does not read it,
+and the next version starts from the same texts.
 Otherwise it reads only: the emulator need not run, and nothing of the project is run (its scripts are parsed in a
 short process of the bundled Node), so the folder need not be trusted. A project that is not built gets the answers its source
 gives, and its package's checks say "Run busy-emulator build first".
@@ -578,7 +582,11 @@ again at every run and ignores itself in git; a `submission/` the command did no
 `bad_name`; `name` and `name_problem` in the answer). Each is checked by `../readiness/texts.mjs`, the same rules as `check` applies and the
 window's form loads: `--json` gives `texts`, `taken` (the catalog takes all four), `problems` and `warnings` by field
 (null when taken), and `rules` (the categories and the lengths). A text the catalog would refuse is written all the
-same. Every other field of `catalog.json` is kept.
+same. Every other field of `catalog.json` is kept. The description may name a Markdown file of the app's folder
+instead, `--description=@CATALOG.md`, as the catalog allows (only the description): the path stays inside the folder
+(no `..`, no absolute path) and the file's text is read as the catalog reads it (UTF-8, `\r\n` as one new line) and
+checked, here and by `check`'s `text_resolve` and `markdown`. The README `publish readme` writes will not do (a
+comment, a picture, code); a README written for the catalog will. The window's form checks only the path.
 
 `publish <step> [<folder>]` is stage 1 of publishing an app (`../publish/`): on this computer, nothing sent, the
 public repository on GitHub and the pull request left to stage 2, which is not there yet. The window's Publish dialog
@@ -603,7 +611,11 @@ is the same steps.
   kept in on purpose is marked `kept_in` and does not hold `ready` back.
 - `readme [get|set|preview] [--mode fields|markdown] [--title <text>] [--intro <text>] [--usage <text>] [--markdown
   <text>]`: the public repository's README (`../publish/readme.mjs`). From the fields: the title, a paragraph (from
-  the description), the screenshots, How to use (the author's own words; required), the settings of `settings.json`,
+  the description), the screenshots, How to use (the author's own words; optional, EMU-364: the
+  catalog does not read it yet: rows made from the fields written wrong hold the step, `how_to_use`; a section of the
+  person's own Markdown, or none, is a hint, `how_to_use_hint`), `--keep` (or `--mode file`): the project's README.md as it is, never written or
+  changed by the flow (EMU-365; state `kept`, `file_hints` the checks as hints, `keep_problem` why it cannot be: no
+  file or an empty one); another README over it needs `--replace` (`readme_kept`), the settings of `settings.json`,
   how to build it, the license. Or the author's own Markdown (`--mode markdown`; a README of their own opens so). The
   template's README is never kept: what is left of it (`left`: its opening line, its text about the keys, its
   sections for developers) holds the step back. `get` answers `config`, `facts`, `markdown`, `problem`, `state` and
@@ -633,16 +645,26 @@ with the server's key, never from a page) and fails with `not_running` or `githu
   `not_configured` in a build without gh.
 - `signout`: forgets the sign-in in the app; GitHub CLI's accounts are left as they are (the window offers to sign it
   out or switch it back). The answer's `revokePage` is GitHub's page where the person revokes GitHub CLI's access.
-- `push [--name <repository>]`: the app asks the person in its own dialog, then publishes the files of `files` to
-  their public repository in one commit, reads it back and notes it (`pushed`). `.github/workflows/` is left out.
-- `pr --ai none|partly|full [--catalog <owner/name>]`: the pull request goes to `busy-app/busy-apps-catalog`; `--catalog`
-  is for development and tests (a catalog that is not BUSY's needs the person's second confirmation). The app asks the
+- `push [--name <repository>] [--email noreply|<address>]`: the app asks the person in its own dialog, then publishes
+  the files of `files` to their public repository in one commit, reads it back and notes it (`pushed`).
+  `.github/workflows/` is left out. The commit's author and committer are the account's name with GitHub's private
+  address of the account (`<id>+<login>@users.noreply.github.com`), unless the person chose another in Publish to
+  GitHub or the push names one with `--email`: one GitHub has verified for the account, or the one `git config
+  user.email` gives; the choice is kept for the account in the app's data folder, the dialog names it, and the answer's
+  `signer` says it. `email_private`: GitHub refused a commit that would show an address the account keeps private.
+- `pr --ai none|partly|full [--ai-note <text>] [--catalog <owner/name>]`: the pull request goes to
+  `busy-app/busy-apps-catalog`; `--catalog` is for development and tests (a catalog that is not BUSY's needs the
+  person's second confirmation). `--ai partly` and `--ai full` need `--ai-note`, what AI made and what it does, as the
+  catalog's template asks (up to 1000 characters, written with the person; the dialog shows it): the request puts it
+  after the option's colon as one paragraph of plain text (an @mention does not notify, HTML is shown as text);
+  `usage` without it. The app asks the
   person in its own dialog, which shows the
   catalog's author checklist as its pull request template has it (read then, or the copy bundled with the app), and
   where they tick that every item is true (nothing ticks it for them); then it opens the pull request with the
   checklist ticked and notes it (`requested`). `not_ticked` when they do not tick it.
-- `pushed --owner --repo --commit` and `requested --pr --catalog`: what the app notes in the project after those; not
-  for people. They write only the project's files: what the app may replace or send is decided by its own record in
+- `pushed --owner --repo --commit`, `requested --pr --catalog [--commit <sha>] [--created yes|no]` and `ai --ai
+  <choice> [--ai-note <text>]`: what the
+  app notes in the project after those, and the AI usage as the person gave it in the window; not for people. They write only the project's files: what the app may replace or send is decided by its own record in
   its data folder (`github/published.json`), never by the project's `.busy/publish.json`.
 
 What the flow notes (the steps done, the license chosen, the README it made, the repository and the request) is in

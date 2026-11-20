@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, test } from "node:test";
+import { after, test } from "./node-test.mjs";
 
 import { HAS_REAL_SERVER, removeFolder, temporaryFolder, until } from "../helpers.mjs";
 import { launch } from "./harness.mjs";
@@ -22,10 +22,7 @@ after(async () => {
 });
 
 /** One of the window's actions, asked for as the person does: a key in the window, then the page's call. */
-const act = async (code) => {
-  await app.press();
-  return app.page(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message, hint: e.hint } }))`);
-};
+const act = (code) => app.act(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message, hint: e.hint } }))`);
 const q = (text) => JSON.stringify(text);
 const chooses = (folder) => app.run((shell, _electron, answer) => shell.folderDialogs.standIn(answer), folder);
 const bar = (pathname) => app.page(`fetch(${q(pathname)}).then((r) => r.text())`);

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { checkRelease, resourcesProblems } from "../../tools/packaging/check.mjs";
 import { machoArch, runsHere } from "../../tools/packaging/electron.mjs";

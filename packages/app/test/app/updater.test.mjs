@@ -3,14 +3,14 @@
 // Restart to update; the person's answer stands in (BUSY_EMULATOR_TEST_UPDATE_ANSWER); a tampered file, an unsigned
 // manifest and a hidden run without an answer leave the app as it is, with the Download line. A run from the source
 // folder replaces no app of its own: the test names a small bundle in a temporary folder as the one to replace.
-// The whole path, quit, swap and the new version's start, is the rehearsal's (test/update-rehearsal.mjs).
+// The whole path, quit, swap and the new version's start, release after release, is the update chain's (test/update-chain.mjs).
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
-import { after, afterEach, before, test } from "node:test";
+import { after, afterEach, before, test } from "./node-test.mjs";
 
 import { manifestBytes, signManifest } from "../../src/update-manifest.mjs";
 import { APP_DIR, NODE, PORTS, removeFolder, sleep, temporaryFolder, until } from "../helpers.mjs";

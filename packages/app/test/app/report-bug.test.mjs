@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { NEW_ISSUE } from "../../src/report-actions.mjs";
 import { readZip } from "../../src/zip.mjs";

@@ -8,9 +8,10 @@
 // (those reach the server's address only), and carries nothing but itself: the address below, a fixed User-Agent
 // without a version, and what the Accept header asks for. No identifier, nothing about the machine, no cookie. A
 // failed check says nothing to the person: no network, an answer that is not a release, a slow answer all end as
-// "nothing new". Besides the version, the answer's release notes give the update's pop-up two or three short lines
-// (releaseSummary): plain text, no links and no markup, shown as text. The check is off when BUSY_EMULATOR_NO_UPDATE_CHECK=1, when the person switched it off in the menu
-// (kept in app-settings.json in the data folder), in the test variant and in a run from the source folder.
+// "nothing new". Besides the version, the answer gives the update's pop-up the release's notes, whole up to their
+// "## Files" (parseReleaseNotes): plain text, links as their words, no markup, shown as text. The check is off when
+// BUSY_EMULATOR_NO_UPDATE_CHECK=1, when the person switched it off in the menu (kept in app-settings.json in the data
+// folder), in the test variant and in a run from the source folder.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -117,121 +118,267 @@ export function versionInAnswer(body) {
   }
 }
 
-/** The most the update's pop-up says of a release: lines, and characters in all. */
-export const SUMMARY_LINES = 3;
-export const SUMMARY_CHARS = 240;
+/**
+ * The most of a release's notes the app keeps and the pop-up shows: characters of text in all, and entries (headings,
+ * paragraphs, list items). Notes are a screen or two (CHANGELOG.md: one bullet a feature); these bounds are only for
+ * a body that is huge or hostile. Past either, whole entries are left out, never a part of one, and the pop-up says
+ * that the rest is on the release page.
+ */
+export const NOTES_CHARS = 8000;
+export const NOTES_ENTRIES = 200;
+/** Lists nest this deep at most: an item deeper still is an item of the deepest list. */
+export const NOTES_DEPTH = 3;
+/** Of the body, only this much is read; a longer one is read up to its last whole line in it. */
+const NOTES_READ = 64 * 1024;
+/**
+ * The longest line read, in characters with its tabs as four spaces. The release's lines are a sentence or two; a
+ * longer one is hostile, and the reading stops there (a line left out whole, as the bounds above leave out entries),
+ * so that the work on a line, some of it more than linear in its length, stays small in the app's main process.
+ */
+export const NOTES_LINE = 2000;
 
-/** Markdown's inline marks out of one line: links and images to their words, code, emphasis and tags to plain text. */
+/**
+ * Markdown's inline marks out of one line: links and images to their words, emphasis to plain text, tags out, code
+ * spans without their backticks. In a code span a tag is a word (`<time>` stays); links and emphasis are taken out of
+ * it as anywhere else, which the release's notes never need otherwise.
+ */
 function plainLine(line) {
+  // Each pattern stops at the next mark of its own kind ([ inside a link's words, < inside a tag, a backtick inside
+  // code), so that the work stays linear in the line's length whatever the line is made of.
   return line
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1")
-    .replace(/<[^>]*>/g, "")
-    .replace(/`+/g, "")
+    .replace(/!\[[^[\]]*\]\([^()]*\)/g, "")
+    .replace(/\[([^[\]]*)\]\([^()]*\)/g, "$1")
+    .replace(/\[([^[\]]*)\]\[[^[\]]*\]/g, "$1")
     .replace(/(\*\*|__)(.+?)\1/g, "$2")
     .replace(/(^|[\s(])[*_]([^*_\s][^*_]*?)[*_](?=[\s).,;:!?]|$)/g, "$1$2")
+    .replace(/(?<!`)(`+)([^`]+)\1(?!`)|<[^<>]*>/g, (_, ticks, code) => (ticks ? code : ""))
+    .replace(/`+/g, "")
     .replace(/[\u0000-\u001f\u007f\u00b7\u2022]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/**
- * `text` cut to `max` characters, with an ellipsis when it was cut: at the end of a clause (a comma, a semicolon) when
- * one is past the middle, else at a word.
- */
-function cutAt(text, max) {
-  if (text.length <= max) return text;
-  const head = text.slice(0, max - 1);
-  const clause = Math.max(...[...head.matchAll(/[,;](?=\s)/g)].map((m) => m.index));
-  const word = head.lastIndexOf(" ");
-  const end = clause > max / 2 ? clause : word > max / 2 ? word : head.length;
-  return `${head.slice(0, end).replace(/[\s,;:.-]+$/, "")}…`;
+/** A list's item: its bold opening words (the feature's name, CHANGELOG.md) apart from the rest, both plain text. */
+function newItem(raw) {
+  const strong = /^(\*\*|__)(.+?)\1(?=\s|$)(.*)$/.exec(raw);
+  const lead = strong ? plainLine(strong[2]) : "";
+  const text = plainLine(strong ? strong[3] : raw);
+  return lead ? { lead, text } : { text };
 }
 
-/** A lead-in is one short line that ends with a colon ("The window:"): it introduces what follows and says nothing itself. */
-export const LEAD_IN_CHARS = 80;
-const isLeadIn = (paragraph) => paragraph.length === 1 && /:$/.test(paragraph[0]) && plainLine(paragraph[0]).length <= LEAD_IN_CHARS;
+const joined = (a, b) => (a && b ? `${a} ${b}` : a || b);
 
 /**
- * Two or three short lines of a release's notes (the body of GitHub's answer, the changelog's section first), for
- * the update's pop-up: { kind: "list", lines } for the first items of the first list, { kind: "text", lines: [one] }
- * for the first sentences of the first paragraph; null when there is nothing to say. Headings are skipped, and so is
- * a lead-in before a list or a paragraph (the changelog groups its items under lines such as "The window:"); the
- * notes stop at the release's own "## Files". Plain text only: what is shown is never read as markup.
+ * `blocks` within the bounds: whole entries, in their order, until the characters or the entries run out; the lists
+ * no deeper than NOTES_DEPTH. Anything that is not of the notes' shape is left out, so that what a settings file holds
+ * is drawn only when it is what this module wrote. { blocks, more }: more is true when something was left out.
  */
-export function releaseSummary(body) {
+function bounded(blocks, more = false) {
+  const room = { chars: NOTES_CHARS, entries: NOTES_ENTRIES, more: false };
+  const take = (text) => {
+    if (room.more) return false;
+    if (text.length > room.chars || room.entries < 1) {
+      room.more = true;
+      return false;
+    }
+    room.chars -= text.length;
+    room.entries -= 1;
+    return true;
+  };
+  // What this module wrote is plain text already; a settings file edited by hand gets the same rules for its characters.
+  const str = (value) => (typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f\u00b7\u2022]+/g, " ").replace(/\s+/g, " ").trim() : "");
+  const list = (value, depth) => {
+    const items = [];
+    for (const one of Array.isArray(value?.items) ? value.items : []) {
+      if (!one || typeof one !== "object") continue;
+      const lead = str(one.lead);
+      const text = str(one.text);
+      if (!lead && !text) continue;
+      if (!take(joined(lead, text))) break;
+      const item = lead ? { lead, text } : { text };
+      const inner = depth < NOTES_DEPTH && one.list ? list(one.list, depth + 1) : null;
+      if (inner) item.list = inner;
+      items.push(item);
+    }
+    return items.length ? { ordered: value.ordered === true, items } : null;
+  };
+  const out = [];
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    if (room.more) break;
+    if (block?.type === "heading" || block?.type === "paragraph") {
+      const text = str(block.text);
+      if (text && take(text)) out.push({ type: block.type, text });
+    } else if (block?.type === "list") {
+      const made = list(block, 1);
+      if (made) out.push({ type: "list", ...made });
+    }
+  }
+  return { blocks: out, more: room.more || more };
+}
+
+/**
+ * A release's notes (the body of GitHub's answer: the changelog's section, then "## Files"), whole, for the update's
+ * pop-up: { blocks, more } up to the release's own "## Files" heading, or null when there is nothing to show. Blocks
+ * are { type: "heading", text }, { type: "paragraph", text } (a lead-in such as "The window:" is one) and
+ * { type: "list", ordered, items }; an item is { lead?, text, list? }, with lead its bold opening words and list its
+ * nested items (CHANGELOG.md: one bullet a feature, nested bullets for the details). Plain text only: links become
+ * their words, code marks and tags go, and nothing of it is ever read as markup. Within NOTES_CHARS, NOTES_ENTRIES,
+ * NOTES_DEPTH and NOTES_LINE; nothing shown is cut. Not read as Markdown, and so shown as their text: fenced and
+ * indented code blocks, setext headings (a line underlined with === or ---), tables and HTML comments over several
+ * lines; the changelog uses none of them.
+ */
+export function parseReleaseNotes(body) {
   if (typeof body !== "string" || !body.trim()) return null;
-  const items = [];
-  let paragraph = [];
-  let lead = false; // the paragraph is a lead-in that a blank line closed: what comes next is what it introduces
-  let gap = false; // a blank line after the list's items: the list goes on only with another item
-  for (const raw of body.slice(0, 64 * 1024).split(/\r?\n/)) {
-    const line = raw.trim();
-    if (/^#{1,6}\s/.test(line)) {
-      if (/^#{1,6}\s+files\b/i.test(line) || items.length || (paragraph.length && !isLeadIn(paragraph))) break;
-      paragraph = [];
-      lead = false;
-      continue;
+  let text = body;
+  let unread = null; // the first line that is not read, when the reading stops before the end
+  if (text.length > NOTES_READ) {
+    text = text.slice(0, text.lastIndexOf("\n", NOTES_READ) + 1);
+    unread = body.slice(text.length).split(/\r?\n/, 1)[0];
+  }
+  const blocks = [];
+  let paragraph = []; // the lines of the paragraph being read
+  let stack = []; // the lists open: { list, indent, item, content } from the outermost to the deepest
+  let gap = false; // a blank line inside a list: a line after it goes on only if it is indented under an item
+  let chars = 0;
+  let entries = 0;
+  let ended = false; // the notes' end, "## Files", was reached
+  const flush = () => {
+    if (paragraph.length) {
+      const said = paragraph.join(" ");
+      if (said) blocks.push({ type: "paragraph", text: said });
+      chars += said.length;
+      entries += 1;
     }
-    const item = /^(?:[-*+]|\d{1,3}[.)])\s+(.*)$/.exec(line);
-    if (item) {
-      if (paragraph.length) {
-        if (!isLeadIn(paragraph)) break;
-        paragraph = [];
-        lead = false;
-      }
-      gap = false;
-      const text = plainLine(item[1]);
-      if (text) items.push(text);
-      if (items.length >= SUMMARY_LINES) break;
-      continue;
+    paragraph = [];
+  };
+  const endList = () => {
+    stack = [];
+    gap = false;
+  };
+  /** The item a line indented by `indent` goes on: the deepest whose text it is under; the deepest one if none. */
+  const owner = (indent) => [...stack].reverse().find((open) => open.content <= indent) ?? null;
+
+  for (const raw of text.split(/\r?\n/)) {
+    const expanded = raw.length > NOTES_LINE ? null : raw.replace(/\t/g, "    ");
+    if (chars > NOTES_CHARS || entries > NOTES_ENTRIES || expanded === null || expanded.length > NOTES_LINE) {
+      unread = raw;
+      break;
     }
+    const indent = expanded.length - expanded.trimStart().length;
+    const line = expanded.trim();
     if (!line) {
-      if (items.length) gap = true;
-      else if (paragraph.length) {
-        if (!isLeadIn(paragraph)) break;
-        lead = true;
+      if (stack.length) gap = true;
+      else flush();
+      continue;
+    }
+    const heading = indent < 4 ? /^#{1,6}(?: +(.*))?$/.exec(line) : null;
+    if (heading) {
+      flush();
+      endList();
+      // The closing #s of "## Fixed ##" go, by plain string work (a pattern for them is slow on long runs of spaces).
+      let words = heading[1] ?? "";
+      let end = words.length;
+      while (end > 0 && words[end - 1] === "#") end -= 1;
+      if (end === 0) words = "";
+      else if (end < words.length && words[end - 1] === " ") words = words.slice(0, end);
+      const said = plainLine(words);
+      if (/^files$/i.test(said)) {
+        ended = true;
+        break;
+      }
+      if (said) blocks.push({ type: "heading", text: said });
+      chars += said.length;
+      entries += 1;
+      continue;
+    }
+    // A thematic break (---, ***, ___) separates; it says nothing.
+    if (/^([-*_])(?:\s*\1){2,}$/.test(line)) {
+      flush();
+      endList();
+      continue;
+    }
+    const marker = /^([-*+]|\d{1,9}[.)])(\s+|$)(.*)$/.exec(line);
+    if (marker) {
+      flush();
+      gap = false;
+      const item = newItem(marker[3]);
+      const content = indent + marker[1].length + Math.max(1, marker[2].length);
+      const ordered = /\d/.test(marker[1]);
+      // Another bullet or another kind of number at the outer level starts another list, as in Markdown.
+      const kind = ordered ? marker[1].slice(-1) : marker[1];
+      if (stack.length && indent <= stack[0].indent && stack[0].kind !== kind) endList();
+      if (!stack.length) {
+        const list = { type: "list", ordered, items: [] };
+        blocks.push(list);
+        stack.push({ list, indent, item: null, content, kind });
+      } else if (indent > stack.at(-1).indent && stack.at(-1).item) {
+        // Under the item above: one of its details, unless the lists are as deep as they go.
+        const parent = stack.at(-1);
+        if (stack.length < NOTES_DEPTH) {
+          const list = parent.item.list ?? (parent.item.list = { ordered, items: [] });
+          stack.push({ list, indent, item: null, content });
+        }
+      } else {
+        while (stack.length > 1 && stack.at(-1).indent > indent) stack.pop();
+      }
+      const open = stack.at(-1);
+      if (item.lead || item.text) {
+        open.list.items.push(item);
+        open.item = item;
+        open.content = content;
+        chars += joined(item.lead ?? "", item.text).length;
+        entries += 1;
       }
       continue;
     }
-    // A line that goes on a list's item belongs to it; after a blank line the list is over.
-    if (items.length) {
-      if (gap) break;
-      items[items.length - 1] = plainLine(`${items[items.length - 1]} ${line}`);
-      continue;
+    if (stack.length) {
+      const target = gap ? owner(indent) : (owner(indent) ?? stack.at(-1));
+      if (target?.item) {
+        // A line that goes on an item (wrapped, or a paragraph indented under it after a blank line) is its text.
+        const said = plainLine(line);
+        target.item.text = joined(target.item.text, said);
+        chars += said.length + 1;
+        gap = false;
+        continue;
+      }
+      endList();
     }
-    if (lead) {
-      paragraph = [];
-      lead = false;
-    }
-    paragraph.push(line);
+    const said = plainLine(line);
+    if (said) paragraph.push(said);
   }
-  if (items.length) {
-    const each = Math.floor(SUMMARY_CHARS / items.length);
-    return { kind: "list", lines: items.map((text) => cutAt(text, Math.max(60, each))) };
+  const over = !ended && unread !== null;
+  // What was being read when the reading stopped is left out whole, not shown cut, unless the line after it starts
+  // something else (an item, a heading): then it was all there.
+  if (over && !/^\s*(?:[-*+]|\d{1,9}[.)])(?:\s|$)|^\s{0,3}#{1,6}(?:\s|$)/.test(unread)) {
+    paragraph = [];
+    const open = stack.at(-1);
+    if (open?.item) open.list.items.pop();
   }
-  // A lead-in with nothing after it ("The window:" and then "## Files") says nothing on its own.
-  if (paragraph.length && isLeadIn(paragraph)) return null;
-  const text = plainLine(paragraph.join(" "));
-  if (!text) return null;
-  // Whole sentences while they fit; the first one cut if it alone does not.
-  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z0-9])/);
-  let said = "";
-  for (const sentence of sentences) {
-    if (said && `${said} ${sentence}`.length > SUMMARY_CHARS) break;
-    said = said ? `${said} ${sentence}` : sentence;
-  }
-  return { kind: "text", lines: [cutAt(said, SUMMARY_CHARS)] };
+  flush();
+  const notes = bounded(blocks, over);
+  return notes.blocks.length || notes.more ? notes : null;
 }
 
-/** The summary in GitHub's answer for the latest release, or null. */
-export function summaryInAnswer(body) {
+/** The notes in GitHub's answer for the latest release, or null. */
+export function notesInAnswer(body) {
   try {
-    return releaseSummary(JSON.parse(body)?.body);
+    return parseReleaseNotes(JSON.parse(body)?.body);
   } catch {
     return null;
   }
+}
+
+/**
+ * The notes the app keeps for `version` (app-settings.json, updateNotes): { blocks, more } when they are of that
+ * version and of the shape this version writes ({ version, blocks, more }), within the bounds again; null for anything
+ * else. The shape of 0.1.0-beta.6 and before ({ version, kind, lines }: two or three lines cut with an ellipsis) is
+ * not shown: the check at the start asks GitHub again and keeps the whole notes in its place.
+ */
+export function storedNotes(stored, version) {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return null;
+  if (!version || stored.version !== versionText(version) || !Array.isArray(stored.blocks)) return null;
+  const notes = bounded(stored.blocks, stored.more === true);
+  return notes.blocks.length || notes.more ? notes : null;
 }
 
 /**
@@ -310,11 +457,11 @@ export function createUpdateCheck({ current, allowed, settings, ask, log, onNoti
   let lastForced = null; // { at, error }: the last check that `force` made ask
 
   const enabled = () => allowed && settings.read().updateCheck !== false;
-  /** The version found, with its notes' summary when they are of that version (updateNotes: { version, kind, lines }). */
-  function show(version, notes = settings.read().updateNotes) {
-    const summary = notes && typeof notes === "object" && notes.version === versionText(version) && Array.isArray(notes.lines) ? { kind: notes.kind === "list" ? "list" : "text", lines: notes.lines.filter((l) => typeof l === "string").slice(0, SUMMARY_LINES) } : null;
-    const next = version && isNewer(version, current) ? { version: versionText(version), page: releasePage(version), ...(summary?.lines.length ? { summary } : {}) } : null;
-    if (next?.version === notice?.version && Boolean(next?.summary) === Boolean(notice?.summary)) return;
+  /** The version found, with its notes when the app keeps them for that version (updateNotes, storedNotes). */
+  function show(version, kept = settings.read().updateNotes) {
+    const notes = version ? storedNotes(kept, version) : null;
+    const next = version && isNewer(version, current) ? { version: versionText(version), page: releasePage(version), ...(notes ? { notes } : {}) } : null;
+    if (next?.version === notice?.version && JSON.stringify(next?.notes ?? null) === JSON.stringify(notice?.notes ?? null)) return;
     notice = next;
     onNotice(notice);
   }
@@ -353,10 +500,10 @@ export function createUpdateCheck({ current, allowed, settings, ask, log, onNoti
     try {
       const answer = await ask();
       const version = versionInAnswer(answer);
-      const summary = version ? summaryInAnswer(answer) : null;
+      const notes = version ? notesInAnswer(answer) : null;
       // An answer without a version (a repository with no release yet answers 404) is "nothing new", and is not
       // asked for again today either.
-      settings.update({ updateChecked: now(), updateFailed: null, updateLatest: version, updateCheckedBy: current, ...(summary ? { updateNotes: { version, ...summary } } : {}) });
+      settings.update({ updateChecked: now(), updateFailed: null, updateLatest: version, updateCheckedBy: current, ...(notes ? { updateNotes: { version, ...notes } } : {}) });
       log(`[shell] update check: the latest release is ${version ?? "not known"}, this is ${current}`);
       if (enabled()) show(version);
     } catch (e) {

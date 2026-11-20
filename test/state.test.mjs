@@ -13,6 +13,8 @@
 //                              and the BUSY timer (busy/snapshot, busy/profiles), the timer started, paused, stopped
 //   bar-state-1.4.1.json       the stock bar on 1.4.1, by state/record.mjs: the app requests of the first, answers
 //                              byte for byte and frames in full; after a short Back the app's screen stays (4d1c24ac)
+//   bar-state-1.4.1-more.json  the night's groups on 1.4.1, by state/record.mjs --more at the BUSY Bar session (EMU-348);
+//                              replayed once it is there
 //
 // What is not compared, and why:
 //   - values that are the time or chance of the moment: install_key, snapshot_timestamp_ms, profile_timestamp_ms;
@@ -32,8 +34,8 @@
 // on by hand, so that each request reaches it at the moment it reached the bar (its body's snapshot_timestamp_ms).
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -45,7 +47,7 @@ import { finish, port, tempDir } from "./server/helpers.mjs";
 after(finish);
 
 const here = dirname(fileURLToPath(import.meta.url));
-const recording = (name) => JSON.parse(readFileSync(join(here, "state", name), "utf8"));
+const recording = (name) => JSON.parse(readFileSync(isAbsolute(name) ? name : join(here, "state", name), "utf8"));
 const framesOut = process.env.EMU_STATE_FRAMES;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -204,7 +206,7 @@ async function replay(t, file, portIndex, firmware = "1.3.1") {
           problems.push(`${what}: ${n[name]} pixels of the ${name} display differ`);
           if (framesOut) {
             mkdirSync(framesOut, { recursive: true });
-            const stem = join(framesOut, `${file.replace(/\.json$/, "")}-${String(i).padStart(3, "0")}-${name}`);
+            const stem = join(framesOut, `${basename(file).replace(/\.json$/, "")}-${String(i).padStart(3, "0")}-${name}`);
             writeFileSync(`${stem}-bar.png`, encodeScreenPng(name, bar));
             writeFileSync(`${stem}-emu.png`, encodeScreenPng(name, emu[name]));
           }
@@ -230,3 +232,13 @@ test("1.4.1: an app's install, launch, settings and input; a short Back keeps th
   const { problems, count } = await replay(t, "bar-state-1.4.1.json", 2, "1.4.1");
   assert.deepEqual(problems, [], `${problems.length} of ${count} answers are not the bar's`);
 });
+
+// Recorded at the BUSY Bar session (state/record.mjs --more, EMU-348): a test once the recording is there. EMU_RECORDINGS
+// names another folder (the BUSY Bar session's trial run against an emulator, own-emulator.mjs recordingsRoot).
+const moreFile = join(process.env.EMU_RECORDINGS || here, "state", "bar-state-1.4.1-more.json");
+if (existsSync(moreFile)) {
+  test("1.4.1: drawing from outside, the BUSY timer and its profiles", async (t) => {
+    const { problems, count } = await replay(t, moreFile, 3, "1.4.1");
+    assert.deepEqual(problems, [], `${problems.length} of ${count} answers are not the bar's`);
+  });
+}

@@ -43,11 +43,13 @@ async function nameOf(dir) {
 
 /** The texts of the project and what the catalog would say of each. */
 export async function textsAnswer(dir) {
-  const { DETAILS_FILE } = await import("../../readiness/facts.mjs");
+  const { DETAILS_FILE, descriptionFile } = await import("../../readiness/facts.mjs");
   const { textProblems, textRules, textsOf } = await import("../../readiness/texts.mjs");
   const file = path.join(dir, DETAILS_FILE);
   const texts = textsOf(readDetails(file));
-  const { ok, problems, warnings } = textProblems(texts);
+  // A description written as @README.md is checked on the file's text, as the catalog checks it.
+  const named = descriptionFile(dir, texts.description, null);
+  const { ok, problems, warnings } = textProblems(texts, named ? { description: named.text, unread: named.unread } : {});
   const { name, name_problem } = await nameOf(dir);
   // `taken`, not `ok`: the answer's own ok says that the command worked.
   return { file, exists: existsSync(file), name, name_problem, texts, taken: ok, problems, warnings, rules: textRules() };

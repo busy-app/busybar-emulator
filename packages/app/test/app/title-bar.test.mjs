@@ -3,7 +3,7 @@
 // the mouse and with the keys, and run their items as the menu does. On macOS nothing changes: the system's frame and
 // menu bar, and no bar in the page.
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { PORTS, until } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch, VISIBLE } from "./harness.mjs";

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, test } from "./node-test.mjs";
 
 import { releaseFiles } from "../../tools/release-files.mjs";
 import { APP_DIR, CHROMIUM_GONE_WITHIN_MS, listening, removeFolder, sleep, survivors, temporaryFolder, until } from "../helpers.mjs";
@@ -34,6 +34,7 @@ test("the list of release files: the app's code, and no test entry, tests or too
     "src/capture-window.mjs",
     "src/cli-process.mjs",
     "src/config.mjs",
+    "src/data-format.mjs",
     "src/external.mjs",
     "src/folder-dialogs.mjs",
     "src/gestures.mjs",

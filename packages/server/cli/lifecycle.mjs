@@ -9,6 +9,8 @@ import { APP_NAME } from "./context.mjs";
 import { CliError, pasteForms, selfCall } from "./output.mjs";
 
 export const START_TIMEOUT_MS = 60_000;
+/** Where a person gets the newest version: the page GitHub keeps for the latest release. */
+export const LATEST_RELEASE_PAGE = "https://github.com/busy-app/busybar-emulator/releases/latest";
 export const QUIT_TIMEOUT_MS = 30_000;
 const STEP_MS = 250;
 /**
@@ -17,6 +19,32 @@ const STEP_MS = 250;
  */
 export const STARTED_BEFORE_MS = 60_000;
 export const STARTED_AFTER_MS = 1500;
+
+/**
+ * The commands that write nothing into the data folder: they run whatever its format. Every other command first asks
+ * whether this copy can use the folder (dataFolderRefusal), in one place, main() in busy-emulator.mjs.
+ */
+export const RUN_ON_ANY_FOLDER = Object.freeze(["help", "version", "status"]);
+
+/**
+ * Why this copy must not write into the data folder, as the error a command answers; null when it may. A newer
+ * emulator moved the folder to a newer format (`data_format_newer`), or its format record is broken or the folder has
+ * the layout from before the record (`data_folder_unusable`): the server refuses such a folder too, and the folder is
+ * left as it is (ADR-0013). `sys.formatProblem` reads, and writes nothing.
+ */
+export function dataFolderRefusal(ctx, sys) {
+  const problem = sys.formatProblem?.(ctx.dataDir) ?? null;
+  if (!problem) return null;
+  if (problem.kind === "newer") {
+    return new CliError(
+      "data_format_newer",
+      `The data folder ${ctx.dataDir} is of format ${problem.format}: a newer version of ${APP_NAME} moved it there, and this one, ${ctx.version}, knows format ${problem.known} at most. Nothing in it was changed, and this version does not work on it.`,
+      `Install the newest version: ${LATEST_RELEASE_PAGE}`,
+      { format: problem.format, known: problem.known },
+    );
+  }
+  return new CliError("data_folder_unusable", problem.message, "Nothing in the folder was changed. Put the format record right, or move the folder away to start anew.");
+}
 
 /** How to run this command line again, for the texts. */
 export function commandLine(ctx) {

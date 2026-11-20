@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 

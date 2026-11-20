@@ -28,8 +28,8 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync
 import path from "node:path";
 
 import { accountToken, cleanLine, codeIsShown, CODE_TIMEOUT_MS, ghFolders, ghSettings, ghTransport, GH_HOST, LOGIN, loginFailure, loginReader, REVOKE_PAGE, SIGN_IN_TIMEOUT_MS } from "./gh.mjs";
-import { blobSha, checkRepoPath, createGithubApi } from "./github-api.mjs";
-import { localHas, localHead } from "./local-git.mjs";
+import { blobSha, checkRepoPath, createGithubApi, noreplyAddress } from "./github-api.mjs";
+import { EMAIL, localHas, localHead, localRemote, localUser } from "./local-git.mjs";
 import { get as getAllowed, UPDATE_HOSTS } from "../updater.mjs";
 
 const REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/;
@@ -45,6 +45,13 @@ const RELEASE_ORIGINS = Object.freeze(UPDATE_HOSTS.map((host) => Object.freeze({
 /** A release file's name as it is kept for the install: plain, ending in .tgz. */
 const PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,99}\.tgz$/i;
 export const AI_CHOICES = Object.freeze(["none", "partly", "full"]);
+/**
+ * The catalog's template asks "Partly" and "Fully" to say what AI made and what it does (EMU-359): the person's
+ * explanation, required for those two, at most MAX_AI_NOTE characters, goes into the request after the option's colon.
+ */
+export const AI_NOTE_CHOICES = Object.freeze(["partly", "full"]);
+export const MAX_AI_NOTE = 1000;
+export const aiNeedsNote = (ai) => AI_NOTE_CHOICES.includes(ai);
 /**
  * BUSY's catalogs: the one the requests go to (the default, public since 12 Nov 2026), and its dev copy. A request to any other (a project's
  * catalog.json, or --catalog, may name one) is sent only when the person confirmed that catalog's name (security
@@ -86,7 +93,8 @@ Keep ONE option and delete the others.
 /** Where a repository keeps its pull request template, in the order GitHub looks. */
 const TEMPLATE_FILES = [".github/PULL_REQUEST_TEMPLATE.md", ".github/pull_request_template.md", "PULL_REQUEST_TEMPLATE.md", "docs/PULL_REQUEST_TEMPLATE.md"];
 const AI_LINES = [/^[-*]\s+No AI was used/i, /^[-*]\s+Partly AI-assisted/i, /^[-*]\s+Fully AI-generated/i];
-const KEEP_ONE = /^Keep ONE option and delete the others\.?$/i;
+// The catalog writes it "Keep **one** option and delete the others." (12 Nov 2026), its first copy "Keep ONE option…".
+const KEEP_ONE = /^Keep (?:\*\*|__)?one(?:\*\*|__)? option and delete the others\.?$/i;
 const BOX = /^(\s*[-*]\s+)\[([ xX])\](\s+)(.*)$/;
 /** An item that starts with "(optional)" may stay unticked: it is shown without the prefix, with an "Optional" tag. */
 const OPTIONAL_PREFIX = /^\(optional\)\s*/i;
@@ -95,6 +103,22 @@ export const boxLabel = (text) => String(text).replace(OPTIONAL_PREFIX, "") || S
 /** How long the token of an account is kept in memory, between the calls of one push or request. */
 const TOKEN_KEEP_MS = 5 * 60_000;
 const SUBMIT_HINT = "Send it by hand: the steps are in SUBMIT.md in the project's submission folder.";
+/**
+ * The sentence of the app's questions that names who a commit is signed by (EMU-366): `signer` as the flow gives it
+ * ({ name, email, kind, private?, fallback? }), or kind "asked" for an address the command line names, checked only
+ * after the person's yes.
+ */
+export function signerSentence(signer, { what = "The commit" } = {}) {
+  const who = `${signer.name} <${signer.email}>`;
+  if (signer.kind === "asked") return `${what} is to be signed ${who}, the address the program asks for: the emulator checks that it is one of your account's before anything is sent, and keeps it for the account's next commits once a commit is made with it. Anyone can see it on the commit.`;
+  const why = signer.fallback === "gone" ? " The address chosen before is no longer one of your account's." : signer.fallback === "unconfirmed" ? " The address chosen before cannot be confirmed as your account's now." : "";
+  if (signer.kind === "noreply") return `${what} is signed ${who}, GitHub's private address of your account: it shows no e-mail.${why}`;
+  if (signer.kind === "git") return `${what} is signed ${who}, the name and address git config gives, which GitHub has not verified for your account: anyone can see them on the commit.`;
+  return `${what} is signed ${who}, an address of your account: anyone can see it on the commit.${signer.private ? " GitHub keeps it private for your account, and may refuse the commit (Block command line pushes that expose my email): then the emulator says so." : ""}`;
+}
+
+/** How the person lets GitHub CLI's sign-in read the account's e-mail addresses (EMU-366): the scope user:email. */
+export const GRANT_EMAILS = "gh auth refresh --hostname github.com --scopes user:email";
 
 /**
  * stale-check: the first file of `files` (read for a push: [{ path, bytes }]) whose bytes are not the ones Pre-flight
@@ -275,7 +299,8 @@ function pathProblem(rel, platform = process.platform) {
 
 /**
  * A pull request template read for the window: its parts in order ({ kind: "heading", level, text }, { kind: "box",
- * text } for a "- [ ]" item, { kind: "ai", options: [{ id, text }] } for the AI usage lines, { kind: "instruction",
+ * text } for a "- [ ]" item, { kind: "ai", options: [{ id, text, prompt }] } for the AI usage lines (`prompt`: what
+ * "Partly" and "Fully" ask the person to explain, aiPrompt), { kind: "instruction",
  * text } for "Keep ONE option…", { kind: "item" | "text", text }), `boxes`: the text of every box, as written, `required`: the boxes that are not optional (a text starting with
  * "(optional)" is, and may stay unticked; its block has `optional` and `label`, the text without the prefix), and
  * `ai`: the AI usage options found. HTML comments are not shown.
@@ -299,7 +324,9 @@ export function parseChecklist(markdown) {
       aiBlock = null;
     } else if (AI_LINES.some((re) => re.test(line))) {
       if (!aiBlock) blocks.push((aiBlock = { kind: "ai", options: [] }));
-      aiBlock.options.push({ id: AI_CHOICES[AI_LINES.findIndex((re) => re.test(line))], text: line.replace(/^[-*]\s+/, "") });
+      const id = AI_CHOICES[AI_LINES.findIndex((re) => re.test(line))];
+      const said = line.replace(/^[-*]\s+/, "");
+      aiBlock.options.push({ id, text: said, prompt: aiNeedsNote(id) ? aiPrompt(said) : null });
     } else if (KEEP_ONE.test(line)) {
       blocks.push({ kind: "instruction", text: line });
     } else if ((m = /^[-*]\s+(.*)$/.exec(line))) {
@@ -319,19 +346,21 @@ export function parseChecklist(markdown) {
  * and every box of the checklist (`list`, checklist()), with one tick for all of them. A catalog that is not BUSY's is
  * said in the first question's own words and at the head of its text, and a second question asks about it by its
  * name (security review L3). `catalog`: { owner, name }; `target`: the repository and commit the request names.
- * The optional items are asked between the two, one question each (optionalQuestions).
+ * The optional items are asked between the two, one question each (optionalQuestions). `signer`: who the manifest's
+ * commit is signed by (EMU-366), named in the first.
  */
-export function requestQuestions({ folder, catalog, target, ai, list }) {
+export function requestQuestions({ folder, catalog, target, ai, aiNote = null, list, signer = null }) {
   const named = `${catalog.owner}/${catalog.name}`;
   const other = !isBusyCatalog(catalog);
   const warning = other ? `${named} is not BUSY's catalog (${BUSY_CATALOGS[0]}). The project's catalog.json or the command names it; whoever keeps ${named} gets the request, from your GitHub account.\n\n` : "";
-  const usage = { none: "no AI was used", partly: "partly AI-assisted", full: "fully AI-generated" }[ai] ?? "not said";
+  const note = aiNeedsNote(ai) ? aiNoteLine(aiNote) : "";
+  const usage = `${{ none: "no AI was used", partly: "partly AI-assisted", full: "fully AI-generated" }[ai] ?? "not said"}${note ? `. The explanation the request gives: "${note}"` : ""}`;
   const optional = list.boxes.some(isOptionalBox);
   const boxes = list.boxes.map((one) => `[ ] ${isOptionalBox(one) ? "Optional, you choose next: " : ""}${plainBox(one)}`).join("\n");
   const first = {
     about: `publish pr ${folder}`,
     message: other ? `Send this app to ${named}, which is not BUSY's catalog?` : "Send this app to the catalog?",
-    detail: `${warning}${folder}\n\nA program on this computer (busy-emulator publish pr, most likely your coding agent) asks to open a pull request to the catalog ${named} from your GitHub account, naming github.com/${target.owner}/${target.name} at ${target.commit.slice(0, 12)}. AI usage: ${usage}.\n\nThe catalog's author checklist${list.source === "bundled" ? " (the copy that comes with the emulator: the catalog's own could not be read)" : ""}:\n${boxes}`,
+    detail: `${warning}${folder}\n\nA program on this computer (busy-emulator publish pr, most likely your coding agent) asks to open a pull request to the catalog ${named} from your GitHub account, naming github.com/${target.owner}/${target.name} at ${target.commit.slice(0, 12)}. AI usage: ${usage}.${signer ? `\n\n${signerSentence(signer, { what: "The commit of the app's manifest" })}` : ""}\n\nThe catalog's author checklist${list.source === "bundled" ? " (the copy that comes with the emulator: the catalog's own could not be read)" : ""}:\n${boxes}`,
     // With optional items, the person ticks them in the questions that follow (optionalQuestions): this one goes on.
     buttons: ["Cancel", optional ? "Continue" : "Send"],
     yes: 1,
@@ -382,8 +411,8 @@ export function optionalQuestions({ folder, list, more = false }) {
  * (requestTicks: the boxes to tick) or { answer: "no" | "unavailable" | "not_ticked", reason?, other } where `other`
  * says the question about the other catalog was the one refused; nothing is sent then.
  */
-export async function askRequest({ confirm, folder, catalog, target, ai, list }, signal) {
-  const [first, other] = requestQuestions({ folder, catalog, target, ai, list });
+export async function askRequest({ confirm, folder, catalog, target, ai, aiNote = null, list, signer = null }, signal) {
+  const [first, other] = requestQuestions({ folder, catalog, target, ai, aiNote, list, signer });
   const asked = await confirm(first, signal);
   if (asked.answer !== "yes") return { answer: asked.answer, reason: asked.reason, other: false };
   if (!asked.checked) return { answer: "not_ticked", other: false };
@@ -411,10 +440,86 @@ export function requestTicks(list, chosen = []) {
 }
 
 /**
- * The pull request's description: the catalog's template with the boxes the person ticked (`ticked`, their texts)
- * ticked, its instruction to keep one AI option done, and the one AI line kept.
+ * The person's explanation of the AI usage as one line of text: control and direction characters, line breaks and
+ * HTML comment marks become spaces, runs of space one (EMU-359). This is what the dialog shows and the length counts.
  */
-export function fillTemplate(template, { ai, ticked = [], testing = null }) {
+export function aiNoteLine(text) {
+  return maskTokens(
+    String(text ?? "")
+      .replace(/<!--|-->/g, " ")
+      .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+/**
+ * A text with what looks like a token masked, as gh.mjs cleanLine masks gh's output: GitHub's tokens by their prefix
+ * (ghp_, gho_, ghu_, ghs_, ghr_, github_pat_) and any run of 36 letters, digits and underscores, each as "…". The
+ * explanation is kept in the project and goes into a public pull request: a token pasted into it goes nowhere.
+ */
+export function maskTokens(text) {
+  return String(text ?? "")
+    .replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{8,}/g, "…")
+    .replace(/[A-Za-z0-9_]{36,}/g, "…");
+}
+
+/**
+ * The explanation as the request's text has it (EMU-359): one line (aiNoteLine) of plain text. Markdown's own marks
+ * (\ ` * _ [ ] ( ) ! | ~) escaped with a backslash: no emphasis, code, link or picture (a picture would load from
+ * anywhere through GitHub's proxy); &, < and > as entities: no HTML, no comment that hides the rest of the template.
+ * What GitHub links in plain text broken by a zero-width space (as Renovate writes it): every @ not after a letter or
+ * digit (no one is notified, an address stays; @@x too), every # and GH- before a number (no reference to an issue
+ * or a pull request, here or elsewhere), and the start of an address (http://, www.). It follows the option's colon, so nothing it starts with
+ * begins a line.
+ */
+export function plainAiNote(text) {
+  const zw = "&#8203;";
+  return aiNoteLine(text)
+    .replace(/[\\`*_[\]()!|~]/g, "\\$&")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/#/g, `#${zw}`)
+    .replace(/(?<![A-Za-z0-9])@/g, `@${zw}`)
+    .replace(/\bGH-(?=\d)/gi, (m) => `${m.slice(0, 3)}${zw}`)
+    .replace(/\b([A-Za-z][A-Za-z0-9+.-]*):\/\//g, `$1${zw}://`)
+    .replace(/\bwww\./gi, (m) => `${m.slice(0, 3)}${zw}.`);
+}
+
+/** Why the explanation does not go with the AI choice `ai`, as a PublishError; or null. */
+export function aiNoteProblem(ai, note) {
+  if (!aiNeedsNote(ai)) return null;
+  const line = aiNoteLine(note);
+  if (!line) return new PublishError("no_ai_note", `Explain the AI usage: the catalog asks ${ai === "full" ? "what the generated code does" : "which parts AI made, and what they do"}.`, null);
+  if (line.length > MAX_AI_NOTE) return new PublishError("ai_note_too_long", `The explanation of the AI usage is ${line.length} characters long; the emulator sends up to ${MAX_AI_NOTE}.`, null);
+  return null;
+}
+
+/**
+ * What an AI option of the template asks the person to write: its words after the colon, from a capital, without the
+ * full stop ("Describe what the generated code does"); null for an option that asks nothing.
+ */
+export function aiPrompt(text) {
+  const m = /:\s*(.+?)\.?\s*$/.exec(String(text ?? ""));
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)}` : null;
+}
+
+/** The kept AI line of the template with the person's explanation in place of what the option asks (EMU-359). */
+function withAiNote(line, note) {
+  const said = plainAiNote(note);
+  if (!said) return line;
+  const m = /^(\s*[-*]\s+[^:]*?):/.exec(line);
+  return m ? `${m[1]}: ${said}` : `${line.replace(/[.\s]+$/, "")}: ${said}`;
+}
+
+/**
+ * The pull request's description: the catalog's template with the boxes the person ticked (`ticked`, their texts)
+ * ticked, its instruction to keep one AI option done, and the one AI line kept, with the person's explanation
+ * (`aiNote`) after its colon for "Partly" and "Fully".
+ */
+export function fillTemplate(template, { ai, aiNote = null, ticked = [], testing = null }) {
+  const note = aiNeedsNote(ai) ? aiNote : null;
   const keep = AI_LINES[AI_CHOICES.indexOf(ai)];
   const tick = new Set(ticked);
   const lines = [];
@@ -429,11 +534,13 @@ export function fillTemplate(template, { ai, ticked = [], testing = null }) {
     if (AI_LINES.some((re) => re.test(line.trim()))) {
       hadAi = true;
       if (!keep?.test(line.trim())) continue;
+      lines.push(withAiNote(line, note));
+      continue;
     }
     lines.push(line);
   }
   let body = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
-  if (!hadAi && keep) body += `\n\n# AI usage\n\n${BUNDLED_TEMPLATE.split("\n").find((line) => keep.test(line))}`;
+  if (!hadAi && keep) body += `\n\n# AI usage\n\n${withAiNote(BUNDLED_TEMPLATE.split("\n").find((line) => keep.test(line)), note)}`;
   if (testing) body += `\n\n# Device testing\n\n${testing.trim()}`;
   return `${body}\n`;
 }
@@ -450,14 +557,20 @@ export function fillTemplate(template, { ai, ticked = [], testing = null }) {
  * @param {string[]} [o.catalogs]           the catalogs a request goes to without naming them again: BUSY_CATALOGS
  * @param {{ origins: { protocol: string, host: string }[], transports?: object }} [o.downloads]  where a release's app
  *   package may be downloaded from (RELEASE_ORIGINS: github.com's, over HTTPS); a test names its stand-in on 127.0.0.1
+ * @param {{ home: string | null, xdg: string | null }} [o.git]  where the person's own git settings are (~/.gitconfig,
+ *   $XDG_CONFIG_HOME/git/config): the name and address `git config` gives, offered for commits (EMU-366); main.mjs
+ *   names them (config.mjs), without them only the project's own .git/config is read
+ * @param {() => number} [o.clock]          how long what GitHub said of the account is kept (a test's own clock)
  */
-export function createGithubPublish({ gh, dataDir, configDir = null, record = null, openExternal, log = () => {}, sleep, writeGapMs, forkWait, catalogs = BUSY_CATALOGS, downloads = null }) {
+export function createGithubPublish({ gh, dataDir, configDir = null, record = null, openExternal, log = () => {}, sleep, writeGapMs, forkWait, catalogs = BUSY_CATALOGS, downloads = null, git = { home: null, xdg: null }, clock = Date.now }) {
   const releaseOrigins = downloads?.origins ?? RELEASE_ORIGINS;
   const releaseTransports = downloads?.transports ?? { http, https };
   /** One of the catalogs a request goes to without a second confirmation: BUSY_CATALOGS (tests name their stand-ins). */
   const knownCatalog = (catalog) => Boolean(catalog) && catalogs.some((one) => one.toLowerCase() === `${catalog.owner}/${catalog.name}`.toLowerCase());
   const folders = ghFolders(dataDir);
   const noteFile = path.join(folders.root, "signed-in.json");
+  /** The address each account signs its commits with, as the person chose it (EMU-366): the app's, never a project's. */
+  const signerFile = path.join(folders.root, "commit-email.json");
   let login = null;
   let signing = null; // { shown, abort, done }
   let starting = null; // the sign-in that is starting: its code to come
@@ -546,8 +659,21 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
       }
       case "network":
         return new PublishError("network", "GitHub could not be reached.", "Check the internet connection, then try again.");
+      case "timeout":
+        return Object.assign(new PublishError("timeout", "GitHub did not answer in time.", e.details?.write ? "It may have been done all the same: check again before anything else." : "Try again in a moment."), { write: e.details?.write === true });
+      case "gh_failed":
+        return new PublishError("gh_failed", "GitHub CLI, which the emulator talks to GitHub through, did not run.", "Quit the emulator and open it again; if it says the same, install it again.");
+      case "token_unreadable":
+        return new PublishError("token_unreadable", "GitHub CLI could not give the emulator your sign-in.", "Sign in again.");
       case "forbidden":
         return new PublishError("forbidden", "GitHub refused it.", "Sign out, sign in again, then try once more.");
+      case "email_private":
+        // Never the address itself: the answer goes to the window and to the command line's caller (EMU-366). The
+        // address is no longer the account's choice (afterCommit): the next commit gets the private address.
+        return new PublishError("email_private", "GitHub refused the commit: your account keeps the e-mail address it is signed with private, and blocks commits that would show it. The emulator does not sign with that address again unless you choose it.", "Sign the commits with GitHub's private address (Sign commits with, in Publish to GitHub; or publish push --email noreply), then publish again.");
+      case "email_refused":
+        // GitHub's words about a private address for a commit signed with the private address itself: not the address.
+        return new PublishError("email_refused", "GitHub refused the commit with words about a private e-mail address, though it is signed with GitHub's private address of your account.", "Try again in a moment; if GitHub says the same, send it by hand (SUBMIT.md).");
       default:
         log(`[github] ${e?.code ?? "error"}: ${String(e?.message ?? e).slice(0, 300)}`);
         return new PublishError(e?.code ?? "failed", "GitHub answered something unexpected.", "Try again in a moment.");
@@ -685,6 +811,190 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
       login = who;
     }
     return { github: apiOf(login), login };
+  }
+
+  // ---------------------------------------------------------------- the address commits are signed with (EMU-366)
+  //
+  // Every commit the app makes (the person's repository, the manifest in their fork of the catalog) names its author
+  // and committer: by default GitHub's private address of the account, <id>+<login>@users.noreply.github.com, which
+  // shows no e-mail and is the account's on GitHub; or an address the person chose, one GitHub has verified for the
+  // account (GET /user/emails, which takes the scope user:email that GitHub CLI's sign-in does not ask for), or the
+  // one `git config user.email` gives, which GitHub may not know. The name is the account's on GitHub, else its login;
+  // git config's name only with git config's address, which the person picked with it. The choice is the account's,
+  // by its number (a login can be renamed and taken again), kept in the app's data folder (github/commit-email.json),
+  // never in a project, which may be published; signing out forgets it. A recorded address the account no longer has
+  // is dropped, and one that cannot be confirmed now is not used: the commit gets the private address, and the answer
+  // says why (`fallback`). An address publish push --email names is recorded only once a commit was made with it, and
+  // one GitHub refused (GH007) is never the default. No address is logged.
+
+  /** "id:<number>" → { login, email: "noreply" } or { login, email, kind: "verified" | "git", name? }; {} when none. */
+  function signerChoices() {
+    try {
+      const all = JSON.parse(readFileSync(signerFile, "utf8"));
+      return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+    } catch {
+      return {};
+    }
+  }
+  function writeChoices(all) {
+    mkdirSync(folders.root, { recursive: true });
+    const part = `${signerFile}.${process.pid}.part`;
+    writeFileSync(part, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
+    renameSync(part, signerFile);
+  }
+  const choiceKey = (profile) => `id:${profile.id}`;
+  /** Records `signer` ({ email, kind, name }) as the account's choice; the private address is recorded as "noreply". */
+  function noteSigner(profile, signer) {
+    const choice = signer.kind === "noreply" ? { login: profile.login, email: "noreply" } : { login: profile.login, email: signer.email, kind: signer.kind, ...(signer.kind === "git" ? { name: signer.name } : {}) };
+    writeChoices({ ...signerChoices(), [choiceKey(profile)]: choice });
+  }
+  /** Forgets the account's choice: by its number, and every record of its login (signing out). */
+  function forgetSigner({ profile = null, login: who = null }) {
+    const all = signerChoices();
+    const keep = Object.fromEntries(Object.entries(all).filter(([key, one]) => !(profile && key === choiceKey(profile)) && !(who && String(one?.login ?? "").toLowerCase() === who.toLowerCase())));
+    if (Object.keys(keep).length !== Object.keys(all).length) writeChoices(keep);
+  }
+
+  /**
+   * What GitHub says of the account, kept a minute: { profile, emails | null (no scope) }. `fresh` (Check again, after
+   * the person let GitHub CLI read the addresses) asks again, but not twice in five seconds: the window may ask freely.
+   */
+  const accountFacts = new Map();
+  async function factsOf(github, who, { fresh = false } = {}) {
+    const key = who.toLowerCase();
+    const kept = accountFacts.get(key);
+    if (kept && clock() - kept.at < (fresh ? 5_000 : 60_000)) return kept;
+    const profile = await github.user();
+    if (!profile.id) throw new PublishError("bad_answer", "GitHub did not say the account's number, which its private address is made of.", "Try again in a moment.");
+    let emails = null;
+    try {
+      emails = await github.emails();
+    } catch (e) {
+      if (e.code !== "no_scope") throw e;
+    }
+    const facts = { at: clock(), profile, emails };
+    accountFacts.set(key, facts);
+    return facts;
+  }
+
+  /**
+   * The addresses the account may sign with, the private one first: [{ email, kind: "noreply" | "verified" | "git",
+   * primary?, private?, name? }]. `private`: GitHub keeps it private for the account (it may refuse a commit with it);
+   * `name`: git config's name, which goes with git config's address.
+   */
+  function offered({ profile, emails }, folder) {
+    const out = [{ email: noreplyAddress(profile), kind: "noreply" }];
+    const seen = new Set([out[0].email.toLowerCase()]);
+    const add = (one) => {
+      if (!EMAIL.test(one.email) || seen.has(one.email.toLowerCase())) return;
+      seen.add(one.email.toLowerCase());
+      out.push(one);
+    };
+    // Without the scope, the profile's public address is still one GitHub verified.
+    for (const one of emails ?? (profile.email ? [{ email: profile.email, primary: false }] : [])) add({ email: one.email, kind: "verified", ...(one.primary ? { primary: true } : {}), ...(one.visibility === "private" ? { private: true } : {}) });
+    const local = localUser(folder, git ?? {});
+    if (local.email) add({ email: local.email, kind: "git", ...(local.name ? { name: local.name } : {}) });
+    return out;
+  }
+
+  /** The signer of one offered address: the account's name (or login); git config's own name with git config's address. */
+  const signerAs = (profile, one) => ({ name: one.kind === "git" && one.name ? one.name : (profile.name ?? profile.login), email: one.email, kind: one.kind, ...(one.private ? { private: true } : {}) });
+
+  /**
+   * The name and address the account's commits get: { name, email, kind, private?, fallback? }. `wanted`: "noreply" or
+   * an address, for this time (publish push --email); else the recorded choice. A recorded address the account no
+   * longer lists is dropped (`fallback: "gone"`); one that cannot be confirmed now (the addresses cannot be read, or
+   * git config gives another) is not used (`fallback: "unconfirmed"`): the private address, either way.
+   */
+  function signerOf(facts, folder, wanted = null) {
+    const { profile } = facts;
+    const all = offered(facts, folder);
+    if (wanted !== null) {
+      const one = wanted === "noreply" ? all[0] : all.find((o) => o.email.toLowerCase() === String(wanted).toLowerCase());
+      if (!one) {
+        const hint = facts.emails === null ? "GitHub CLI's sign-in may not read the account's e-mail addresses: the person grants it in a terminal (gh auth refresh -h github.com -s user:email), or chooses in Publish to GitHub. Without it: --email noreply, or the address git config user.email gives." : "Use --email noreply (GitHub's private address of the account), or ask the person to choose under Sign commits with in Publish to GitHub.";
+        throw new PublishError("email_not_offered", "The commit was not made: that address is not one the account can sign commits with (neither one GitHub has verified for the account nor the one git config user.email gives).", hint);
+      }
+      return signerAs(profile, one);
+    }
+    const recorded = signerChoices()[choiceKey(profile)];
+    if (recorded && recorded.email !== "noreply" && typeof recorded.email === "string") {
+      const one = all.find((o) => o.kind === recorded.kind && o.email.toLowerCase() === recorded.email.toLowerCase());
+      if (one) return signerAs(profile, recorded.kind === "git" && recorded.name ? { ...one, name: recorded.name } : one);
+      const gone = recorded.kind === "verified" && facts.emails !== null;
+      if (gone) forgetSigner({ profile });
+      return { ...signerAs(profile, all[0]), fallback: gone ? "gone" : "unconfirmed" };
+    }
+    return signerAs(profile, all[0]);
+  }
+
+  /**
+   * For the window's Sign commits with: { login, signer, offered, scope, grant }. `scope`: whether the sign-in may read
+   * the account's e-mail addresses; `grant`: the command that lets it. The person's own window alone gets the list.
+   */
+  async function signers({ folder = null, fresh = false } = {}) {
+    const { github, login: me } = await signedIn();
+    let facts;
+    try {
+      facts = await factsOf(github, me, { fresh });
+    } catch (e) {
+      throw human(e, { login: me });
+    }
+    return { login: me, signer: signerOf(facts, folder), offered: offered(facts, folder), scope: facts.emails !== null, grant: GRANT_EMAILS };
+  }
+
+  /** Sign commits with, the person's choice in the window: "noreply" or one of the offered addresses, for the account. */
+  async function chooseSigner({ email, folder = null }) {
+    if (typeof email !== "string" || (email !== "noreply" && !EMAIL.test(email))) throw new PublishError("usage", "Choose noreply or one of the addresses offered.", null);
+    const { github, login: me } = await signedIn();
+    let facts;
+    try {
+      facts = await factsOf(github, me);
+    } catch (e) {
+      throw human(e, { login: me });
+    }
+    const chosen = signerOf(facts, folder, email);
+    noteSigner(facts.profile, chosen);
+    log(`[github] commits of ${me} are signed with ${chosen.kind === "noreply" ? "GitHub's private address" : chosen.kind === "git" ? "git config's address" : "a verified address"} now`);
+    return { login: me, signer: chosen };
+  }
+
+  /** The signer of a push or a request as `session`, and its facts: { signer, profile }. Nothing is recorded here. */
+  async function signerFor(session, folder, wanted = null) {
+    let facts;
+    try {
+      facts = await factsOf(session.github, session.login);
+    } catch (e) {
+      throw human(e, { login: session.login });
+    }
+    return { signer: signerOf(facts, folder, wanted), profile: facts.profile };
+  }
+
+  /**
+   * After a commit as `signed` ({ signer, profile }, signerFor): an address publish push --email named becomes the
+   * account's choice now that a commit was made with it. Refused by GitHub (GH007): that address is no longer the
+   * account's choice, whoever chose it, and the refusal says whether the private address was the one refused.
+   */
+  function afterCommit(signed, { wanted = null, error = null } = {}) {
+    if (error?.code === "email_private") {
+      if (signed.signer.kind === "noreply") return Object.assign(error, { code: "email_refused" });
+      const recorded = signerChoices()[choiceKey(signed.profile)];
+      if (String(recorded?.email ?? "").toLowerCase() === signed.signer.email.toLowerCase()) forgetSigner({ profile: signed.profile });
+      return error;
+    }
+    if (!error && wanted !== null) noteSigner(signed.profile, signed.signer);
+    return error;
+  }
+
+  /**
+   * Who a push from `folder` would sign as now, nothing recorded: { login, signer }, for the question the app asks
+   * before a push or a request of the command line's. The address the command line names (--email) is not checked
+   * here: only after the person's yes, so that a program cannot learn from the answer which addresses are the account's.
+   */
+  async function signerNow({ folder = null } = {}) {
+    const session = await signedIn();
+    const { signer, profile } = await signerFor(session, folder);
+    return { login: session.login, signer, noreply: signerAs(profile, { email: noreplyAddress(profile), kind: "noreply" }) };
   }
 
   // ---------------------------------------------------------------- signing in
@@ -916,6 +1226,11 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
     cancelSignIn();
     await signing?.done.catch(() => {});
     const mine = noteOf();
+    // The address the account's commits were signed with goes with the sign-in (EMU-366).
+    if (mine) {
+      forgetSigner({ profile: accountFacts.get(mine.login.toLowerCase())?.profile ?? null, login: mine.login });
+      accountFacts.delete(mine.login.toLowerCase());
+    }
     let cliSignedOut = false;
     let switchedBack = false;
     // A newer GitHub CLI's configuration is not written to (docs/spikes/gh-compat-2026-11-12.md): only forgotten here.
@@ -1023,7 +1338,30 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
   }
 
   /**
-   * Where a push of the project goes, and what it does there: { owner, name, page, mode, suggestion, … }. `mode`:
+   * The repository's name Publish to GitHub offers for the project, and where it came from (`named`): the repository
+   * this app published it to ("published"), else the one Create app imported it from ("imported"), else the one its
+   * own git remote names on the signed-in account ("remote", EMU-358), else the last part of the app's id ("id").
+   * `remote`: the project's git remote as the window says it, { remote, repo, host, unreadable, why } (`remote` its name, null when
+   * not a plain one; `why` why it did not name the repository, "another_account" or "not_github", when the name is the
+   * id's); null without a remote.
+   */
+  function defaultName(folder, facts, owner) {
+    const mine = (who) => String(who).toLowerCase() === owner.toLowerCase();
+    const said = localRemote(folder);
+    // The remote's name is the project's text: said in the window only when it is a plain one.
+    const remote = said && { remote: /^[A-Za-z0-9._-]{1,40}$/.test(said.remote) ? said.remote : null, repo: said.github ? `${said.github.owner}/${said.github.name}` : null, host: said.host, unreadable: said.unreadable === true, why: null };
+    const remembered = ours(folder, owner);
+    if (remembered) return { name: remembered.name, named: "published", remote };
+    const imported = record?.get(folder).imported ?? null;
+    if (imported && mine(imported.owner)) return { name: imported.name, named: "imported", remote };
+    if (said?.github && mine(said.github.owner)) return { name: said.github.name, named: "remote", remote };
+    if (remote) remote.why = said.github ? "another_account" : "not_github";
+    return { name: String(facts?.id ?? "app").split(".").at(-1), named: "id", remote };
+  }
+
+  /**
+   * Where a push of the project goes, and what it does there: { owner, name, page, mode, suggestion, named, remote,
+   * … } (`named`, `remote`: defaultName(); `named` is "typed" for a name the person chose). `mode`:
    *   "new"       a new public repository of that name
    *   "replace"   the repository this app published the project to before (its own record says so, and the commit
    *               it noted is in that repository): its files become the project's; for one the person had before
@@ -1039,16 +1377,17 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
     // A push names the account it started as (`session`): the plan is made as that one, not as one chosen since (L4).
     const { github, login: owner } = session ?? (await signedIn());
     const remembered = ours(folder, owner);
-    const imported = record?.get(folder).imported ?? null;
-    const fromImport = imported && imported.owner.toLowerCase() === owner.toLowerCase() ? imported.name : null;
-    const name = chosen ?? remembered?.name ?? fromImport ?? String(facts?.id ?? "app").split(".").at(-1);
+    const { name: given, named: from, remote } = defaultName(folder, facts, owner);
+    const name = chosen ?? given;
     if (!REPO_NAME.test(name) || /^\.+$/.test(name)) throw new PublishError("bad_name", "A repository's name takes letters, digits, '.', '-' and '_'.", "Choose another name.");
+    // Where the name came from, for the words beside the field: a name typed that is the default's is the default's.
+    const named = chosen === null || chosen.toLowerCase() === given.toLowerCase() ? from : "typed";
     const page = `https://github.com/${owner}/${name}`;
     try {
       const there = await github.repo(owner, name);
-      if (!there) return { owner, name, page, mode: "new", suggestion: null };
+      if (!there) return { owner, name, page, mode: "new", suggestion: null, named, remote };
       const real = there.name ?? name;
-      const at = { owner, name: real, page: `https://github.com/${owner}/${real}`, branch: there.default_branch };
+      const at = { owner, name: real, page: `https://github.com/${owner}/${real}`, branch: there.default_branch, named, remote };
       const taken = async (reason) => ({ ...at, mode: "taken", reason, suggestion: suggest ? await freeName(github, owner, name) : null });
       // GitHub answers for a repository moved to another account under that account's name: not the person's.
       if (String(there.owner?.login ?? owner).toLowerCase() !== owner.toLowerCase()) return taken("not_yours");
@@ -1090,12 +1429,12 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
    * created, unchanged, mode }. `upload` hears the upload's progress (github-api.mjs pushFiles onProgress); Cancel
    * (cancel()) stops it before the branch is moved.
    */
-  async function push({ folder, status: facts, files: list, name: chosen = null, into = null, progress = () => {}, upload = () => {}, verify = null }) {
+  async function push({ folder, status: facts, files: list, name: chosen = null, into = null, email = null, progress = () => {}, upload = () => {}, verify = null }) {
     if (pushing) throw new PublishError("busy", "An upload is under way.", "Wait for it, or cancel it.");
     const stop = new AbortController();
     pushing = stop;
     try {
-      return await pushing_(stop.signal, { folder, facts, list, chosen, into, progress, upload, verify });
+      return await pushing_(stop.signal, { folder, facts, list, chosen, into, email, progress, upload, verify });
     } finally {
       if (pushing === stop) pushing = null;
     }
@@ -1117,7 +1456,10 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
     }
     if (where.mode === "diverged") {
       const many = where.ahead === 1 ? "a commit" : where.ahead ? `${where.ahead} commits` : "commits";
-      return new PublishError("remote_ahead", `github.com/${where.owner}/${where.name} has ${many} this project doesn't have, made on GitHub or on another computer. Nothing was sent.`, "Get them first: import the repository again (Create app, Import from GitHub), carry your changes over and publish from there.");
+      // A git clone of that very repository (its remote named it) gets them with git; another copy by importing it again
+      // (EMU-358): a clone of another repository would pull from that one.
+      const first = where.base === "git" && where.named === "remote" ? "Get them first: git pull in the project's folder, then publish again." : "Get them first: import the repository again (Create app, Import from GitHub), carry your changes over and publish from there.";
+      return new PublishError("remote_ahead", `github.com/${where.owner}/${where.name} has ${many} this project doesn't have, made on GitHub or on another computer. Nothing was sent.`, first);
     }
     if (where.mode === "existing") {
       if (!into || typeof into.head !== "string") return new PublishError("confirm_existing", `You have github.com/${where.owner}/${where.name} already, and this project was not published to it from here.`, "Confirm Publish into it in the window first.");
@@ -1126,10 +1468,13 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
     return null;
   }
 
-  async function pushing_(signal, { folder, facts, list, chosen, into, progress, upload, verify }) {
+  async function pushing_(signal, { folder, facts, list, chosen, into, email, progress, upload, verify }) {
     // The account signed in now is the push's to its end: choosing another meanwhile does not change it (L4).
     const session = await signedIn({ fresh: true });
     const { github } = session;
+    // Who the commit is signed by, before anything is sent (EMU-366); --email's address is checked here, after the yes.
+    const signed = await signerFor(session, folder, email);
+    const { signer } = signed;
     const flagged = unconfirmed(folder, list);
     if (flagged.length) throw new PublishError("secrets", `${flagged[0]} looks like a secret or personal data and would be published.`, "Keep it out in Repository files, or choose Publish it anyway there.");
     if (!facts.license?.ready) throw new PublishError("no_license", "The project has no license yet.", "Choose one in License.");
@@ -1162,7 +1507,8 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
         } catch (e) {
           // GitHub failed (5xx, or no answer), and may have made it all the same: a repository of that name there now,
           // where there was none a moment ago (plan()), is the one this request made.
-          if (e.code !== "server" && e.code !== "network") throw e;
+          // A timeout or a gh that ended with no answer may have left it made just the same (EMU-360 re-review).
+          if (!["server", "network", "timeout", "gh_failed"].includes(e.code)) throw e;
           const there = await github.repo(where.owner, where.name).catch(() => null);
           if (!there) throw e;
           made = { owner: there.owner?.login ?? where.owner, name: there.name ?? where.name, defaultBranch: there.default_branch };
@@ -1179,14 +1525,15 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
         created = true;
       }
       progress(`Uploading ${files.length} files`);
-      const pushed = await github.pushFiles({ owner: where.owner, name: where.name, branch, files, message: `${facts.name ?? facts.id}${facts.version ? ` ${facts.version}` : ""}`, mode: adding ? "add" : "replace", remove, onProgress: upload, signal });
+      const pushed = await github.pushFiles({ owner: where.owner, name: where.name, branch, files, message: `${facts.name ?? facts.id}${facts.version ? ` ${facts.version}` : ""}`, mode: adding ? "add" : "replace", remove, author: { name: signer.name, email: signer.email }, onProgress: upload, signal });
       progress("Checking what GitHub holds");
+      if (!pushed.unchanged) afterCommit(signed, { wanted: email });
       record?.pushed(folder, { owner: where.owner, name: where.name, commit: pushed.commit, ...(where.mode === "existing" ? { adopted: true } : {}) });
-      return { owner: where.owner, name: where.name, page: where.page, commit: pushed.commit, files: files.length, uploaded: pushed.uploaded, removed: pushed.removed ?? 0, created, unchanged: Boolean(pushed.unchanged), mode: where.mode, skipped };
+      return { owner: where.owner, name: where.name, page: where.page, commit: pushed.commit, files: files.length, uploaded: pushed.uploaded, removed: pushed.removed ?? 0, created, unchanged: Boolean(pushed.unchanged), mode: where.mode, skipped, signer };
     } catch (e) {
       if (e.code === "unauthorized" || e.code === "no_account") markStale();
       if (e.code === "canceled") throw new PublishError("upload_canceled", "The upload was stopped. The repository's files are as they were.", "Publish again when you want to.");
-      throw human(e, { name: where.name, login: where.owner });
+      throw human(afterCommit(signed, { error: e }), { name: where.name, login: where.owner });
     }
   }
 
@@ -1330,23 +1677,45 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
   }
 
   /**
+   * Where a pull request the project's record names stands now (EMU-360 review): { url, state: "open" | "closed" |
+   * "merged", commit }, read from GitHub. Only one of `catalog` ("owner/name") at github.com; else a PublishError.
+   */
+  async function pullState({ url, catalog }) {
+    const m = /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)\/pull\/(\d{1,9})$/.exec(String(url ?? ""));
+    const named = parseCatalog(catalog ?? "");
+    if (!m || !named || `${m[1]}/${m[2]}`.toLowerCase() !== `${named.owner}/${named.name}`.toLowerCase()) throw new PublishError("usage", "That is not a pull request of the catalog.", null);
+    const { github } = await signedIn();
+    try {
+      const one = await github.pull(m[1], m[2], Number(m[3]));
+      if (!one) return { url, state: "gone", commit: null };
+      return { url: one.url ?? url, state: one.state, commit: one.commit };
+    } catch (e) {
+      throw human(e);
+    }
+  }
+
+  /**
    * The pull request to the catalog. `facts`: `publish status`; `manifest`: submission/'s manifest.yml (its
    * sourcecode block is made here, from the repository this app published to); `testing`: the pull request text's
    * "Device testing" part from submission/; `ticked`: the texts of the checklist's boxes the person ticked — every box
    * of the template they were shown (checklist()) must be among them, or nothing is sent. `otherCatalog`: a catalog
    * that is not one of BUSY's goes only when the person confirmed it by its name, "owner/name" (L3).
    */
-  async function request({ status: facts, files: list, folder, catalog: given, ticked, ai, manifest, changelog = null, testing = null, otherCatalog = null, progress = () => {} }) {
+  async function request({ status: facts, files: list, folder, catalog: given, ticked, ai, aiNote = null, manifest, changelog = null, testing = null, otherCatalog = null, progress = () => {} }) {
     if (changelog !== null && typeof changelog !== "string") throw new PublishError("usage", "What's new is a text.", null);
     if (!Array.isArray(ticked) || ticked.some((one) => typeof one !== "string")) throw new PublishError("not_ticked", "Tick every item of the catalog's checklist first.", null);
     if (!AI_CHOICES.includes(ai)) throw new PublishError("no_ai_choice", "Say how AI was used in the app.", null);
+    if (aiNote !== null && typeof aiNote !== "string") throw new PublishError("usage", "The explanation of the AI usage is a text.", null);
+    const noteProblem = aiNoteProblem(ai, aiNote);
+    if (noteProblem) throw noteProblem;
     const catalog = parseCatalog(given ?? facts.catalog);
     if (!catalog) throw new PublishError("bad_catalog", "The catalog is a GitHub repository: owner/name, or its address.", null);
     const named = `${catalog.owner}/${catalog.name}`;
     if (!knownCatalog(catalog) && String(otherCatalog ?? "").toLowerCase() !== named.toLowerCase()) throw new PublishError("other_catalog", `${named} is not BUSY's catalog (${BUSY_CATALOGS[0]}): the project or the command names it, and nothing is sent there unless you confirm it.`, `Send it to ${BUSY_CATALOGS[0]}, or confirm ${named} when the emulator asks.`);
     if (!/^[a-z0-9_.-]{1,63}$/.test(facts.id ?? "") || !/^[0-9A-Za-z.+-]{1,40}$/.test(facts.version ?? "")) throw new PublishError("no_version", "The app's manifest has no id or version the catalog takes.", "Fix src/appmeta/manifest.json, then build and package again.");
     // The account signed in now is the request's to its end: choosing another meanwhile does not change it (L4).
-    const { github, login: me } = await signedIn({ fresh: true });
+    const session = await signedIn({ fresh: true });
+    const { github, login: me } = session;
     const repo = ours(folder, me);
     if (!repo) throw new PublishError("not_pushed", "The app is not on GitHub from this computer yet.", "Publish to GitHub first.");
     let text = typeof manifest === "string" ? locatedManifest(manifest, repo) : null;
@@ -1364,6 +1733,8 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
     if (tooLong) throw tooLong;
     const missing = shown.required.filter((one) => !ticked.includes(one));
     if (missing.length) throw new PublishError("not_ticked", `Tick every item of the catalog's checklist first: ${missing.length === 1 ? "one is" : `${missing.length} are`} not ticked.`, templates.has(key) ? null : "Open Send to catalog in the window to see the checklist.");
+    // Who the manifest's commit is signed by (EMU-366): known once it is asked, for what a refusal does to the choice.
+    let signed = null;
     try {
       // The commit on GitHub must still be what the project holds: the catalog builds exactly that commit.
       progress("Comparing the project with GitHub");
@@ -1381,6 +1752,8 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
       const found = await entryOf(github, me, catalog, facts);
       const refused = updateRefusal(found, facts, changelog ?? readCatalogManifest(text).changelog);
       if (refused) throw refused;
+      signed = await signerFor(session, folder);
+      const { signer } = signed;
       progress(`Opening the request in ${catalog.owner}/${catalog.name}`);
       const appName = facts.name ?? facts.id;
       const title = found.exists ? `Update ${appName} to ${facts.version}` : `Add ${appName} ${facts.version}`;
@@ -1391,15 +1764,22 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
         files: [{ path: `applications/${facts.id}/manifest.yml`, bytes: Buffer.from(text) }],
         message: title,
         title,
-        body: fillTemplate(template, { ai, ticked, testing }),
+        body: fillTemplate(template, { ai, aiNote, ticked, testing }),
+        author: { name: signer.name, email: signer.email },
       });
       // The optional items, and whether the request has them ticked: an agent can say so to the person (EMU-313).
       const optional = shown.boxes.filter(isOptionalBox).map((one) => ({ item: boxLabel(one), ticked: ticked.includes(one) }));
-      return { url: made.url, number: made.number, created: made.created, direct: made.direct, branch: made.branch, catalog: `${catalog.owner}/${catalog.name}`, repo: `https://github.com/${repo.owner}/${repo.name}`, commit: repo.commit, update: found.exists, title, optional };
+      return { url: made.url, number: made.number, created: made.created, unchanged: made.unchanged === true, direct: made.direct, branch: made.branch, catalog: `${catalog.owner}/${catalog.name}`, repo: `https://github.com/${repo.owner}/${repo.name}`, commit: repo.commit, update: found.exists, title, optional, signer };
     } catch (e) {
       if (e instanceof PublishError) throw e;
       if (e.code === "unauthorized") markStale();
-      throw human(e);
+      // What GitHub has made of the request so far (the fork, the branch; EMU-360): the window says it, and Try again
+      // goes on from there.
+      const said = human(signed ? afterCommit(signed, { error: e }) : e);
+      if (e?.made && (e.made.fork || e.made.branch)) said.done = { fork: e.made.fork ?? null, branch: e.made.branch ?? null };
+      // Where it failed, for the window's words: the fork, a push (to the fork, or the catalog's own branch), the pull request.
+      if (typeof e?.at === "string") said.where = { at: e.at, direct: e.direct === true };
+      throw said;
     }
   }
 
@@ -1631,5 +2011,5 @@ export function createGithubPublish({ gh, dataDir, configDir = null, record = nu
     });
   }
 
-  return { record, status, accounts, cliAccount, knownLogin, useExisting, signIn, waitSignIn, cancelSignIn, openCodePage, signOut, plan, push, cancel, checklist, request, requestTarget, parseCatalog, entry, lookup, download, downloadRelease };
+  return { record, status, accounts, cliAccount, knownLogin, useExisting, signIn, waitSignIn, cancelSignIn, openCodePage, signOut, plan, push, cancel, checklist, request, requestTarget, pullState, parseCatalog, entry, lookup, download, downloadRelease, signers, chooseSigner, signerOf: signerNow };
 }

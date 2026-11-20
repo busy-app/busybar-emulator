@@ -27,7 +27,12 @@
 //   takes "C:" for a host), on macOS /usr/bin (the system's tar before one of Homebrew), then the caller's PATH.
 // - Node's compile cache, which npm turns on, in the data folder too (NODE_COMPILE_CACHE; otherwise it goes to the
 //   system's temporary folder).
-// - macOS: COPYFILE_DISABLE=1, so that the system's tar packs no AppleDouble (._*) files into the app's package.
+// - macOS: COPYFILE_DISABLE=1, so that the system's tar packs no AppleDouble (._*) files into the app's package, and
+//   a `tar` in tools/bin that is the system's with --no-xattrs (EMU-345): COPYFILE_DISABLE does not stop bsdtar from
+//   writing a file's extended attributes (com.apple.provenance, com.apple.quarantine, which macOS puts on the files
+//   of a folder under /private/tmp or of a download) as PAX headers ("PaxHeader/<name>" entries), which the BUSY Bar
+//   does not extract and logs. busy-cli packs by calling `tar` by name. A file name outside ASCII or over 100
+//   characters still gets a PAX header for its path (EMU-347).
 //
 // The `npm` and `npx` in tools/bin are scripts that start the bundled Node on npm-cli.js and npx-cli.js. The paths come
 // from the environment (BUSY_EMULATOR_NODE, BUSY_EMULATOR_NPM_CLI, BUSY_EMULATOR_NPX_CLI), not from the file: a batch
@@ -157,6 +162,7 @@ export function toolEnvironment(env, { platform, tools, dataDir, windowsDir = nu
 export function shimFiles(platform) {
   const sh = (cli) => `#!/bin/sh\n# BUSY Bar Emulator: npm on the Node inside the app, for the scripts of a project it builds.\nexec "$BUSY_EMULATOR_NODE" "$${cli}" "$@"\n`;
   const files = { npm: sh("BUSY_EMULATOR_NPM_CLI"), npx: sh("BUSY_EMULATOR_NPX_CLI") };
+  if (platform === "darwin") files.tar = `#!/bin/sh\n# BUSY Bar Emulator: the system's tar without the files' extended attributes, which it would pack as PAX headers.\nexec /usr/bin/tar --no-xattrs "$@"\n`;
   if (platform === "win32") {
     // cmd.exe runs npm.cmd for a script that says `npm`; the sh scripts beside it are for a script-shell of sh.
     const cmd = (cli) => `@"%BUSY_EMULATOR_NODE%" "%${cli}%" %*\r\n`;

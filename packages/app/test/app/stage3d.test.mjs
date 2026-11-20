@@ -2,7 +2,7 @@
 // mounted by legacy-window/stage3d/mount.js. The shell's own rules hold for it as for every page: the frame comes
 // from the server's address, asks for nothing else, and has no rights.
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { sleep, until } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";

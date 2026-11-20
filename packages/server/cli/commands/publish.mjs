@@ -22,14 +22,16 @@
 //                                   --upload: PNGs made before (a JSON list, or paths joined as in PATH), each 72×16 or
 //                                   160×80 or an exact enlargement of one; copied in as front-<n>.png or back-<n>.png;
 //                                   --display takes only that display's
-//   publish readme [get|set|preview] [<folder>] [--mode fields|markdown] [--title <text>] [--intro <text>]
+//   publish readme [get|set|preview] [<folder>] [--mode fields|markdown|file] [--keep] [--title <text>] [--intro <text>]
 //                                   [--controls <json>] [--usage <text>] [--markdown <text>]
 //                                   the public repository's README: made from the catalog texts, the screenshots, the
-//                                   settings and the license, with How to use written by you (or your own Markdown);
+//                                   settings and the license, with How to use (optional) written by you (or your own Markdown);
 //                                   set writes README.md, preview only shows it; the template's text is never kept.
 //                                   --controls: How to use's rows, one per control of the BUSY Bar (Start, Wheel turn,
 //                                   Wheel press, Back) with a sentence (../../publish/how-to-use.mjs); with it --usage is
-//                                   the sentence after the rows
+//                                   the sentence after the rows. --keep (or --mode file): the project's README.md as it
+//                                   is (EMU-365), never written; its checks are hints; another README over it needs
+//                                   --replace
 //   publish package [<folder>]      the catalog's checks, then submission/ (the manifest; its repository and commit
 //                                   are filled in stage 2); the project must be built
 //   publish prepare [<folder>] --license <id> [--author <name>]
@@ -45,13 +47,18 @@
 //                                   account is added to GitHub CLI on this computer, which goes on using its own.
 //                                   --no-wait: the code at once, the app goes on waiting; publish signin again waits
 //   publish signout                 forgets the sign-in in the app; GitHub CLI's accounts are left as they are
-//   publish push [<folder>] [--name <repository>]
+//   publish push [<folder>] [--name <repository>] [--email noreply|<address>]
 //                                   the project's files in the person's public repository, one commit, read back;
-//                                   the person confirms in the app's dialog first
-//   publish pr [<folder>] --ai none|partly|full [--catalog <owner/name or address>]
+//                                   the person confirms in the app's dialog first, which names the commit's author.
+//                                   --email (EMU-366): the address the commit is signed with, kept for the account's
+//                                   next commits: noreply (GitHub's private address of the account, the default), or
+//                                   one GitHub has verified for the account, or the one git config user.email gives
+//   publish pr [<folder>] --ai none|partly|full [--ai-note <text>] [--catalog <owner/name or address>]
 //                                   the pull request to the catalog; the person confirms in the app's dialog and ticks
 //                                   there the catalog's author checklist, and the optional items they choose (the
-//                                   contest's); the answer's `optional` says which optional items the request ticks
+//                                   contest's); the answer's `optional` says which optional items the request ticks.
+//                                   --ai-note: for partly and full, required (EMU-359): what AI made and what it does,
+//                                   as the catalog's template asks; the dialog shows it to the person
 // And what the app did is noted here, so that the record and the manifest are written by the same code as stage 1's.
 // These only write the project's own files; what the app may replace or send is decided by its own record
 // (packages/app/src/github/publish-record.mjs), so a project that arrives with such a note, or a note written by hand,
@@ -59,8 +66,12 @@
 //   publish pushed [<folder>] --owner <login> --repo <name> --commit <sha>
 //                                   the project is in github.com/<login>/<name> at <sha>: noted, and the manifest of
 //                                   submission/ names them
-//   publish requested [<folder>] --pr <url> --catalog <owner/name>
-//                                   the pull request to the catalog is open: noted
+//   publish requested [<folder>] --pr <url> --catalog <owner/name> [--commit <sha>] [--created yes|no]
+//                                   the pull request to the catalog is open: noted, with the commit it names and
+//                                   whether it was opened now or an open one updated
+//   publish ai [<folder>] --ai none|partly|full [--ai-note <text>]
+//                                   the AI usage and its explanation as the person gave them in the window: noted, so
+//                                   that Send to catalog opens with them again (EMU-359)
 //   publish verify [<folder>]       whether the check and the package still hold for the project as it is, with the
 //                                   hash of every file the check saw: the app asks it right before it uploads or sends
 //
@@ -78,16 +89,52 @@ import { SANDBOX_CODES } from "../system.mjs";
 import { runCheck } from "./check.mjs";
 import { textsAnswer } from "./catalog-texts.mjs";
 
-const STEPS = ["status", "check", "license", "files", "screenshots", "readme", "package", "prepare", "signin", "signout", "push", "pr", "pushed", "requested", "verify"];
+const STEPS = ["status", "check", "license", "files", "screenshots", "readme", "package", "prepare", "signin", "signout", "push", "pr", "pushed", "requested", "ai", "verify"];
 /**
  * What the app runs after it has published (it alone decides what it may replace or send: its own record, not the
  * project's .busy/publish.json): not listed for people.
  */
-const APP_ONLY = new Set(["pushed", "requested", "verify"]);
+const APP_ONLY = new Set(["pushed", "requested", "ai", "verify"]);
 /** The steps of stage 2 the emulator's app does, which hold no project or not one of the folder given. */
 const NO_PROJECT = new Set(["signin", "signout"]);
 const AI = ["none", "partly", "full"];
-const USAGE = "publish status|check|license|files|screenshots|readme|package|prepare|signin|signout|push|pr [<folder>] [--name <repository>] [--catalog <owner/name>] [--ai none|partly|full] [--use-existing|--new-account] [--user <login>] [--no-wait] [--license <id>] [--author <name>] [--year <n>] [--from <file>] [--replace] [--write] [--keep-out <path>] [--keep-in <path>] [--readme replace] [--take front|back] [--upload <files>] [--display front|back] [--order <json>] [--remove <path>] [--mode fields|markdown] [--title <text>] [--intro <text>] [--controls <json>] [--usage <text>] [--markdown <text>]";
+/** The AI usages the catalog asks to explain, and the longest explanation sent (the app's publish-flow.mjs MAX_AI_NOTE). */
+const AI_NOTED = ["partly", "full"];
+const MAX_AI_NOTE = 1000;
+/**
+ * The explanation as one line, as the app counts it, tokens masked as the app masks them (publish-flow.mjs aiNoteLine
+ * and maskTokens, without its character rules).
+ */
+const noteLine = (text) =>
+  String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{8,}/g, "…")
+    .replace(/[A-Za-z0-9_]{36,}/g, "…");
+/** Why --ai and --ai-note do not go together, or null (EMU-359). */
+function aiNoteRefusal(ai, note, step) {
+  const line = noteLine(note);
+  if (!AI_NOTED.includes(ai)) return note !== undefined && line ? usage(`--ai-note goes with --ai partly or full, not ${ai}.`) : null;
+  if (!line) {
+    const asks = ai === "full" ? "what the generated code does" : "which parts AI made, and what they do";
+    return new CliError("usage", `publish ${step} --ai ${ai} needs --ai-note: the catalog's template asks ${asks}.`, `Write it with the person, in a sentence or two (up to ${MAX_AI_NOTE} characters): --ai-note "<text>". The app's dialog shows it to them before anything is sent.`);
+  }
+  if (line.length > MAX_AI_NOTE) return usage(`--ai-note is ${line.length} characters long; it takes up to ${MAX_AI_NOTE}.`);
+  return null;
+}
+/** An address --email takes (the app checks it is one the account may sign with): the app's local-git.mjs EMAIL. */
+const COMMIT_EMAIL = /^[^\s<>@,;"]{1,64}@[^\s<>@,;"]{1,189}$/;
+/**
+ * The sentence that says who a commit is signed by (EMU-366). A push's answer names the author it made the commit with
+ * (`email`, the person's choice, public on the commit); the sign-in's names only the kind of address, never one.
+ */
+function signedLine(signer) {
+  if (!signer || typeof signer.kind !== "string") return "";
+  const what = signer.kind === "noreply" ? "GitHub's private address of the account, which shows no e-mail" : signer.kind === "git" ? "the address git config gives, which GitHub has not verified for the account" : "an address of the account, which anyone can see on the commit";
+  const fell = signer.fallback ? " (the address chosen before can't be used now)" : "";
+  return ` Commits are signed ${typeof signer.email === "string" ? `${signer.name} <${signer.email}>, ` : "with "}${what}${fell}; the person chooses another in Publish to GitHub, or with publish push --email.`;
+}
+const USAGE = "publish status|check|license|files|screenshots|readme|package|prepare|signin|signout|push|pr [<folder>] [--name <repository>] [--email noreply|<address>] [--catalog <owner/name>] [--ai none|partly|full] [--ai-note <text>] [--use-existing|--new-account] [--user <login>] [--no-wait] [--license <id>] [--author <name>] [--year <n>] [--from <file>] [--replace] [--write] [--keep-out <path>] [--keep-in <path>] [--readme replace] [--take front|back] [--upload <files>] [--display front|back] [--order <json>] [--remove <path>] [--mode fields|markdown|file] [--keep] [--title <text>] [--intro <text>] [--controls <json>] [--usage <text>] [--markdown <text>]";
 const usage = (message) => new CliError("usage", message, `Usage: busy-emulator ${USAGE}`);
 /**
  * How to use's rows from --controls: a JSON list of { control, text } or an object { "<control>": "<text>" }, the
@@ -128,9 +175,11 @@ const DETAILS = [
   "  publish screenshots [<folder>] --upload <files> [--display front|back]   PNGs made before: 72×16 front, 160×80 back, or exact enlargements; a JSON list or paths joined as in PATH",
   "  publish screenshots [<folder>] --order <json> | --remove <path>   the order (the first front one is the cover), or one less",
   "  publish readme get|preview|set [<folder>] [--controls <json>] [--usage <text>] [--title <text>] [--intro <text>]",
-  "                                     the public repository's README. --controls: How to use's rows, one per control of the BUSY Bar with a sentence:",
+  "                                     the public repository's README. --controls (optional): How to use's rows, one per control of the BUSY Bar with a sentence:",
   `                                     '{"Start": "Starts or pauses", "Wheel turn": "Sets the minutes", "Wheel press": "Resets", "Back": "Exits"}'`,
   "                                     (controls: Start, Wheel turn, Wheel press, Back); --usage is the sentence after them. --mode markdown --markdown <text>: your own README",
+  "  publish readme set [<folder>] --keep   the project's README.md as it is, written elsewhere: never written or changed; what would be checked comes as hints",
+  "                                     (links outside the app's folder, files not published); leaving it for another README needs --replace",
   "  publish license [<folder>] --license MIT|Apache-2.0|GPL-3.0 [--author <name>] [--year <n>]   the person's choice, never made for them",
   "  publish license [<folder>] --license other --from <file> [--replace]   the person's own license file, copied in as LICENSE",
   "  publish files [<folder>] [--write] [--keep-out <path>] [--keep-in <path>]   what the public repository will hold; --write adds .gitignore lines",
@@ -141,10 +190,11 @@ const DETAILS = [
   "  publish signin                     choose_account: GitHub CLI has accounts; ask the person which one:",
   "  publish signin --use-existing [--user <login>]          one of GitHub CLI's accounts (the person agrees in the app's dialog)",
   "  publish signin --new-account [--no-wait]                a code for github.com/login/device; --no-wait answers with it at once, publish signin again waits",
-  "  publish push [<folder>] [--name <repository>]           the project's files to the person's public repository (the person confirms); refused when a file changed since publish check or publish package",
-  "  publish pr [<folder>] --ai none|partly|full [--catalog <owner/name>]   the pull request to busy-app/busy-apps-catalog; the person confirms and ticks the author checklist in the app, and the optional items (the contest's) they choose; the answer's optional says which are ticked (--catalog is for development and tests; a catalog that is not BUSY's needs a second confirmation)",
+  "  publish push [<folder>] [--name <repository>] [--email noreply|<address>]   the project's files to the person's public repository (the person confirms); refused when a file changed since publish check or publish package",
+  "                                     --email: the address the commit is signed with, the person's choice: noreply (GitHub's private address of the account, the default) or an address of theirs; kept for the account",
+  "  publish pr [<folder>] --ai none|partly|full [--ai-note <text>] [--catalog <owner/name>]   the pull request to busy-app/busy-apps-catalog; --ai partly and full need --ai-note, what AI made and what it does, written with the person; the person confirms and ticks the author checklist in the app, and the optional items (the contest's) they choose; the answer's optional says which are ticked (--catalog is for development and tests; a catalog that is not BUSY's needs a second confirmation)",
   "  publish signout                    forgets the sign-in in the emulator; GitHub CLI's accounts stay",
-  "Only the person: choose the license, the AI usage and the GitHub account, sign in, confirm push and pull request, tick the author checklist and its optional items. Ask them; never pick for them.",
+  "Only the person: choose the license, the AI usage (and agree to its explanation), the GitHub account and the address its commits are signed with, sign in, confirm push and pull request, tick the author checklist and its optional items. Ask them; never pick for them.",
 ];
 
 const lib = () => import("../../publish/files.mjs");
@@ -234,33 +284,51 @@ async function filesAnswer(dir, more = []) {
     ignore_missing: plan.lines,
     readme,
     findings,
-    ready: plan.lines.length === 0 && (readme === "ours" || readme === "yours") && !findings.some((one) => one.published && !one.kept_in),
+    ready: plan.lines.length === 0 && ["ours", "yours", "kept"].includes(readme) && !findings.some((one) => one.published && !one.kept_in),
   };
 }
 
 /**
  * The README step: what it is made from, the configuration (saved, or the default; a README of the person's own opens
- * as its Markdown), the Markdown it makes, what holds it back, and the README.md there now.
+ * as its Markdown), the Markdown it makes, what holds it back, and the README.md there now. With mode "file" the
+ * project's README.md is used as it is (EMU-365): `kept`, ready when the file is there and not empty, and what the
+ * step would check of it said as `file_hints`, never fixed.
  */
 async function readmeAnswer(dir, project, given = null) {
-  const { readmeFacts, readmeFile, readmeState, readProgress } = await lib();
-  const { readmeConfig, readmeMarkdown, readmeProblem, templateLeft } = await import("../../publish/readme.mjs");
+  const { readmeFacts, readmeFile, readmeFileHints, readmeState, readProgress } = await lib();
+  const { fileProblem, readmeConfig, readmeMarkdown, readmeProblem, templateLeft } = await import("../../publish/readme.mjs");
   const howToUse = await import("../../publish/how-to-use.mjs");
   const { texts } = await textsAnswer(dir);
-  const facts = readmeFacts(dir, { name: (await appOf(dir)).name ?? project.id, id: project.id, texts });
+  const file = readmeFile(dir);
+  // facts.file: the project's README.md, for mode "file" (its preview and its check), null when there is none.
+  const facts = { ...readmeFacts(dir, { name: (await appOf(dir)).name ?? project.id, id: project.id, texts }), file };
   const progress = readProgress(dir);
   const state = readmeState(dir, progress);
-  const file = readmeFile(dir);
   const saved = progress.steps?.readme?.config ?? null;
   const start = saved ?? (state === "yours" ? { mode: "markdown", markdown: file } : null);
-  const config = readmeConfig(given ? { ...readmeConfig(start, facts), ...given } : start, facts);
+  // Out of mode "file" into Markdown without a text: the file's own, so that nothing of it is lost.
+  const take = given && saved?.mode === "file" && given.mode === "markdown" && given.markdown === undefined ? { markdown: file ?? "" } : {};
+  const config = readmeConfig(given ? { ...readmeConfig(start, facts), ...take, ...given } : start, facts);
+  const kept = config.mode === "file";
   const left = templateLeft(file ?? "");
-  // How to use: the README.md there must have its section, at least one control and its sentence (how-to-use.mjs).
-  const usage = howToUse.problem(howToUse.read(file ?? ""));
+  // How to use is optional (EMU-364: the catalog does not read it yet). Only rows made from the fields (the step's own
+  // editor, --usage and --controls) hold it back when they are written wrong (how-to-use.mjs sectionProblem); a
+  // section of the person's own Markdown or README.md is said as a hint (sectionHint), never a block.
+  const there = howToUse.read(file ?? "");
+  const fields = config.mode === "fields";
+  const usage = fields && state === "ours" ? howToUse.sectionProblem(there) : null;
   // The rows as the README made from this configuration holds them (publish readme --controls writes them).
   const markdown = readmeMarkdown(config, facts);
-  const controls = howToUse.read(markdown).filter((row) => row.control);
-  return { state, saved: saved !== null, config, controls, control_names: howToUse.CONTROLS, facts, markdown, problem: readmeProblem(config, facts), how_to_use: usage, left, ready: (state === "ours" || state === "yours") && left.length === 0 && usage === null };
+  const made = howToUse.read(markdown);
+  const controls = made.filter((row) => row.control);
+  // What set refuses: the README's own problem, then How to use's rows as the fields write them; of the person's own
+  // file used as it is, only that it is there.
+  const problem = readmeProblem(config, facts) ?? (fields ? howToUse.sectionProblem(made) : null);
+  // The hint: by the README given (preview, set), else by the README.md there (or the one it would make).
+  const hint = usage ? null : howToUse.sectionHint(given || file === null ? made : there);
+  const ready = kept ? state === "kept" : (state === "ours" || state === "yours") && left.length === 0 && usage === null;
+  // The file's hints only when it is used as it is: they walk the project's tree (EMU-365 review).
+  return { state, saved: saved !== null, config, kept, keep_problem: fileProblem(file), file_hints: kept ? readmeFileHints(dir, file) : [], controls, control_names: howToUse.CONTROLS, facts, markdown, problem, how_to_use: usage, how_to_use_hint: hint, left, ready };
 }
 
 /** The app's two icons as they are in the project, as data: addresses (null for one that is not there or too large). */
@@ -397,9 +465,16 @@ async function status(ctx, project) {
     files,
     package: pkg,
     catalog: CATALOG_REPOSITORY,
-    github: { repo: progress.steps?.push ?? null, request: progress.steps?.request ?? null },
+    github: { repo: progress.steps?.push ?? null, request: progress.steps?.request ?? null, ai: aiShown(progress.steps?.ai) },
     by_hand: await byHand(dir, CATALOG_REPOSITORY),
   };
+}
+
+/** The noted AI usage (publish ai) as status shows it, { choice, note }; null when there is none or it is not one. */
+function aiShown(noted) {
+  if (!noted || !AI.includes(noted.choice)) return null;
+  const note = typeof noted.note === "string" && AI_NOTED.includes(noted.choice) ? noteLine(noted.note).slice(0, MAX_AI_NOTE) : "";
+  return { choice: noted.choice, note };
 }
 
 /** Seconds a sign-in waits for the person's code: GitHub's codes live 15 minutes. */
@@ -520,12 +595,33 @@ async function pushed(ctx, sys, project, options) {
 async function requested(ctx, sys, project, options) {
   const { noteStep } = await lib();
   if (!/^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+\/pull\/\d+$/.test(options.pr ?? "") || !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(options.catalog ?? "")) throw usage("publish requested takes --pr <https://github.com/…/pull/N> --catalog <owner/name>.");
+  if (options.commit !== undefined && !/^[0-9a-f]{40}$/.test(options.commit)) throw usage("--commit takes the commit's 40 hexadecimal digits.");
+  if (options.created !== undefined && !["yes", "no"].includes(options.created)) throw usage("--created takes yes or no.");
   try {
-    noteStep(project.dir, "request", { url: options.pr, catalog: options.catalog }, sys.now());
+    noteStep(project.dir, "request", { url: options.pr, catalog: options.catalog, ...(options.commit ? { commit: options.commit } : {}), ...(options.created ? { created: options.created === "yes" } : {}) }, sys.now());
   } catch (e) {
     throw writeError(e, project.dir);
   }
   return { url: options.pr, catalog: options.catalog };
+}
+
+/**
+ * The AI usage and its explanation, as the person gave them in the window (EMU-359): noted, so that Send to catalog
+ * opens with them; an explanation the choice does not take is not kept. The request takes them from the window, not
+ * from here.
+ */
+async function aiNoted(sys, project, options) {
+  const { noteStep } = await lib();
+  if (!AI.includes(options.ai)) throw usage(`publish ai takes --ai ${AI.join("|")}.`);
+  const note = noteLine(options.aiNote);
+  if (note.length > MAX_AI_NOTE) throw usage(`--ai-note is ${note.length} characters long; it takes up to ${MAX_AI_NOTE}.`);
+  const data = { choice: options.ai, note: AI_NOTED.includes(options.ai) ? note : "" };
+  try {
+    noteStep(project.dir, "ai", data, sys.now());
+  } catch (e) {
+    throw writeError(e, project.dir);
+  }
+  return data;
 }
 
 /**
@@ -622,6 +718,11 @@ async function files(ctx, sys, project, options) {
   const keepIn = options.keepIn === undefined ? null : relativePath(options.keepIn, "--keep-in");
   if (!options.write && (out.length || keepIn || options.readme)) throw usage("--keep-out, --keep-in and --readme change files: give --write with them.");
   if (!options.write) return filesAnswer(dir);
+  // A README.md that was used as it is and is gone since: not made from the fields behind the person's back (EMU-365).
+  const was = readProgress(dir);
+  if (was.steps?.readme?.config?.mode === "file" && readmeState(dir, was) === "none" && options.readme !== "replace") {
+    throw new CliError("readme_gone", "README.md was used as it is, and it is not in the project any more: nothing was written.", `Put the file back, or choose another README in the README step (${commandFor(ctx, project, "publish readme set --mode fields")}).`);
+  }
   const written = [];
   try {
     // A file kept in on purpose stays in: the flow does not keep it out by default again (flaggedOut).
@@ -656,11 +757,13 @@ async function files(ctx, sys, project, options) {
     const progress = readProgress(dir);
     const state = readmeState(dir, progress);
     // The README step's README, made again with the project as it is now (the texts or screenshots may have changed).
+    // One kept as it is (mode "file", EMU-365) is never made again, but by --readme replace, from the fields then.
     if (state === "none" || state === "template" || state === "ours" || options.readme === "replace") {
       const { texts } = await textsAnswer(dir);
       const facts = readmeFacts(dir, { name: (await appOf(dir)).name ?? project.id, id: project.id, texts });
       const before = readFileSync(path.join(dir, "README.md"), { encoding: "utf8", flag: "a+" });
-      const made = writeReadme(dir, readmeSaved(dir, facts, progress), facts, sys.now());
+      const config = readmeSaved(dir, facts, progress);
+      const made = writeReadme(dir, config.mode === "file" ? { ...config, mode: "fields" } : config, facts, sys.now());
       if (made.text !== before) written.push("README.md");
     }
     noteStep(dir, "files", { kept_in: [...keptIn], ignore_added: ignoreAdded }, sys.now());
@@ -839,7 +942,8 @@ export default {
     "--display": { key: "display", value: "front|back" },
     "--from": { key: "from", value: "<file>" },
     "--replace": { key: "replace" },
-    "--mode": { key: "mode", value: "fields|markdown" },
+    "--mode": { key: "mode", value: "fields|markdown|file" },
+    "--keep": { key: "keep" },
     "--title": { key: "title", value: "<text>" },
     "--intro": { key: "intro", value: "<text>" },
     "--usage": { key: "usageText", value: "<text>" },
@@ -850,9 +954,12 @@ export default {
     "--repo": { key: "repo", value: "<name>" },
     "--commit": { key: "commit", value: "<sha>" },
     "--pr": { key: "pr", value: "<url>" },
+    "--created": { key: "created", value: "yes|no" },
     "--catalog": { key: "catalog", value: "<owner/name>" },
     "--name": { key: "name", value: "<repository>" },
+    "--email": { key: "email", value: "noreply|<address>" },
     "--ai": { key: "ai", value: "none|partly|full" },
+    "--ai-note": { key: "aiNote", value: "<text>" },
     "--use-existing": { key: "useExisting" },
     "--new-account": { key: "newAccount" },
     "--user": { key: "user", value: "<login>" },
@@ -876,13 +983,23 @@ export default {
       const now = await askApp(ctx, sys, { op: "status" });
       if (!now.configured) throw new CliError("not_configured", "GitHub CLI is not in this build, so it cannot sign in to GitHub.", "Send the app by hand: the steps are in SUBMIT.md in the project's submission folder.");
       const accounts = Array.isArray(now.accounts) ? now.accounts.filter((one) => one && typeof one.login === "string").map((one) => ({ login: one.login, active: one.active === true })) : now.existing ? [{ login: now.existing, active: true }] : [];
+      // Who the commits are signed by (EMU-366): the account's choice, said with the sign-in; none when it can't be read.
+      const signerNow = async () => {
+        try {
+          return (await askApp(ctx, sys, { op: "signer" })).signer ?? null;
+        } catch {
+          return null;
+        }
+      };
       if (now.signedIn) {
         if (options.user !== undefined && options.user.toLowerCase() !== String(now.login).toLowerCase()) throw new CliError("signed_in_other", `BUSY Bar Emulator publishes as ${now.login}, not ${options.user}.`, `Ask the person; to publish as ${options.user}, run publish signout, then publish signin --user ${options.user}.`, { login: now.login, accounts });
-        return { data: { login: now.login, signedIn: true, before: true, origin: now.origin, accounts }, text: `Signed in to GitHub as ${now.login} already.` };
+        const signer = await signerNow();
+        return { data: { login: now.login, signedIn: true, before: true, origin: now.origin, accounts, signer }, text: `Signed in to GitHub as ${now.login} already.${signedLine(signer)}` };
       }
-      const said = (done, code = null) => {
+      const said = async (done, code = null) => {
         const cli = done.kept ? `GitHub CLI on this computer goes on using ${done.kept}; the emulator publishes as ${done.login}.` : done.renewed && done.previous ? `GitHub CLI on this computer now uses its account ${done.login}, instead of ${done.previous}.` : done.renewed ? `GitHub CLI's own sign-in for ${done.login} on this computer was renewed.` : done.previous ? `GitHub CLI on this computer now uses ${done.login} too, instead of ${done.previous}.` : "This also signed in GitHub CLI on this computer.";
-        return { data: { login: done.login, signedIn: true, before: false, origin: done.origin, previous: done.previous ?? null, kept: done.kept ?? null, ...(code ? { userCode: code.userCode, verificationUri: code.verificationUri } : {}) }, text: `Signed in to GitHub as ${done.login}. ${cli}` };
+        const signer = await signerNow();
+        return { data: { login: done.login, signedIn: true, before: false, origin: done.origin, previous: done.previous ?? null, kept: done.kept ?? null, signer, ...(code ? { userCode: code.userCode, verificationUri: code.verificationUri } : {}) }, text: `Signed in to GitHub as ${done.login}. ${cli}${signedLine(signer)}` };
       };
       // A sign-in under way (one --no-wait started, or the window's): its code again, and the wait for it.
       if (now.signing && !useExisting) {
@@ -893,7 +1010,8 @@ export default {
       if (useExisting) {
         if (options.user !== undefined && accounts.length && !accounts.some((one) => one.login.toLowerCase() === options.user.toLowerCase())) throw new CliError("no_existing", `GitHub CLI on this computer has no account ${options.user}.`, `Its accounts: ${accounts.map((one) => one.login).join(", ")}. Ask the person which one to publish with, or run publish signin --new-account.`, { accounts });
         const used = await askApp(ctx, sys, { op: "signin-existing", ...(options.user !== undefined ? { login: options.user } : {}) });
-        return { data: { login: used.login, signedIn: true, before: false, origin: "existing", accounts }, text: `Signed in to GitHub as ${used.login}, ${options.user !== undefined ? "one of the accounts" : "the account"} GitHub CLI on this computer is signed in as.` };
+        const signer = await signerNow();
+        return { data: { login: used.login, signedIn: true, before: false, origin: "existing", accounts, signer }, text: `Signed in to GitHub as ${used.login}, ${options.user !== undefined ? "one of the accounts" : "the account"} GitHub CLI on this computer is signed in as.${signedLine(signer)}` };
       }
       if (accounts.length && !options.newAccount) {
         const names = accounts.map((one) => one.login);
@@ -919,7 +1037,13 @@ export default {
     switch (step) {
       case "status": {
         const data = await status(ctx, project);
-        const text = Object.entries(data.steps).map(([name, state]) => `${name}: ${state}`).join("\n");
+        // The README's reason beside its step, as the window says it beside Next (EMU-364).
+        // For a README.md that is there (the flow's or the person's) what holds it back is in the file; else the
+        // configuration's problem, or that it is not written yet.
+        const r = data.readme;
+        const there = r.state === "ours" || r.state === "yours";
+        const why = { readme: there ? (r.how_to_use ?? (r.left[0] ? `take out ${r.left[0].what}` : null)) : (r.problem ?? "README.md is not written yet: publish readme set") };
+        const text = Object.entries(data.steps).map(([name, state]) => `${name}: ${state}${state === "todo" && why[name] ? ` (${/^[A-Z][a-z]/.test(why[name]) ? why[name].charAt(0).toLowerCase() + why[name].slice(1) : why[name]})` : ""}`).join("\n");
         const repo = data.github.repo;
         const request = data.github.request;
         const second = [`github: ${repo ? `${repo.page} at ${repo.commit}` : "todo"}`, `catalog: ${request ? request.url : "todo"}`].join("\n");
@@ -954,7 +1078,14 @@ export default {
       case "readme": {
         const given = {};
         for (const [option, key] of [["mode", "mode"], ["title", "title"], ["intro", "intro"], ["usageText", "usage"], ["markdown", "markdown"]]) if (typeof options[option] === "string") given[key] = options[option].replace(/\r\n?/g, "\n");
-        if (given.mode !== undefined && !["fields", "markdown"].includes(given.mode)) throw usage("--mode takes fields or markdown.");
+        // --keep: the project's README.md as it is (EMU-365), the same as --mode file.
+        if (options.keep === true) {
+          if (given.mode !== undefined && given.mode !== "file") throw usage("--keep uses README.md as it is: give no --mode with it, or --mode file.");
+          given.mode = "file";
+        }
+        // The file as it is takes no text: one given would be kept out of sight in the record (EMU-365 review).
+        if (given.mode === "file" && (["title", "intro", "usage", "markdown"].some((key) => given[key] !== undefined) || options.controls !== undefined)) throw usage("--keep (--mode file) uses README.md as it is: it takes no text.");
+        if (given.mode !== undefined && !["fields", "markdown", "file"].includes(given.mode)) throw usage("--mode takes fields, markdown or file.");
         if (readmeAction === "get" && (Object.keys(given).length || options.controls !== undefined)) throw usage("The README's fields are given to publish readme set or preview, not get.");
         if (options.controls !== undefined) {
           // The rows of How to use, then --usage (or the sentence the README step has now) after them.
@@ -967,16 +1098,32 @@ export default {
         }
         const data = await readmeAnswer(dir, project, Object.keys(given).length ? given : null);
         if (readmeAction !== "set") return { data, text: data.markdown };
-        if (data.problem) throw new CliError("readme_incomplete", `The README is not written: ${data.problem.charAt(0).toLowerCase()}${data.problem.slice(1)}.`, "Give it with --usage, --intro, --title, or --markdown with --mode markdown.", { problem: data.problem });
-        const { writeReadme } = await lib();
+        if (data.problem) {
+          // A How to use written wrong: the rows are optional, so they are fixed or taken out (EMU-364).
+          const rows = /^How to use\b/.test(data.problem) ? "Fix the rows with --controls, or take the How to use section out: it is optional." : "Give it with --usage, --intro, --title, or --markdown with --mode markdown.";
+          throw new CliError("readme_incomplete", `The README is not written: ${data.problem.charAt(0).toLowerCase()}${data.problem.slice(1)}.`, rows, { problem: data.problem });
+        }
+        // A README.md kept as it is is not written over without --replace (the window asks the person first).
+        if (data.state === "kept" && !data.kept && data.markdown !== String(data.facts.file ?? "").replace(/\r\n?/g, "\n") && options.replace !== true) {
+          throw new CliError("readme_kept", "README.md is used as it is (publish readme set --keep), so it is not written over.", "Add --replace to write this README in its place, or give --mode markdown alone to edit the file's own text.");
+        }
+        const { moveReadmeAway, writeReadme } = await lib();
+        let movedTo = null;
         try {
+          // Over a file used as it is, on the person's word: it goes to .busy/removed/ first, as a replaced license does.
+          if (data.state === "kept" && !data.kept && options.replace === true) movedTo = moveReadmeAway(dir, sys.now());
           writeReadme(dir, data.config, data.facts, sys.now());
         } catch (e) {
           throw writeError(e, path.join(dir, "README.md"));
         }
         const after = await readmeAnswer(dir, project);
-        const lacking = after.config.mode === "fields" && !after.controls.length ? ` How to use names no control of the BUSY Bar: give the rows with --controls '{"Start": "…", "Wheel turn": "…", "Wheel press": "…", "Back": "…"}'.` : "";
-        return { data: { written: "README.md", ...after }, text: `Wrote ${path.join(dir, "README.md")}.${lacking}` };
+        // How to use is optional (EMU-364): without rows, a hint, not a refusal.
+        if (after.kept) {
+          const hints = after.file_hints.map((one) => `  Hint: ${one}`);
+          return { data: { written: null, ...after }, text: [`Uses ${path.join(dir, "README.md")} as it is: nothing was written.`, ...hints].join("\n") };
+        }
+        const lacking = after.how_to_use_hint ? ` ${after.how_to_use_hint}${after.controls.length ? "" : ` Give the rows with --controls '{"Start": "…", "Wheel turn": "…", "Wheel press": "…", "Back": "…"}' if the app answers to them.`}` : "";
+        return { data: { written: "README.md", moved: movedTo, ...after }, text: `Wrote ${path.join(dir, "README.md")}.${movedTo ? ` The one used as it is went to ${movedTo}.` : ""}${lacking}` };
       }
       case "package": {
         const data = await packaged(ctx, sys, project, { commands, progress });
@@ -999,18 +1146,21 @@ export default {
       }
       case "push": {
         if (options.name !== undefined && !REPO_NAME.test(options.name)) throw usage("--name takes a repository's name: letters, digits, '.', '-' and '_'.");
+        if (options.email !== undefined && options.email !== "noreply" && !COMMIT_EMAIL.test(options.email)) throw usage("--email takes noreply or an e-mail address.");
         // stale-check: what was checked and packaged, or nothing; the app checks it again before it uploads.
         await requireChecked(ctx, project);
         progress("Asking the person in BUSY Bar Emulator to confirm, then publishing to GitHub…");
-        const data = await withProgress(ctx, sys, dir, progress, askApp(ctx, sys, { op: "push", folder: dir, ...(options.name ? { name: options.name } : {}) }));
+        const data = await withProgress(ctx, sys, dir, progress, askApp(ctx, sys, { op: "push", folder: dir, ...(options.name ? { name: options.name } : {}), ...(options.email !== undefined ? { email: options.email } : {}) }));
         const links = Array.isArray(data.skipped) && data.skipped.length ? ` Left out, as links: ${data.skipped.join(", ")}.` : "";
-        return { data, text: `${data.unchanged ? "Nothing had changed: " : "Published: "}${data.page} at ${data.commit} (${data.files} files, read back from GitHub).${links}` };
+        return { data, text: `${data.unchanged ? "Nothing had changed: " : "Published: "}${data.page} at ${data.commit} (${data.files} files, read back from GitHub).${links}${data.unchanged ? "" : signedLine(data.signer)}` };
       }
       case "pr": {
         if (!AI.includes(options.ai)) throw usage(`publish pr needs --ai: ${AI.join(", ")}, how AI was used in the app. It is never chosen for you.`);
+        const noteRefused = aiNoteRefusal(options.ai, options.aiNote, "pr");
+        if (noteRefused) throw noteRefused;
         await requireChecked(ctx, project);
         progress("Asking the person in BUSY Bar Emulator to confirm and to tick the catalog's checklist, its optional items included, then opening the pull request…");
-        const data = await withProgress(ctx, sys, dir, progress, askApp(ctx, sys, { op: "request", folder: dir, ai: options.ai, ...(options.catalog ? { catalog: options.catalog } : {}) }));
+        const data = await withProgress(ctx, sys, dir, progress, askApp(ctx, sys, { op: "request", folder: dir, ai: options.ai, ...(AI_NOTED.includes(options.ai) ? { aiNote: noteLine(options.aiNote) } : {}), ...(options.catalog ? { catalog: options.catalog } : {}) }));
         // The optional items of the checklist (the contest's), as the person ticked them or not in the app (EMU-313).
         const optional = Array.isArray(data.optional) ? data.optional.map((one) => `${one.ticked ? "ticked" : "not ticked"}: ${String(one.item).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")}`) : [];
         return { data, text: `${data.created ? "Opened" : "Updated"} the pull request ${data.url} (${data.direct ? "a branch in the catalog" : "from your fork"}).${optional.length ? ` Optional items, as the person chose: ${optional.join("; ")}.` : ""}` };
@@ -1034,6 +1184,10 @@ export default {
       case "requested": {
         const data = await requested(ctx, sys, project, options);
         return { data, text: `Noted: the pull request ${data.url}.` };
+      }
+      case "ai": {
+        const data = await aiNoted(sys, project, options);
+        return { data, text: `Noted: AI usage ${data.choice}.` };
       }
     }
     throw usage("publish takes a step.");

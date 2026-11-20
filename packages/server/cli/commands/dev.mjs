@@ -186,7 +186,7 @@ export default {
       say("build_started", { cycle, changed });
       try {
         // As build does: a settings file the bar would refuse fails the round, with the field at fault.
-        requireValidSettings(ctx, project, await barApiVersion(ctx, sys));
+        requireValidSettings(ctx, project, await barApiVersion(ctx, sys, status));
         await ensureDependencies(ctx, sys, project, progress);
         fixBusyCli(ctx, project);
       } catch (e) {

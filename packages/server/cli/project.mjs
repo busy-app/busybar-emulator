@@ -148,9 +148,12 @@ export function settingsInvalid(ctx, project, file, check, { onTheBar = false } 
  * The API version of the emulated BUSY Bar that runs now (GET /api/version), or null when none answers: the settings
  * file is checked by the rules of its firmware (requireValidSettings).
  */
-export async function barApiVersion(ctx, sys) {
+export async function barApiVersion(ctx, sys, known = null) {
   try {
-    const status = await emulatorStatus(ctx, sys);
+    // `known`: the status the caller already holds and works with (dev's loop, which installs on that port every
+    // round). Asking again would check the emulator's process once more, which on Windows is a PowerShell of its own:
+    // seconds on a loaded machine, in every round (EMU-330).
+    const status = known ?? (await emulatorStatus(ctx, sys));
     if (!ready(status)) return null;
     const answer = await sys.barGet(status.port, "/api/version");
     return answer.status === 200 ? (JSON.parse(answer.body).api_semver ?? null) : null;

@@ -109,9 +109,11 @@ window only. In a plain browser there is no bridge.
   dialog (`upload`: 72×16 or 160×80, or an exact enlargement, made small again; `uploaded`, and `refused` with why;
   null when they chose none), writes the order into catalog.json, or moves one into `.busy/removed/`; answers the
   lists with each picture as a `data:` address and what the catalog says of it.
-- `publish.readme({ folder, readme: { mode: "fields"|"markdown", title, intro, usage, markdown } })` → writes
-  README.md from the README step (`publish readme set`); refused while How to use is empty or the template's text is
-  in it.
+- `publish.readme({ folder, readme: { mode: "fields"|"markdown"|"file", title, intro, usage, markdown }, replace })` →
+  writes README.md from the README step (`publish readme set`); refused while a How to use row of the fields names no
+  control or says nothing, or the template's text is in it (How to use itself is optional, a section of the Markdown
+  only a hint, EMU-364). Mode "file" writes nothing: the project's README.md is used as it is (EMU-365); another
+  README over it needs `replace: true`, the person's yes, and the old file goes to .busy/removed.
 - `publish.license({ folder, license: "MIT"|"Apache-2.0"|"GPL-3.0"|"other", author })` → writes LICENSE with the name
   and the year; never over a license file that is there.
 - `publish.files({ folder, write?, keepOut?, keepIn?, readme?: "replace" })` → what the public repository will hold
@@ -120,6 +122,9 @@ window only. In a plain browser there is no bridge.
 - `publish.package(folder, { build })` → the checks, then `submission/` (`publish package`); the project must be built
   first (`projects.build`), or `build: true` builds it first in the same action (Build and package); a failed build
   answers with `step: "build"`.
+- `publish.ai({ folder, ai, note })` → Send to catalog's AI usage (`none`, `partly`, `full`) and, for the last two,
+  the person's explanation, noted in the project's .busy/publish.json (`publish ai`), so that the step opens with them
+  again; `publish.status` gives them back as `github.ai`. Refused with `busy` while another job of the project runs.
 - `firmware.use({ version, when, run })` → the BUSY Bar's firmware (EMU-322), through the server's management address,
   whose key the desktop app holds. `when: "restart"` chooses `version` for the BUSY Bar's next restart and answers at
   once, `{ ok: true, firmware, pending, changed }` (the one that runs clears the choice); `when: "now"` (the default)
@@ -327,8 +332,10 @@ code yourself" (where the code is, what the BUSY Bar can do, Refresh; and Create
 ## The update's pop-up (`update-popup.js`)
 
 When the app offers a newer version (`update.state()` is `available`), a dialog over the window says "BUSY Bar
-Emulator <version> is available", which version the person is on, and two or three lines of the release's notes
-(`packages/app/src/update-check.mjs` `releaseSummary`, plain text). Update now is the top bar's Update to <version>:
+Emulator <version> is available", which version the person is on, and the release's notes, whole up to their Files
+section, with their nested items (`packages/app/src/update-check.mjs` `parseReleaseNotes`, plain text, put on the page
+with `textContent`), in a tile that scrolls by itself when they are long; the card never outgrows the window. Release
+notes, at the left of the buttons, opens the release's page in the browser. Update now is the top bar's Update to <version>:
 the progress shows in the dialog, then Restart to update; Later or Esc closes it, and the top bar's notice stays.
 Where the copy cannot replace itself, it says why and offers Download, the release page. It waits for the first run's
 greeting (`emulatorWelcome.decided`) and any other dialog (`[aria-modal="true"]`); the app (`update.popup()`, once

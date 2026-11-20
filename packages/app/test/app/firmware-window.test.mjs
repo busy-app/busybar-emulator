@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { DEVICE_MIN_SIZE } from "../../src/windows.mjs";
 import { HAS_REAL_SERVER, removeFolder, sleep, targz, temporaryFolder, until } from "../helpers.mjs";
@@ -473,7 +473,7 @@ test("Switch to 1.4.1 and run: the BUSY Bar switches now, then the app starts", 
   await page(`fetch("/api/apps/quit", { method: "POST" }).then((r) => r.status)`);
 });
 
-test("the BUSY Bar's card at 1920, 1600, 1440, 1300, 1280 and the smallest window: its layout for its width, nothing runs out of it, in every state", { skip }, async (t) => {
+test("the BUSY Bar's card at 1920, 1600, 1440, 1300, 1280 and the smallest window: its layout for its width, nothing runs out of it, in every state", { skip, timeout: 600_000 }, async (t) => {
   const problems = [];
   // The latest; the firmware under the pointer; a choice waiting for the restart.
   problems.push(...(await checkWidths("latest")));

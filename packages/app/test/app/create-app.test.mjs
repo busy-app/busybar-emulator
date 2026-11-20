@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, test } from "node:test";
+import { after, test } from "./node-test.mjs";
 import { fileURLToPath } from "node:url";
 
 import { encodePng, shapeOf } from "../fixtures/png.mjs";

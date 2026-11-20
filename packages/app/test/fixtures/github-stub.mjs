@@ -19,9 +19,10 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
   /** Answers to give before any real handling: { status, headers, body } or a function (req) => that or null. */
   const next = [];
   const requests = [];
-  // fail(req, url): an answer instead of the stand-in's, or null; hold(req, url): a promise the request waits for first
+  // fail(req, url, body): an answer instead of the stand-in's ({ drop: true }: none, the connection cut), or null; hold(req,
+  // url): a promise the request waits for first
   // (an upload GitHub is slow to take).
-  const hooks = { fail: null, hold: null };
+  const hooks = { fail: null, hold: null, lose: null };
   const device = { answers: [] };
   /** Forks that answer 404 for this many more reads. */
   const pending = new Map();
@@ -31,6 +32,11 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
   const releases = new Map();
   /** The stand-in's own address, for the release files' download addresses. */
   let base = null;
+  /**
+   * The person's account as GET /user and GET /user/emails tell it (EMU-366): its number, name and public address,
+   * the addresses GitHub keeps for it, and whether the sign-in may read them (the scope user:email).
+   */
+  const account = { id: 4242001, name: "Octo Person", email: null, emails: [{ email: "octo.person@example.com", primary: true, verified: true, visibility: "private" }, { email: "octo.old@example.org", primary: false, verified: false, visibility: null }, { email: "octo.work@example.net", primary: false, verified: true, visibility: null }], emailScope: true };
 
   /**
    * Makes `tag` the latest release of a repository, with these files: { name: bytes }. Each is downloaded from
@@ -79,7 +85,7 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
   };
   // The request's author (who opened it) is apart from its head (whose branch it is): anyone may open a request
   // from a branch of a public fork.
-  const pullJson = (p) => ({ number: p.number, html_url: p.url, title: p.title, state: p.state, user: { login: p.author ?? login }, head: { ref: p.headRef, label: p.head, user: { login: p.headRepo.owner }, repo: { name: p.headRepo.name, owner: { login: p.headRepo.owner } } } });
+  const pullJson = (p) => ({ number: p.number, html_url: p.url, title: p.title, body: p.body ?? null, state: p.state, user: { login: p.author ?? login }, head: { ref: p.headRef, label: p.head, sha: p.headRepo.refs?.get(p.headRef) ?? null, user: { login: p.headRepo.owner }, repo: { name: p.headRepo.name, owner: { login: p.headRepo.owner } } }, merged: p.merged === true, merged_at: p.merged ? "2026-11-18T12:00:00Z" : null });
   const repoJson = (repo) => ({ archived: repo.archived === true, description: repo.description ?? null, name: repo.name, full_name: `${repo.owner}/${repo.name}`, owner: { login: repo.owner }, default_branch: repo.defaultBranch, html_url: `https://github.com/${repo.owner}/${repo.name}`, private: false, allow_forking: repo.allowForking !== false, permissions: { admin: repo.owner === login, push: repo.owner === login || Boolean(repo.pushers?.includes(login)), pull: true } });
 
   /**
@@ -106,7 +112,9 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
     if (!me) return json(res, 401, { message: "Bad credentials" });
     const path = decodeURIComponent(url.pathname);
     let m;
-    if (req.method === "GET" && path === "/user") return json(res, 200, { login: me });
+    if (req.method === "GET" && path === "/user") return json(res, 200, me === login ? { login: me, id: account.id, name: account.name, email: account.email } : { login: me, id: 4242999, name: null, email: null });
+    // Without the scope GitHub answers 404 and names the scopes it takes (gh says "This API operation needs the user scope").
+    if (req.method === "GET" && path === "/user/emails") return account.emailScope ? json(res, 200, me === login ? account.emails : []) : json(res, 404, { message: "Not Found" }, { "x-accepted-oauth-scopes": "user, user:email", "x-oauth-scopes": "gist, read:org, repo" });
     if (me !== login) return json(res, 403, { message: "the stand-in keeps repositories for one person only" });
     if (req.method === "POST" && path === "/user/repos") {
       if (repos.has(`${login}/${body.name}`.toLowerCase())) return json(res, 422, { message: "Repository creation failed.", errors: [{ resource: "Repository", code: "custom", field: "name", message: "name already exists on this account" }] });
@@ -140,7 +148,7 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
     }
     if (req.method === "GET" && (m = /^\/git\/commits\/([0-9a-f]{40})$/.exec(rest))) {
       const commit = objects.get(m[1]);
-      return commit?.type === "commit" ? json(res, 200, { sha: m[1], tree: { sha: commit.tree }, parents: commit.parents.map((sha) => ({ sha })), message: commit.message }) : json(res, 404, { message: "Not Found" });
+      return commit?.type === "commit" ? json(res, 200, { sha: m[1], tree: { sha: commit.tree }, parents: commit.parents.map((sha) => ({ sha })), message: commit.message, ...(commit.author ? { author: commit.author, committer: commit.committer } : {}) }) : json(res, 404, { message: "Not Found" });
     }
     if (req.method === "GET" && (m = /^\/git\/trees\/([0-9a-f]{40})$/.exec(rest))) {
       const tree = objects.get(m[1]);
@@ -189,7 +197,13 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
       }
       return json(res, 201, { sha: put({ type: "tree", entries: [...entries.values()].sort((a, b) => (a.path < b.path ? -1 : 1)) }) });
     }
-    if (req.method === "POST" && rest === "/git/commits") return json(res, 201, { sha: put({ type: "commit", message: body.message, tree: body.tree, parents: body.parents }) });
+    // The author and committer as sent; without them GitHub names the account (here: its login and private address).
+    if (req.method === "POST" && rest === "/git/commits") {
+      const own = { name: account.name ?? login, email: `${account.id}+${login}@users.noreply.github.com` };
+      const who = (one) => (one && typeof one.name === "string" && typeof one.email === "string" ? { name: one.name, email: one.email } : null);
+      const author = who(body.author) ?? own;
+      return json(res, 201, { sha: put({ type: "commit", message: body.message, tree: body.tree, parents: body.parents, author, committer: who(body.committer) ?? author, sent: { author: who(body.author), committer: who(body.committer) } }) });
+    }
     if (req.method === "PATCH" && (m = /^\/git\/refs\/heads\/(.+)$/.exec(rest))) {
       const old = repo.refs.get(m[1]);
       if (!old) return json(res, 422, { message: "Reference does not exist" });
@@ -246,6 +260,7 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
         const changed = [...new Set([...head.keys(), ...base.keys()])].filter((path) => head.get(path) !== base.get(path));
         return json(res, 200, changed.map((filename) => ({ filename, status: base.has(filename) ? (head.has(filename) ? "modified" : "removed") : "added" })));
       }
+      if (req.method === "GET" && !m[2]) return json(res, 200, pullJson(pull));
       if (req.method === "PATCH" && !m[2]) {
         if (typeof body.title === "string") pull.title = body.title;
         if (typeof body.body === "string") pull.body = body.body;
@@ -279,8 +294,15 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
       requests.push({ method: req.method, path: url.pathname + url.search, headers: req.headers, body: form ?? body });
       if (hooks.hold) await hooks.hold(req, url);
       // A test's rule for every request (hooks.fail(req, url) => an answer, or null to go on), then the queue.
-      const failed = hooks.fail?.(req, url) ?? null;
+      const failed = hooks.fail?.(req, url, body) ?? null;
+      // { drop: true }: the connection ends with no answer, as when the network is gone.
+      if (failed?.drop) return void req.socket.destroy();
       if (failed) return json(res, failed.status, failed.body, failed.headers);
+      // lose(req, url): the request is done, and its answer lost on the way (the connection cut instead).
+      if (hooks.lose?.(req, url)) {
+        res.writeHead = () => res;
+        res.end = () => void req.socket.destroy();
+      }
       const forced = next.length ? next.shift() : null;
       const answer = typeof forced === "function" ? forced(req) : forced;
       if (answer) return json(res, answer.status, answer.body, answer.headers);
@@ -306,13 +328,14 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
     });
   });
   await new Promise((resolve, reject) => server.once("error", reject).listen(port, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${port}`;
+  // Port 0: the one the system chose (the publish preview's, tools/publish-preview.mjs).
+  base = `http://127.0.0.1:${server.address().port}`;
   return {
     login,
     token,
     others,
     /** The stand-in's address, for fake-gh.mjs (BUSY_EMULATOR_FAKE_GH_STAND_IN): the device flow at its root, the API under /api. */
-    base: `http://127.0.0.1:${port}`,
+    base,
     next,
     hooks,
     requests,
@@ -320,6 +343,9 @@ export async function startGithubStub({ port, login = "octo-person", token = "du
     pulls,
     pending,
     deaf,
+    account,
+    /** A commit as the stand-in keeps it: { message, tree, parents, author, committer, sent } (`sent`: what the request named). */
+    commitOf: (sha) => (objects.get(sha)?.type === "commit" ? objects.get(sha) : null),
     makeRepo,
     commitFiles,
     addRelease,

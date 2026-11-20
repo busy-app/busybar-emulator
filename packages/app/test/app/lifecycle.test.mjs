@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, test } from "./node-test.mjs";
 
 import { alive, CHROMIUM_GONE_WITHIN_MS, listening, occupy, PORTS, sleep, survivors, temporaryFolder, until } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";

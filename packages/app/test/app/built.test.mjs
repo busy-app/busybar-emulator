@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { constants, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, afterEach, before, test } from "node:test";
+import { after, afterEach, before, test } from "./node-test.mjs";
 
 import { writeAppArchive } from "../../tools/packaging/app-archive.mjs";
 import { archiveEntries } from "../../tools/packaging/composition.mjs";

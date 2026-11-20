@@ -60,9 +60,10 @@ test("publish readme set --controls: How to use's rows in the README, the senten
   assert.deepEqual(named.json.controls.map((one) => one.control), ["Wheel turn", "Wheel press", "Back"]);
   for (const bad of ["not json", "{}", '{"Start": ""}', `{"Start": "${"x".repeat(101)}"}`, '[{"control": "Start", "text": "a"}, {"control": "start", "text": "b"}]']) assert.equal((await cli(home, ["publish", "readme", "set", dir, "--controls", bad])).json.code, "usage", bad);
   assert.equal((await cli(home, ["publish", "readme", "get", dir, "--controls", '{"Start": "x"}'])).json.code, "usage");
-  // Without rows the README is still written, and the text says what is missing.
+  // Without rows the README is still written, and the step is done (EMU-364): the text says the rows are optional.
   const plain = await cli(home, ["publish", "readme", "set", dir, "--usage", "Press Start."], { json: false });
-  assert.match(plain.text, /How to use names no control of the BUSY Bar: give the rows with --controls/);
+  assert.match(plain.text, /How to use is optional: .* The catalog does not show it yet\. Give the rows with --controls/);
+  assert.equal((await cli(home, ["publish", "status", dir])).json.steps.readme, "done");
 });
 
 test("catalog-texts without a category lists the categories with what goes in each; help publish shows every step", async (t) => {

@@ -1,16 +1,17 @@
 // Every command's output and every error, against a stand-in for the system: no app, no process, no network.
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { loadCommands, main, parseArguments } from "../busy-emulator.mjs";
-import { ensureRunning } from "../lifecycle.mjs";
+import { FORMAT } from "../../data-folder.mjs";
+import { ensureRunning, RUN_ON_ANY_FOLDER } from "../lifecycle.mjs";
 import { GENERATOR } from "../commands/create.mjs";
 import { busyCliFacts, generatorFacts } from "../commands/version.mjs";
-import { removeServerFilesOf, serverFilesOf } from "../system.mjs";
+import { removeServerFilesOf, serverFilesOf, system } from "../system.mjs";
 
 const CLI_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -332,6 +333,34 @@ test("start: the server's trouble comes back with its own code", async () => {
     const before = await run(["start", "--json"], { sys: fakeSystem({ states: [{ ...READY, state, detail: "boom" }] }) });
     assert.equal(before.json.code, code, `${state}, already running`);
   }
+});
+
+test("a data folder a newer emulator moved on, or one with a broken format record: every command but help, version and status refuses it, and nothing is written (ADR-0013)", async (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "emu-cli-format-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const ctx = { ...macCtx, dataDir: dir, pointerFile: path.join(dir, "install.json"), runStateFile: path.join(dir, "run", "emulator.json") };
+  const look = () => readdirSync(dir, { recursive: true }).sort().map((name) => `${name} ${statSync(path.join(dir, name)).mtimeMs}`);
+  const commands = await loadCommands();
+  for (const [record, code] of [[`${FORMAT + 1}\n`, "data_format_newer"], ["three\n", "data_folder_unusable"]]) {
+    writeFileSync(path.join(dir, "format"), record);
+    const before = look();
+    for (const command of commands) {
+      if (RUN_ON_ANY_FOLDER.includes(command.name)) continue;
+      const words = { create: ["create", path.join(dir, "new-app")], projects: ["projects", "--add", dir], quit: ["quit"] }[command.name] ?? [command.name];
+      const { code: exit, json } = await run([...words, "--json"], { ctx, sys: { ...system, launchApp: () => assert.fail(`${command.name} launched the app`) }, commands });
+      assert.equal(exit, 1, command.name);
+      assert.equal(json.code, code, `${command.name}: ${json.message}`);
+    }
+    assert.deepEqual(look(), before, "the data folder is exactly as it was");
+  }
+  writeFileSync(path.join(dir, "format"), `${FORMAT + 1}\n`);
+  const newer = await run(["start", "--json"], { ctx, sys: { ...system, launchApp: () => assert.fail("launched") }, commands });
+  assert.match(newer.json.message, new RegExp(`is of format ${FORMAT + 1}: a newer version of BUSY Bar Emulator moved it there, and this one, 1\\.2\\.3, knows format ${FORMAT} at most\\. Nothing in it was changed`));
+  assert.match(newer.json.hint, /releases\/latest/);
+  assert.deepEqual([newer.json.format, newer.json.known], [FORMAT + 1, FORMAT]);
+  // help and status run: they write nothing.
+  assert.equal((await run(["help", "--json"], { ctx, sys: system, commands })).code, 0);
+  assert.equal((await run(["status", "--json"], { ctx, sys: { ...fakeSystem({ states: [null] }), formatProblem: system.formatProblem }, commands })).code, 0);
 });
 
 test("start: an emulator that never becomes ready is given up on, and the log is named", async () => {

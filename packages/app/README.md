@@ -36,6 +36,7 @@ A development run and the test variant read these from the environment; a releas
 | `BUSY_EMULATOR_TEST_HOOK` | where the test entry connects; test variant only |
 | `BUSY_EMULATOR_GH` | the GitHub CLI publishing runs: a program, or a `.mjs` the given Node runs (the tests' stand-in, `test/fixtures/fake-gh.mjs`, which speaks to a stand-in for GitHub on 127.0.0.1); `none` for a build without it. A release always runs the gh inside it; a run from the source folder has none unless named |
 | `BUSY_EMULATOR_GH_CONFIG_DIR` | GitHub CLI's configuration folder instead of the person's own (`~/.config/gh`, `%APPDATA%\GitHub CLI`): the tests never touch the person's GitHub CLI |
+| `BUSY_EMULATOR_GIT_HOME` | the folder whose `.gitconfig` (and `.config/git/config`) stands for the person's own git settings, for the name and address `git config` gives to commits; the tests and the publish preview never read the person's own |
 | `BUSY_EMULATOR_UPDATE_URL` | a stand-in for GitHub's answer about the latest release, an `http://127.0.0.1:<port>/…` address only: with it a development run or the test variant makes the update check there; without it they make none |
 
 A release reads one variable, which can only make it do less: `BUSY_EMULATOR_NO_UPDATE_CHECK=1` switches the check
@@ -467,6 +468,8 @@ of the Windows app is the same bytes.
 | `test-variant/` | The test entry. This folder is what makes a build the test variant; a release does not contain it (`files` in `package.json`) |
 | `tools/release-files.mjs` | The list of files that go into a release, for the packaging and for the tests |
 | `tools/start.mjs` | `npm start` |
+| `tools/publish-preview.mjs` | A development run on a stand-in for GitHub, signed in as octo-person, with a project ready to publish (the Focus Timer example), to look at Publish to GitHub's and Send to catalog's states live (EMU-360): a number in the terminal chooses what GitHub does with the next sends (slow, no network, an expired sign-in, no access to the fork, the rate limit, the catalog out of reach, a request half made, a project out of date); its own port and data folder only |
+| `tools/update-popup-preview.mjs` | A development run offered a pretend newer version with 0.1.0-beta.6's notes, to look at the update's pop-up live; its own port and data folder only (`--download` for the copy that cannot replace itself) |
 | `tools/bundled-node.mjs`, `bundled-node.json` | The pinned Node: pin, fetch, check, unpack |
 | `tools/bundled-gh.mjs`, `bundled-gh.json` | The pinned GitHub CLI: pin, fetch, check, unpack (above) |
 | `tools/stage-resources.mjs`, `tools/windows-launcher.mjs`, `launcher/` | The parts of the resources folder above, for the packaging and the tests |

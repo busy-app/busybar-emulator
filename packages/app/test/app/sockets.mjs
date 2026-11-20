@@ -21,6 +21,52 @@ export function reachableFromNetwork({ protocol, local, peer = null }) {
   return true;
 }
 
+/**
+ * The UDP sockets Chromium connected to one peer, from its log of the network (--log-net-log): [{ family, port, peer }],
+ * `port` the socket's own (UDP_LOCAL_ADDRESS, which Chromium logs when it asks the socket for its address, as its
+ * check of whether IPv6 reaches the internet does: a socket connected to [2001:4860:4860::8888]:443 that sends
+ * nothing). On Windows netstat shows a connected UDP socket as bound to every address ("UDP [::]:58719"), with no
+ * peer, so the log is what tells it apart there; lsof names the peer. A log cut short (the app ended before it closed
+ * it) is read as far as it goes.
+ */
+export function connectedInNetLog(text) {
+  let log;
+  try {
+    log = JSON.parse(text);
+  } catch {
+    const cut = text.lastIndexOf("},");
+    try {
+      log = JSON.parse(`${text.slice(0, cut + 1)}]}`);
+    } catch {
+      return [];
+    }
+  }
+  const types = log?.constants?.logEventTypes ?? {};
+  const sources = log?.constants?.logSourceType ?? {};
+  const phases = log?.constants?.logEventPhase ?? { PHASE_BEGIN: 1, PHASE_END: 2 };
+  const sockets = new Map(); // source id → { connected, peer, local }
+  for (const e of log?.events ?? []) {
+    if (e?.source?.type !== sources.UDP_SOCKET) continue;
+    const one = sockets.get(e.source.id) ?? { connected: false, peer: null, local: null };
+    sockets.set(e.source.id, one);
+    if (e.type === types.UDP_CONNECT && e.phase === phases.PHASE_BEGIN) one.peer = e.params?.address ?? null;
+    if (e.type === types.UDP_CONNECT && e.phase === phases.PHASE_END) one.connected = !e.params?.net_error;
+    if (e.type === types.UDP_LOCAL_ADDRESS) one.local = e.params?.address ?? null;
+  }
+  const found = [];
+  for (const one of sockets.values()) {
+    const m = one.connected && one.peer && one.local ? /^(\[.*\]|[\d.]+):(\d+)$/.exec(one.local) : null;
+    if (m) found.push({ family: m[1].startsWith("[") ? 6 : 4, port: Number(m[2]), peer: one.peer });
+  }
+  return found;
+}
+
+/** Whether a socket of netstat ("UDP [::]:58719") is one of `connected` (connectedInNetLog): the same family and port. */
+export function connectedSocket({ protocol, local }, connected) {
+  const m = protocol === "UDP" ? /^(\[.*\]|[\d.*]+):(\d+)$/.exec(local) : null;
+  return Boolean(m) && connected.some((c) => c.port === Number(m[2]) && c.family === (m[1].startsWith("[") ? 6 : 4));
+}
+
 /** lsof -F pPnT output: the sockets that listen (TCP) or are UDP, as { pid, protocol, local, peer }. */
 export function parseLsof(text) {
   const sockets = [];
@@ -92,34 +138,60 @@ async function listeningSockets(pids) {
   return parseLsof(await output("/usr/sbin/lsof", ["-nP", "-a", "-p", [...pids].join(","), "-i", "-F", "pPnT"]));
 }
 
+/** The command line of a process, for the message about a socket it should not have had ("" when it is gone). */
+async function commandOf(pid) {
+  if (process.platform === "win32") {
+    const shell = `${process.env.SystemRoot || "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+    return (await output(shell, ["-NoProfile", "-NonInteractive", "-Command", `$ProgressPreference='SilentlyContinue'; (Get-CimInstance Win32_Process -Filter 'ProcessId=${Number(pid)}').CommandLine`])).trim();
+  }
+  return (await output("/bin/ps", ["-ww", "-o", "command=", "-p", String(pid)])).trim();
+}
+
+/** A command line short enough for a message: the program and Chromium's type of process, else its start. */
+export function shortCommand(command) {
+  const type = [...command.matchAll(/--(?:type|utility-sub-type)=\S+/g)].map((m) => m[0]).join(" ");
+  if (type) return `${command.split(" --")[0].replace(/^"|"$/g, "").split(/[\\/]/).pop()} ${type}`;
+  return command.length > 160 ? `${command.slice(0, 160)}…` : command;
+}
+
 /**
  * Starts watching the sockets of a launch.
  * @param {number} rootPid                      the app's main process
  * @param {() => Promise<number[]>} morePids    the processes the app itself knows of (the test entry tells them)
- * @returns stop(): the distinct sockets seen that were not on this machine's own addresses, and how many samples
+ * @returns stop(): the distinct sockets seen that were not on this machine's own addresses, how many samples, and
+ *   for each of those sockets the process that had it ("UDP 0.0.0.0:53975: 1234 (electron.exe --type=utility …)")
  */
 export function watchSockets(rootPid, morePids) {
   const known = new Set([rootPid]);
   const offLoopback = new Map();
+  const owners = new Map(); // socket → a promise of its process's description, asked for when it is first seen
   let samples = 0;
   let running = true;
+  let stopped = null;
   const loop = (async () => {
     while (running) {
       for (const pid of await morePids().catch(() => [])) if (pid) known.add(pid);
       const pids = process.platform === "win32" ? known : await descendants(known);
       for (const pid of pids) known.add(pid);
       for (const socket of await listeningSockets(pids)) {
-        if (reachableFromNetwork(socket)) offLoopback.set(`${socket.protocol} ${socket.local}`, socket);
+        if (!reachableFromNetwork(socket)) continue;
+        const key = `${socket.protocol} ${socket.local}`;
+        offLoopback.set(key, socket);
+        if (!owners.has(key)) owners.set(key, commandOf(socket.pid).then((command) => `${key}: ${socket.pid}${command ? ` (${shortCommand(command)})` : ""}`));
       }
       samples += 1;
       await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
     }
   })();
   return {
-    async stop() {
+    /** Ends the watching (again: the same answer). */
+    stop() {
       running = false;
-      await loop;
-      return { samples, offLoopback: [...offLoopback.keys()].sort() };
+      stopped ??= (async () => {
+        await loop;
+        return { samples, offLoopback: [...offLoopback.keys()].sort(), sockets: [...offLoopback.values()], owners: (await Promise.all(owners.values())).sort() };
+      })();
+      return stopped;
     },
   };
 }

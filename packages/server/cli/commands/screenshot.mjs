@@ -8,8 +8,8 @@
 //
 // Where the file goes: --out names the file (replaced if it is there) or a folder; without --out, screenshots/ in the
 // current folder. In a folder the name is front-<n>.png or back-<n>.png, n the next number not taken there, and an
-// existing file is never replaced; a file --out replaces is said to be replaced. --scale <n> also writes the frame
-// enlarged n times beside it, as <name>@<n>x.png. It does not start the emulator: when that is not running and ready,
+// existing file is never replaced; a file --out replaces is said to be replaced. --scale <n> (1 to 32) also writes the frame
+// enlarged n times beside it (n = 1 is the display's own size, as without the option: no second file), as <name>@<n>x.png. It does not start the emulator: when that is not running and ready,
 // the answer is not_running.
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -64,10 +64,10 @@ function target(sys, out, usage) {
 
 function scaleOf(value, usage) {
   if (value === undefined) return null;
-  if (!/^\d+$/.test(value) || Number(value) < 2 || Number(value) > MAX_SCALE) {
-    throw usage(`--scale takes a whole number from 2 to ${MAX_SCALE}, not ${JSON.stringify(value)}.`);
+  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > MAX_SCALE) {
+    throw usage(`--scale takes a whole number from 1 to ${MAX_SCALE}, not ${JSON.stringify(value)}.`);
   }
-  return Number(value);
+  return Number(value) === 1 ? null : Number(value); // 1 is the display's own size, which the frame file already is
 }
 
 /** The encoder, loaded only by this command: a copy of the command line without it still runs every other one. */

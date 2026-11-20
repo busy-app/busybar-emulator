@@ -245,7 +245,7 @@ test("open: the folder is the person's choice; the command line asks for trust a
   quiet.state.removed = [{ id: "app.you.clock", folder: CLOCK, uninstalled: false }];
   await quiet.call("projects.list");
   assert.deepEqual(quiet.sent.map((job) => [job.kind, job.line]), [["removed", "The project left the list: its folder is gone."]]);
-  assert.deepEqual(NO_GESTURE_NEEDED, ["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.cancel", "github.checklist", "github.entry", "github.lookup", "firmware.forget"]);
+  assert.deepEqual(NO_GESTURE_NEEDED, ["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.signers", "github.cancel", "github.checklist", "github.entry", "github.pull", "github.lookup", "firmware.forget"]);
 
   const refused = setup({ choose: { open: CLOCK }, answers: () => ({ ok: false, code: "trust_refused", message: "The person chose Don't Trust." }) });
   assert.equal(await refused.call("projects.open"), null);
@@ -1200,6 +1200,76 @@ test("github.request: a checklist past 50 items or 500 characters an item is ref
   await it.call("github.request", { folder: CLOCK, catalog: "attacker/catalog", ticked: ["x".repeat(500)], ai: "none", otherCatalog: "attacker/catalog" });
   await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "none" });
   assert.deepEqual(given, [["attacker/catalog", "attacker/catalog", 1], ["busy-app/busy-apps-catalog", null, 0]]);
+});
+
+test("the AI usage's explanation (EMU-359): publish.ai notes it in the project; github.request notes it and gives it to the flow", async () => {
+  const given = [];
+  const github = { request: async (o) => (given.push([o.ai, o.aiNote]), { url: "https://github.com/busy-app/busy-apps-catalog/pull/1", catalog: "busy-app/busy-apps-catalog" }) };
+  const it = setup({ github, answers: (words) => (words[0] === "publish" ? { ok: true, id: "app.you.clock", published: [], choice: words.find((one) => one.startsWith("--ai="))?.slice(5) } : { ok: true }) });
+  assert.equal((await it.call("publish.ai", { folder: CLOCK, ai: "most" })).code, "usage");
+  assert.equal((await it.call("publish.ai", { folder: CLOCK, ai: "full", note: 7 })).code, "usage");
+  assert.equal((await it.call("publish.ai", { folder: CLOCK, ai: "full", note: "x".repeat(4001) })).code, "usage");
+  assert.equal((await it.call("publish.ai", { folder: path.join(root, "not a project"), ai: "none" })).code, "unknown_project");
+  assert.deepEqual(it.work(), []);
+  await it.call("publish.ai", { folder: CLOCK, ai: "partly", note: "The settings page." });
+  await it.call("publish.ai", { folder: CLOCK, ai: "none", note: "  " });
+  assert.deepEqual(it.work(), [`publish ai ${CLOCK} --ai=partly --ai-note=The settings page. --json`, `publish ai ${CLOCK} --ai=none --json`]);
+  assert.equal(NO_GESTURE_NEEDED.includes("publish.ai"), false, "noting it is the person's doing: it needs a click or a key");
+  // The request: the explanation noted with the choice, as one line, and given to the flow as written.
+  const sent = await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "full", aiNote: "The whole\napp." });
+  assert.equal(sent.ok, true, JSON.stringify(sent));
+  assert.deepEqual(given.at(-1), ["full", "The whole\napp."]);
+  assert.ok(it.work().includes(`publish ai ${CLOCK} --ai=full --ai-note=The whole app. --json`), it.work().join("\n"));
+  // Without it: refused before anything is written, What's new included (review of #226), and the flow not asked.
+  const before = it.work().length;
+  const without = await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "partly", changelog: "Alarms, and a dimmer." });
+  assert.equal(without.code, "no_ai_note");
+  assert.equal(it.work().length, before, "no command run: no verify, no catalog-texts set, no publish ai");
+  assert.equal(given.length, 1);
+  // A token in it is masked before it is noted.
+  await it.call("publish.ai", { folder: CLOCK, ai: "full", note: "Key ghp_abcdefghijklmnop1234 inside." });
+  assert.equal(it.work().at(-1), `publish ai ${CLOCK} --ai=full --ai-note=Key … inside. --json`);
+  assert.equal((await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "full", aiNote: "x".repeat(4001) })).code, "ai_note_too_long");
+});
+
+test("publish.ai (review of #226): saves of one project are written one at a time, and the text typed last is the one kept", async () => {
+  const written = [];
+  let held = null;
+  const release = () => held.end(0, [JSON.stringify({ ok: true })]);
+  const it = setup({
+    answers: (words, run) => {
+      if (words[1] !== "ai") return { ok: true, id: "app.you.clock", published: [] };
+      written.push(words.find((one) => one.startsWith("--ai-note=")));
+      // The first write is slow: the others come while it runs.
+      if (written.length === 1) return void (held = run);
+      return { ok: true };
+    },
+  });
+  const a = it.call("publish.ai", { folder: CLOCK, ai: "partly", note: "The" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const b = it.call("publish.ai", { folder: CLOCK, ai: "partly", note: "The settings" });
+  const c = it.call("publish.ai", { folder: CLOCK, ai: "partly", note: "The settings page." });
+  release();
+  const answers = await Promise.all([a, b, c]);
+  assert.deepEqual(written, ["--ai-note=The", "--ai-note=The settings page."], "the one overtaken while it waited is not written");
+  assert.deepEqual(answers.map((one) => one.ok), [true, true, true]);
+  assert.equal(answers[1].superseded, true);
+});
+
+test("github.request (EMU-360): the request noted with its commit and whether it was opened; a failure after the fork says what was made", async () => {
+  let answer = { url: "https://github.com/busy-app/busy-apps-catalog/pull/4", catalog: "busy-app/busy-apps-catalog", commit: "c".repeat(40), created: false };
+  const github = {
+    request: async () => {
+      if (answer instanceof Error) throw answer;
+      return answer;
+    },
+  };
+  const it = setup({ github, answers: (words) => (words[0] === "publish" ? { ok: true, id: "app.you.clock", published: [] } : { ok: true }) });
+  assert.equal((await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "none" })).ok, true);
+  assert.ok(it.work().includes(`publish requested ${CLOCK} --pr=https://github.com/busy-app/busy-apps-catalog/pull/4 --catalog=busy-app/busy-apps-catalog --commit=${"c".repeat(40)} --created=no --json`), it.work().join("\n"));
+  answer = Object.assign(new Error("GitHub did not take it."), { code: "unprocessable", hint: "Try again in a moment.", done: { fork: "you/busy-apps-catalog", branch: "you/app.you.clock_1.0.0", token: "never" } });
+  const failed = await it.call("github.request", { folder: CLOCK, catalog: "busy-app/busy-apps-catalog", ticked: [], ai: "none" });
+  assert.deepEqual([failed.code, failed.done], ["unprocessable", { fork: "you/busy-apps-catalog", branch: "you/app.you.clock_1.0.0" }]);
 });
 
 test("github.request with What's new: written into catalog.json by the catalog's rules first, then given to the flow (catalog-update)", async () => {

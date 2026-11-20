@@ -44,7 +44,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import os from "node:os";
 import path from "node:path";
 
-import { MAX_BOX_LENGTH, MAX_BOXES } from "./github/publish-flow.mjs";
+import { AI_CHOICES, MAX_AI_NOTE, MAX_BOX_LENGTH, MAX_BOXES, aiNeedsNote, aiNoteLine, aiNoteProblem } from "./github/publish-flow.mjs";
 import { insideFolder, insideRoots, trashableFolder } from "./path-boundary.mjs";
 import { findProjectRoot } from "./project-root.mjs";
 import { windowText } from "./window-texts.mjs";
@@ -85,6 +85,7 @@ export const WINDOW_ACTIONS = Object.freeze([
   "publish.license",
   "publish.files",
   "publish.package",
+  "publish.ai",
   "github.status",
   "github.signin",
   "github.use",
@@ -93,11 +94,14 @@ export const WINDOW_ACTIONS = Object.freeze([
   "github.code.open",
   "github.signout",
   "github.name",
+  "github.signers",
+  "github.signer",
   "github.push",
   "github.cancel",
   "github.checklist",
   "github.request",
   "github.entry",
+  "github.pull",
   "github.lookup",
   "github.import",
   "github.release.install",
@@ -125,7 +129,7 @@ export const NAME_CHECKS_AN_HOUR = 100;
  * catalog.json put down when there is none, as `check` of an agent does (the flow runs it when it opens, after it has
  * read where the project stands, and that may take more than the click's two seconds).
  */
-export const NO_GESTURE_NEEDED = Object.freeze(["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.cancel", "github.checklist", "github.entry", "github.lookup", "firmware.forget"]);
+export const NO_GESTURE_NEEDED = Object.freeze(["projects.list", "projects.examples", "projects.place", "projects.dependencies.auto", "welcome.get", "publish.status", "publish.check", "github.status", "github.signin.wait", "github.signin.cancel", "github.name", "github.signers", "github.cancel", "github.checklist", "github.entry", "github.pull", "github.lookup", "firmware.forget"]);
 
 /** publish.files without write and the paths to keep out or in only reads the plan of the repository's files. */
 const filesChange = (arg) => arg === null || typeof arg !== "object" || arg.write === true || ["keepOut", "keepIn", "readme"].some((key) => arg[key] !== undefined && arg[key] !== null);
@@ -1010,6 +1014,23 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
     return answer;
   }
 
+  /**
+   * `publish ai` for a project (EMU-359): the AI usage and its explanation, as one line with tokens masked
+   * (publish-flow.mjs aiNoteLine), noted in its .busy/publish.json. One write at a time for each project, in the order
+   * asked; a save that a later one has overtaken while it waited is not written ({ ok, superseded }), so the text typed
+   * last is the one kept.
+   */
+  const aiSaves = new Map();
+  function noteAi(folder, ai, note) {
+    const queue = aiSaves.get(folder) ?? { latest: 0, chain: Promise.resolve() };
+    aiSaves.set(folder, queue);
+    const mine = ++queue.latest;
+    const line = aiNeedsNote(ai) ? aiNoteLine(note).slice(0, MAX_AI_NOTE) : "";
+    const run = queue.chain.then(() => (mine !== queue.latest ? { ok: true, superseded: true } : ask(["publish", "ai", folder, `--ai=${ai}`, ...(line ? [`--ai-note=${line}`] : [])])));
+    queue.chain = run.catch(() => {});
+    return run;
+  }
+
   /** A stage 2 step on a project of the list, as a job: its progress lines go to the window; failures in its words. */
   async function githubJob(folder, work) {
     const { refused } = await projectFor(folder);
@@ -1027,7 +1048,8 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
     } catch (e) {
       if (isPublishError(e)) {
         emit(mine, "failed", e.message);
-        return refusal(e.code, e.message, e.hint);
+        // A request that made a fork or a branch before it failed says so (EMU-360).
+        return { ...refusal(e.code, e.message, e.hint), ...(e.done ? { done: { fork: e.done.fork ?? null, branch: e.done.branch ?? null } } : {}), ...(e.where ? { where: { at: String(e.where.at), direct: e.where.direct === true } } : {}), ...(e.write ? { write: true } : {}) };
       }
       throw e;
     } finally {
@@ -1571,16 +1593,18 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
 
     /**
      * The README of the public repository (busy-emulator publish readme set): { folder, readme: { mode, title, intro,
-     * usage, markdown } } writes README.md from it.
+     * usage, markdown }, replace? } writes README.md from it. Mode "file" uses the project's README.md as it is and
+     * writes nothing (EMU-365); `replace: true`, the person's yes, writes another README over one kept so.
      */
     async "publish.readme"(arg) {
       const r = arg?.readme;
       if (!r || typeof r !== "object") return refusal("usage", "The README is missing.");
       const options = [];
       if (r.mode !== undefined) {
-        if (r.mode !== "fields" && r.mode !== "markdown") return refusal("usage", "The README is made from the fields or is Markdown.");
+        if (!["fields", "markdown", "file"].includes(r.mode)) return refusal("usage", "The README is made from the fields, is Markdown, or is the project's file as it is.");
         options.push(`--mode=${r.mode}`);
       }
+      if (arg.replace === true) options.push("--replace");
       for (const [key, option, most] of [["title", "--title", 200], ["intro", "--intro", MAX_TEXT], ["usage", "--usage", MAX_TEXT], ["markdown", "--markdown", 4 * MAX_TEXT]]) {
         if (r[key] === undefined) continue;
         if (typeof r[key] !== "string" || r[key].length > most) return refusal("usage", `${key} is a text of up to ${most} characters.`);
@@ -1660,6 +1684,21 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
      * Build and package, the build first and then the package, in this one action of the person's click (a build
      * takes longer than the click's two seconds, gestures.mjs). A failed build is answered with `step: "build"`.
      */
+    /**
+     * { folder, ai, note }: the AI usage and its explanation as the person gives them in Send to catalog, noted in the
+     * project's .busy/publish.json (`publish ai`), so that the step opens with them again (EMU-359). While another
+     * job of the project runs, which may write that file too, nothing is noted: the window notes it after.
+     */
+    async "publish.ai"(arg) {
+      if (!AI_CHOICES.includes(arg?.ai)) return refusal("usage", "Choose how AI was used.");
+      if (arg.note !== undefined && arg.note !== null && (typeof arg.note !== "string" || arg.note.length > 4 * MAX_AI_NOTE)) return refusal("usage", `The explanation takes up to ${MAX_AI_NOTE} characters.`);
+      const { refused } = await projectFor(arg.folder);
+      if (refused) return refused;
+      if (jobs.has(arg.folder)) return busy(arg.folder);
+      const answer = await noteAi(arg.folder, arg.ai, typeof arg.note === "string" ? arg.note : null);
+      return answer.superseded ? { ok: true, superseded: true } : answered(answer);
+    },
+
     async "publish.package"(arg) {
       const folder = typeof arg === "string" ? arg : arg?.folder;
       if (arg !== null && typeof arg === "object" && arg.build !== undefined && typeof arg.build !== "boolean") return refusal("usage", "Say whether it builds first.");
@@ -1732,13 +1771,39 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
       }
     },
 
-    /** { folder, name? }: the project's files in the person's public repository, one commit, read back. */
+    /**
+     * { folder?, fresh? } (EMU-366): Sign commits with, for the account signed in: the address commits get now, and the
+     * ones it may choose (GitHub's private address, the verified ones, git config's). Reads only; `fresh` asks GitHub
+     * again (after the person let GitHub CLI read the addresses).
+     */
+    async "github.signers"(arg) {
+      if (arg?.folder !== undefined && arg.folder !== null && typeof arg.folder !== "string") return refusal("usage", "Name the project's folder.");
+      if (typeof arg?.folder === "string") {
+        const { refused } = await projectFor(arg.folder);
+        if (refused) return refused;
+      }
+      return said(() => github.signers({ folder: arg?.folder ?? null, fresh: arg?.fresh === true }));
+    },
+    /** { email: "noreply" | <address>, folder? } (EMU-366): the address the account's commits are signed with from now on. */
+    async "github.signer"(arg) {
+      if (typeof arg?.email !== "string" || arg.email.length > 254) return refusal("usage", "Choose noreply or one of the addresses offered.");
+      if (arg?.folder !== undefined && arg.folder !== null && typeof arg.folder !== "string") return refusal("usage", "Name the project's folder.");
+      if (typeof arg?.folder === "string") {
+        const { refused } = await projectFor(arg.folder);
+        if (refused) return refused;
+      }
+      return said(() => github.chooseSigner({ email: arg.email, folder: arg?.folder ?? null }));
+    },
+
+    /** { folder, name?, email? }: the project's files in the person's public repository, one commit, read back. */
     async "github.push"(arg) {
       if (arg?.name !== undefined && arg.name !== null && (typeof arg.name !== "string" || arg.name.length > 100)) return refusal("usage", "Name the repository.");
       // Into the person's own repository (catalog-update): the head they were shown, and whether they agreed to delete
       // the files it has and the project has not.
       const into = arg?.into ?? null;
       if (into !== null && (typeof into !== "object" || !/^[0-9a-f]{40}$/.test(into.head ?? "") || (into.deleteOthers !== undefined && typeof into.deleteOthers !== "boolean"))) return refusal("usage", "Confirm the repository to publish into.");
+      // The address this push signs with (publish push --email, as the person confirmed it; EMU-366); else the noted one.
+      if (arg?.email !== undefined && arg.email !== null && (typeof arg.email !== "string" || arg.email.length > 254)) return refusal("usage", "--email takes noreply or an e-mail address.");
       // What the name checks said is not true any more once the files are up (a new repository is the app's now).
       nameChecks.kept.clear();
       return githubJob(arg?.folder, async (progress, upload) => {
@@ -1755,7 +1820,7 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
           if (!again.ok) throw new ActionFailure(again.code ?? "changed_since_check", words(again.message ?? "The project changed since Pre-flight check."), again.hint ? words(again.hint) : null);
           return again;
         };
-        const pushed = await (await gh()).push({ folder: arg.folder, status: facts, files: plan, name: arg.name || null, into: into ? { head: into.head, deleteOthers: into.deleteOthers === true } : null, progress, upload, verify });
+        const pushed = await (await gh()).push({ folder: arg.folder, status: facts, files: plan, name: arg.name || null, into: into ? { head: into.head, deleteOthers: into.deleteOthers === true } : null, email: typeof arg.email === "string" ? arg.email : null, progress, upload, verify });
         nameChecks.kept.clear();
         const noted = await ask(["publish", "pushed", arg.folder, `--owner=${pushed.owner}`, `--repo=${pushed.name}`, `--commit=${pushed.commit}`]);
         if (!noted.ok) return failed(noted);
@@ -1784,8 +1849,10 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
     },
 
     /**
-     * { folder, catalog, ticked, ai, otherCatalog? }: the pull request to the catalog, from the person's fork or
-     * branch. `otherCatalog`: the name of a catalog that is not BUSY's, as the person confirmed it (publish-flow.mjs).
+     * { folder, catalog, ticked, ai, aiNote?, otherCatalog? }: the pull request to the catalog, from the person's fork
+     * or branch. `aiNote`: the explanation "Partly" and "Fully" need (EMU-359), noted with the choice in the project's
+     * .busy/publish.json before the request. `otherCatalog`: the name of a catalog that is not BUSY's, as the person
+     * confirmed it (publish-flow.mjs).
      */
     async "github.request"(arg) {
       if (arg?.catalog !== undefined && (typeof arg.catalog !== "string" || arg.catalog.length > 200)) return refusal("usage", "Name the catalog's repository.");
@@ -1794,11 +1861,23 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
       // A checklist past these is never shown (publish-flow.mjs checklistProblem): more is not a person's ticks.
       if (arg.ticked.length > MAX_BOXES || arg.ticked.some((one) => one.length > MAX_BOX_LENGTH)) return refusal("checklist_too_long", `The emulator sends a checklist of up to ${MAX_BOXES} items of up to ${MAX_BOX_LENGTH} characters each.`, "Send the app by hand (SUBMIT.md).");
       if (arg?.changelog !== undefined && arg.changelog !== null && (typeof arg.changelog !== "string" || arg.changelog.length > 4000)) return refusal("bad_changelog", "What's new takes at most 4000 characters.");
+      if (arg?.aiNote !== undefined && arg.aiNote !== null && (typeof arg.aiNote !== "string" || arg.aiNote.length > 4 * MAX_AI_NOTE)) return refusal("ai_note_too_long", `The explanation of the AI usage takes up to ${MAX_AI_NOTE} characters.`);
+      const aiNote = typeof arg?.aiNote === "string" ? arg.aiNote : null;
+      // The explanation the AI usage needs, refused before anything is written (What's new into catalog.json below).
+      if (AI_CHOICES.includes(arg?.ai)) {
+        const noteRefused = aiNoteProblem(arg.ai, aiNote);
+        if (noteRefused) return refusal(noteRefused.code, noteRefused.message, noteRefused.hint);
+      }
       return githubJob(arg?.folder, async (progress) => {
         // stale-check: the request names what was checked and packaged, or none is sent. Asked before What's new is
         // written, which changes catalog.json; the request compares the files with GitHub's after it.
         const checked = await ask(["publish", "verify", arg.folder]);
         if (!checked.ok) return failed(checked);
+        // The AI usage as it is sent, noted for the window (EMU-359); the request checks the explanation itself.
+        if (AI_CHOICES.includes(arg.ai)) {
+          const ai = await noteAi(arg.folder, arg.ai, aiNote);
+          if (!ai.ok) return failed(ai);
+        }
         // An update's What's new (catalog-update): written into catalog.json first, by the catalog's own rules, then
         // into the request's manifest.
         if (typeof arg.changelog === "string") {
@@ -1823,12 +1902,28 @@ export function createActions({ startCli: startCliProcess, dialogs, show, copy, 
         };
         const manifest = facts.id ? read(path.join(submission, "applications", facts.id, "manifest.yml")) : null;
         const testing = /^# Device testing\n([\s\S]*?)(?=^# |$(?![\s\S]))/m.exec(read(path.join(submission, "PR-DESCRIPTION.md")) ?? "")?.[1]?.trim() || null;
-        const made = await (await gh()).request({ status: facts, files: plan, folder: arg.folder, catalog: arg.catalog, ticked: arg.ticked, ai: arg.ai, otherCatalog: arg.otherCatalog ?? null, manifest, changelog: typeof arg.changelog === "string" ? arg.changelog.trim() : null, testing, progress });
+        const made = await (await gh()).request({ status: facts, files: plan, folder: arg.folder, catalog: arg.catalog, ticked: arg.ticked, ai: arg.ai, aiNote, otherCatalog: arg.otherCatalog ?? null, manifest, changelog: typeof arg.changelog === "string" ? arg.changelog.trim() : null, testing, progress });
         looks.kept.clear();
-        const noted = await ask(["publish", "requested", arg.folder, `--pr=${made.url}`, `--catalog=${made.catalog}`]);
+        // With the commit it names and whether it was opened or updated: the window opens on what was sent (EMU-360).
+        const noted = await ask(["publish", "requested", arg.folder, `--pr=${made.url}`, `--catalog=${made.catalog}`, ...(/^[0-9a-f]{40}$/.test(made.commit ?? "") ? [`--commit=${made.commit}`] : []), `--created=${made.created === false && !made.unchanged ? "no" : "yes"}`]);
         if (!noted.ok) return failed(noted);
         return { ok: true, ...made };
       });
+    },
+
+    /**
+     * { folder } (EMU-360 review): where the pull request the project's record names stands on GitHub now, for the
+     * window opened again: { url, catalog, commit, state: "open" | "closed" | "merged" | "gone", noted } with the
+     * commit the record names (`noted`). Only a request to the project's catalog. Reads only.
+     */
+    async "github.pull"(arg) {
+      const { refused } = await projectFor(arg?.folder);
+      if (refused) return refused;
+      const facts = await ask(["publish", "status", arg.folder]);
+      if (!facts.ok) return failed(facts);
+      const noted = facts.github?.request;
+      if (!noted?.url || !noted.catalog) return refusal("no_request", "No pull request is noted for the project.");
+      return looked(`pull\n${arg.folder}\n${noted.url}`, async () => ({ ...(await github.pullState({ url: noted.url, catalog: noted.catalog })), catalog: noted.catalog, noted: typeof noted.commit === "string" ? noted.commit : null }), 10_000);
     },
 
     /**

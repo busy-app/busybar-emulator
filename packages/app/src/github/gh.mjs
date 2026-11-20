@@ -203,6 +203,9 @@ export function cleanLine(text) {
 /** What gh's failure to reach GitHub looks like on its error output. */
 const NETWORK = /dial tcp|no such host|connection refused|network is unreachable|i\/o timeout|tls handshake|connection reset|EOF$|could not resolve|timeout awaiting/i;
 
+/** gh api's words when GitHub could not be reached ("error connecting to api.github.com", and the system's own). */
+const TRANSPORT_NETWORK = new RegExp(`error connecting to|check your internet connection|${NETWORK.source}`, "i");
+
 /** The API path a request names: one of api.github.com's, from the app's own code, never an address or a flag. */
 export function checkApiPath(apiPath) {
   if (typeof apiPath !== "string" || !/^\/[A-Za-z0-9/_.~%?&=,+-]*$/.test(apiPath) || apiPath.startsWith("//")) throw new TypeError(`not an API path: ${JSON.stringify(String(apiPath).slice(0, 200))}`);
@@ -212,7 +215,8 @@ export function checkApiPath(apiPath) {
 /**
  * The transport github-api.mjs sends its requests by: gh api, JSON on its standard input. Resolves with
  * { status, headers, text } for every answer GitHub gave (an error's too), or with { failure: "network" | "auth" |
- * "timeout" | "canceled" | "no_account", detail } when there was none. `token()`: the token of the account the call
+ * "timeout" | "canceled" | "no_account" | "token" | "gh_failed", detail } when there was none ("token": GitHub CLI did
+ * not give the account's token; "gh_failed": gh did not start, or ended with no answer and no word of the network). `token()`: the token of the account the call
  * goes as (accountToken), or null for GitHub CLI's own; `signal` of a call ends its gh.
  */
 export function ghTransport(run, { timeoutMs = REQUEST_TIMEOUT_MS, token = null } = {}) {
@@ -224,7 +228,8 @@ export function ghTransport(run, { timeoutMs = REQUEST_TIMEOUT_MS, token = null 
       let own = null;
       if (token) {
         own = await token();
-        if (own?.failure) return own;
+        // GitHub CLI could not give the account's token (gh did not answer): not GitHub's network (EMU-360 review).
+        if (own?.failure) return own.failure === "network" ? { failure: "token", detail: own.detail } : own;
       }
       const args = ["api", apiPath, "--hostname", GH_HOST, "--method", method, "--include", "-H", "Accept: application/vnd.github+json", "-H", `X-GitHub-Api-Version: ${API_VERSION}`];
       if (body !== undefined) args.push("--input", "-");
@@ -234,7 +239,9 @@ export function ghTransport(run, { timeoutMs = REQUEST_TIMEOUT_MS, token = null 
       const answer = parseApiOutput(done.stdout);
       if (answer) return answer;
       if (done.code === EXIT_AUTH) return { failure: "auth", detail: cleanLine(done.stderr) };
-      return { failure: "network", detail: cleanLine(done.stderr) || `gh ended with ${done.code}` };
+      // No answer: GitHub out of reach as gh says it, or gh itself that did not run or failed (EMU-360 review).
+      if (done.code !== null && TRANSPORT_NETWORK.test(String(done.stderr ?? ""))) return { failure: "network", detail: cleanLine(done.stderr) };
+      return { failure: "gh_failed", detail: cleanLine(done.stderr) || (done.code === null ? "gh could not be started" : `gh ended with ${done.code}`) };
     },
   };
 }

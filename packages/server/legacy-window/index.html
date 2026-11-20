@@ -50,7 +50,7 @@
         <h2>Apps<span class="count" id="apps-count"></span></h2>
         <div class="head-actions">
           <button type="button" class="icon-btn" id="refresh-apps" title="Read the list again" aria-label="Read the list again"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-refresh"/></svg></button>
-          <button type="button" class="btn solid" id="create-app" title="Create a new app: from a template or an empty one" aria-label="Create app"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-plus"/></svg><span class="label">Create app</span></button>
+          <button type="button" class="btn solid" id="create-app" aria-label="Create app"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-plus"/></svg><span class="label">Create app</span></button>
         </div>
       </div>
       <ul id="apps" class="apps"></ul>
@@ -59,7 +59,7 @@
     <section class="pane app-card" id="app-pane" aria-labelledby="app-title" hidden>
       <div class="pane-nav">
         <button type="button" class="btn quiet nav-back" id="all-apps"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-arrow-left"/></svg>All apps</button>
-        <button type="button" class="icon-btn" id="app-more" title="More" aria-label="More for this app" aria-haspopup="menu"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-more"/></svg></button>
+        <button type="button" class="icon-btn" id="app-more" aria-label="More for this app" aria-haspopup="menu"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-more"/></svg></button>
       </div>
       <div class="app-head">
         <span class="app-head-icon" id="app-icon"></span>
@@ -172,7 +172,7 @@
         <!-- bar-address: the BUSY Bar's address with Copy, and its local web; under them the four settings, two by two. -->
         <div class="device-controls">
           <div class="bar-address" id="bar-address-line">
-            <p class="address-field"><a id="bar-address" href="/" target="_blank" rel="noopener"></a><button type="button" class="icon-btn small address-copy" id="bar-address-copy" title="Copy the address of BUSY Bar" aria-label="Copy the address of BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-copy"/></svg></button></p>
+            <p class="address-field"><a id="bar-address" href="/" target="_blank" rel="noopener"></a><button type="button" class="icon-btn small address-copy" id="bar-address-copy" aria-label="Copy the address of BUSY Bar"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-copy"/></svg></button></p>
             <a class="icon-btn local-web" id="local-web" href="/emulator/local-web.html" target="_blank" rel="noopener" title="Open in Local Web" aria-label="Open in Local Web"><svg class="bi" viewBox="0 0 24 24" aria-hidden="true"><use href="/emulator/icons/busy-sprite.svg#bi-open-in-new"/></svg></a>
           </div>
           <div class="sets">

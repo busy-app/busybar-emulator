@@ -1048,6 +1048,7 @@ span.app-icon { background: #000 repeating-linear-gradient(135deg, transparent 0
 .console .time { flex: none; color: #5a5a5a; }
 .console .text { min-width: 0; color: var(--text); }
 .console .info .text { color: var(--primary-text); }
+.console .noted .text { color: var(--dimmed); }
 .console .warn .text { color: var(--warning); }
 .console .error .text { color: var(--error); }
 .console .app .text, .console .build .text { color: var(--muted); }
@@ -1420,6 +1421,8 @@ body.publishing { overflow: hidden; }
 .publish-said.good { color: var(--primary-text); }
 .publish-said.why { color: var(--dimmed); }
 .publish-said.failed { color: var(--error); white-space: normal; }
+/* Why Next is off, beside it (EMU-364): read at a glance, and whole (two lines rather than cut). */
+.publish-why { flex: 0 1 auto; max-width: 50%; color: var(--text); font-size: 13px; line-height: 16px; text-align: right; overflow-wrap: anywhere; }
 
 .publish-muted { margin: 0; color: var(--muted); }
 .publish-group { display: flex; flex-direction: column; gap: 12px; }
@@ -1457,6 +1460,27 @@ body.publishing { overflow: hidden; }
 .publish-notes:empty { display: none; }
 
 /* A result: the check's verdict, Ready to publish, a license that is there. */
+/* What a send came to (EMU-360): the step's form hidden, one state in the middle of the pane. */
+.publish-pane.outcome { justify-content: center; }
+.publish-outcome { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 520px; margin: 0 auto; padding: 24px 0; text-align: center; }
+.publish-outcome h3 { margin: 0; color: var(--text-strong); font-size: 20px; line-height: 28px; font-weight: 500; }
+.publish-outcome > p { margin: 0; color: var(--muted); }
+.publish-outcome .mark .bi { width: 48px; height: 48px; }
+.publish-outcome.done .mark .bi { color: var(--primary-text); }
+.publish-outcome.failed .mark .bi { color: var(--error); }
+.publish-outcome .publish-row { justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+.publish-outcome .publish-lines, .publish-outcome .publish-upload { align-self: stretch; text-align: left; }
+/* An outcome's facts (factRows): one grid, rows as its subgrid, so the labels, the values and the actions line up. */
+.publish-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; row-gap: 4px; align-self: stretch; margin: 0; padding: 0; list-style: none; text-align: left; }
+.publish-facts li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; column-gap: 12px; align-items: center; box-sizing: border-box; height: 40px; padding: 0 8px 0 12px; border-radius: 8px; background: var(--tile); }
+.publish-facts .label { color: var(--text); font-weight: 500; white-space: nowrap; }
+.publish-facts .value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-self: stretch; text-align: left; color: var(--muted); font-size: 12px; line-height: 16px; }
+.publish-facts .value > * { display: inline; margin: 0; padding: 0; font-size: inherit; line-height: inherit; }
+.publish-facts .value a span { white-space: nowrap; }
+.publish-facts .action { justify-self: end; }
+.publish-facts span.action { width: var(--ctl-small); }
+.publish-spinner { width: 40px; height: 40px; border-radius: 50%; border: 3px solid var(--tile); border-top-color: var(--primary); animation: turn 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .publish-spinner { animation: none; border-top-color: var(--muted); } }
 .publish-verdict, .publish-done { display: flex; align-items: center; gap: 16px; padding: 16px; border-radius: 16px; background: var(--tile); }
 .publish-verdict > .bi, .publish-done > .bi { width: 32px; height: 32px; }
 .publish-verdict.good > .bi, .publish-done > .bi { color: var(--primary-text); }
@@ -1534,6 +1558,8 @@ body.publishing { overflow: hidden; }
 .publish-lines li a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; }
 .publish-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
 .publish-choices.one { grid-template-columns: 1fr; }
+/* Send to catalog's AI usage: the choice, and under it the explanation "Partly" and "Fully" need (EMU-359). */
+.publish-ai { display: flex; flex-direction: column; gap: 12px; }
 .publish-choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .publish-choices .choice { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: 12px; background: var(--tile); box-shadow: none; cursor: pointer; transition: background-color 0.15s; }
 .publish-choices .choice:hover { background: var(--elevated); }
@@ -1571,7 +1597,7 @@ body.publishing { overflow: hidden; }
 
 /* Application Info: the field's line about it stands under its label, above the field; what is wrong stays below. */
 .publish-field .about { margin-top: -4px; color: var(--muted); font-size: 12px; line-height: 16px; }
-.publish-field.described .hint:empty { display: none; }
+.publish-field.described .hint:empty, .publish-field .hint.source:empty { display: none; }
 
 /* The icons: a line about them, the icon block (its own section, "icon block"), Save icons while one is new. */
 .publish-icon { display: flex; flex-direction: column; gap: 12px; }
@@ -1624,6 +1650,15 @@ body.publishing { overflow: hidden; }
 
 /* License: the person's own file, uploaded; the question before one is replaced. */
 .publish-own-license .publish-muted { flex: 0 1 auto; }
+/* The README step's switch, the project's README.md as it is (EMU-365); off with its reason when there is no file. */
+.publish-keep { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: 12px; background: var(--tile); cursor: pointer; }
+.publish-keep .switch { margin-top: 2px; }
+.publish-keep .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.publish-keep b { color: var(--text); font-weight: 500; font-size: 13px; line-height: 20px; }
+.publish-keep .words span { color: var(--muted); font-size: 12px; line-height: 16px; }
+.publish-keep.off { cursor: default; }
+.publish-keep.off .switch { opacity: 0.4; cursor: default; }
+.publish-keep.off .words span { color: var(--text); }
 .publish-ask { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 16px; background: color-mix(in oklab, var(--warning) 10%, var(--tile)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warning) 40%, transparent); }
 .publish-ask b { color: var(--text-strong); font-weight: 500; }
 .publish-ask > span { color: var(--muted); font-size: 13px; line-height: 20px; }
@@ -2179,9 +2214,11 @@ body.reporting-bug { overflow: hidden; }
 /* ---------------------------------------------------------------- update-popup: a newer version (update-popup.js)
 
    The window's dialog: a calm near-black card over the dimmed window, as Delete's. The emulator's mark and the version
-   at the top, a few lines of the release's notes in a tile, the buttons at the foot, the primary one white and last.
-   The window's type system: the title 18/24 500, the notes 14/20 400, "You are on" a caption 12/16 400. The title is
-   never cut (the window's h2 is one line with an ellipsis): a long version ("0.1.0-beta.10") takes a second line. */
+   at the top, the release's notes in a tile, the buttons at the foot, the primary one white and last, Release notes a
+   quiet link at the left. The window's type system: the title 18/24 500, the notes 14/20 400 (a feature's name 500),
+   "You are on" a caption 12/16 400. The title is never cut (the window's h2 is one line with an ellipsis): a long
+   version ("0.1.0-beta.10") takes a second line. The card is never taller than the window: the notes' tile is at most
+   320 px and gives up height before anything else does, down to one line (44 px), and only it scrolls. */
 
 body.update-popping { overflow: hidden; }
 .update-popup-scrim { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; padding: var(--s-6); background: rgb(0 0 0 / 0.6); backdrop-filter: blur(6px); }
@@ -2190,23 +2227,38 @@ body.update-popping { overflow: hidden; }
   flex-direction: column;
   gap: var(--s-4);
   width: min(500px, 100%);
-  max-height: 100%;
+  max-height: calc(100vh - 2 * var(--s-6));
   padding: var(--s-6);
   border-radius: 20px;
   background: #171717;
   box-shadow: var(--glass), 0 24px 64px rgb(0 0 0 / 0.5);
-  overflow-y: auto;
+  overflow: hidden;
   outline: none;
 }
+.update-popup > * { flex: none; }
 .update-popup-head { display: flex; align-items: flex-start; gap: var(--s-4); }
 .update-popup-logo { flex: none; width: 40px; height: 40px; border-radius: 10px; }
 .update-popup-words { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; min-height: 40px; }
 .update-popup h2 { margin: 0; overflow: visible; color: var(--text-strong); font-size: 18px; line-height: 24px; font-weight: 500; white-space: normal; text-overflow: clip; text-wrap: balance; overflow-wrap: break-word; }
 .update-popup-about { margin: 0; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 400; }
-.update-popup-notes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: var(--s-3) var(--s-4); border-radius: 12px; background: var(--tile); color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; list-style: none; }
+.update-popup > .update-popup-notes { flex: 0 1 auto; min-height: 44px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.update-popup-notes { margin: 0; padding: var(--s-3) var(--s-4); border-radius: 12px; background: var(--tile); color: var(--text); font-size: 14px; line-height: 20px; font-weight: 400; overflow-wrap: break-word; }
+.update-popup-notes:focus-visible { outline-offset: -2px; }
+.update-popup-notes > * + * { margin-top: var(--s-2); }
 .update-popup-notes p { margin: 0; }
-ul.update-popup-notes li { position: relative; padding-left: 14px; }
-ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 4px; height: 4px; border-radius: 1px; background: var(--dimmed); }
+.update-popup-notes .update-popup-notes-heading { color: var(--text-strong); font-weight: 500; }
+.update-popup-notes .update-popup-notes-more { color: var(--muted); }
+.update-popup-notes strong { color: var(--text-strong); font-weight: 500; }
+.update-popup-notes :is(ul, ol) { margin: 0; padding: 0; list-style: none; }
+.update-popup-notes li { position: relative; padding-left: 14px; }
+.update-popup-notes li + li { margin-top: 6px; }
+.update-popup-notes ul > li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 4px; height: 4px; border-radius: 1px; background: var(--dimmed); }
+.update-popup-notes ol { counter-reset: note; }
+.update-popup-notes ol > li { padding-left: 20px; counter-increment: note; }
+.update-popup-notes ol > li::before { content: counter(note) "."; position: absolute; left: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A feature's details: under it, a step in and a shade quieter. */
+.update-popup-notes li > :is(ul, ol) { margin-top: 4px; color: var(--muted); }
+.update-popup-notes li li + li { margin-top: 4px; }
 .update-popup-why { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0; color: var(--warning); font-size: 14px; line-height: 20px; }
 .update-popup-why .bi { width: 16px; height: 16px; margin-top: 2px; }
 .update-popup-why span { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
@@ -2216,6 +2268,7 @@ ul.update-popup-notes li::before { content: ""; position: absolute; left: 2px; t
 .update-popup-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: var(--primary); transition: width 0.2s linear; }
 .update-popup-failed { margin: 0; color: var(--error); font-size: 14px; line-height: 20px; }
 .update-popup-foot { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-1); }
+.update-popup-foot .update-popup-page { margin-right: auto; }
 .update-popup-foot a.btn { text-decoration: none; }
 
 /* ---------------------------------------------------------------- the opened app's column

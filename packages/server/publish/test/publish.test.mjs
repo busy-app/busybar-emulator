@@ -156,6 +156,46 @@ test("catalog-texts: get says what is missing; set writes the texts given and ke
   assert.equal((await cli(home, ["catalog-texts", "get", dir, "--category=clocks"])).json.code, "usage");
 });
 
+test("catalog-texts set --description @README.md: the file's text is checked, a path outside the folder is refused (EMU-333)", async (t) => {
+  const { home, dir } = bareProject(t);
+  const texts = [`--category=${DETAILS.category}`, `--short-description=${DETAILS.short_description}`, `--changelog=${DETAILS.changelog}`];
+  const missing = await cli(home, ["catalog-texts", "set", dir, ...texts, "--description=@README.md"]);
+  assert.deepEqual([missing.code, missing.json.taken], [0, false]);
+  assert.match(missing.json.problems.description, /README\.md is not in the project/);
+  writeFileSync(path.join(dir, "README.md"), "Too short.");
+  assert.match((await cli(home, ["catalog-texts", "get", dir])).json.problems.description, /10 characters: the description in README\.md needs at least 50/);
+  writeFileSync(path.join(dir, "README.md"), `${DETAILS.description}\n`);
+  const taken = await cli(home, ["catalog-texts", "get", dir]);
+  assert.deepEqual([taken.json.taken, taken.json.problems.description, taken.json.texts.description], [true, null, "@README.md"]);
+  // The catalog counts after reading with universal newlines: \r\n is one character.
+  const crlf = (n) => `${"x".repeat(n - 2)}\r\nx`;
+  writeFileSync(path.join(dir, "README.md"), crlf(49));
+  assert.match((await cli(home, ["catalog-texts", "get", dir])).json.problems.description, /^49 characters: the description in README\.md needs at least 50\.$/, "50 bytes, 49 characters");
+  writeFileSync(path.join(dir, "README.md"), crlf(50));
+  assert.equal((await cli(home, ["catalog-texts", "get", dir])).json.problems.description, null, "51 bytes, 50 characters");
+  writeFileSync(path.join(dir, "README.md"), `${"x".repeat(3999)}\r\n`);
+  assert.equal((await cli(home, ["catalog-texts", "get", dir])).json.problems.description, null, "4001 bytes, 4000 characters");
+  writeFileSync(path.join(dir, "README.md"), Buffer.from(`${DETAILS.description} Gr\xfc\xdfe`, "latin1"));
+  assert.match((await cli(home, ["catalog-texts", "get", dir])).json.problems.description, /^README\.md is not a UTF-8 text file: the catalog would not read it\./);
+  mkdirSync(path.join(dir, "docs", ".git"), { recursive: true });
+  writeFileSync(path.join(dir, "docs", ".git", "ABOUT.md"), DETAILS.description);
+  assert.match((await cli(home, ["catalog-texts", "set", dir, "--description=@docs/.git/ABOUT.md"])).json.problems.description, /^docs\/\.git\/ABOUT\.md is inside a \.git folder/);
+  writeFileSync(path.join(dir, "README.md"), `${DETAILS.description}\n`);
+
+  // The README publish readme writes does not take the description's file name as its paragraph.
+  await cli(home, ["catalog-texts", "set", dir, "--description=@README.md"]);
+  rmSync(path.join(dir, "README.md"));
+  assert.equal((await cli(home, ["publish", "readme", "set", dir, "--usage=- **Start**: Starts"])).code, 0);
+  const written = readFileSync(path.join(dir, "README.md"), "utf8");
+  assert.match(written, /Made by BUSY Bar Emulator/, "the README is the one publish readme writes");
+  assert.doesNotMatch(written, /@README\.md/);
+
+  writeFileSync(path.join(dir, "README.md"), `${DETAILS.description}\n`);
+  const outside = await cli(home, ["catalog-texts", "set", dir, "--description=@../README.md"]);
+  assert.deepEqual([outside.code, outside.json.taken], [0, false]);
+  assert.match(outside.json.problems.description, /\.\.\/README\.md is not a file of the app's folder/);
+});
+
 test("publish, stage 1, from the command line: license, files, screenshots, the checks grouped, and submission/ that waits for GitHub", async (t) => {
   const { home, dir } = bareProject(t);
   // Pre-flight check builds the app (stale-check): a trusted project, its busy-cli a stand-in that builds.
@@ -226,8 +266,10 @@ test("publish, stage 1, from the command line: license, files, screenshots, the 
   assert.equal(existsSync(path.join(dir, "screenshots", "front-1@8x.png")), false, "with its enlarged copy");
   assert.equal((await cli(home, ["publish", "screenshots", dir, "--remove=../x.png"])).json.code, "usage");
 
-  // README: How to use, a row a control; the step is done with at least one.
-  assert.equal((await cli(home, ["publish", "status", dir])).json.steps.readme, "todo", "no How to use yet");
+  // README: the one publish files made is done without How to use, which is optional (EMU-364); rows go in all the same.
+  const before = (await cli(home, ["publish", "status", dir])).json;
+  assert.deepEqual([before.steps.readme, before.readme.how_to_use], ["done", null], "no How to use: done");
+  assert.match(before.readme.how_to_use_hint, /optional/);
   assert.equal((await cli(home, ["publish", "readme", "set", dir, "--usage=- **Start**: Shows the date"])).json.ready, true);
 
   // The package: submission/, its manifest waiting for the repository on GitHub.
@@ -375,4 +417,15 @@ test("publish prepare: never chooses the license, and does the rest in one go", 
   const refused = (await cli(home, ["publish", "prepare", dir])).json;
   assert.deepEqual([refused.code, existsSync(path.join(dir, "LICENSE"))], ["usage", false]);
   assert.equal((await cli(home, ["publish", "nothing", dir])).json.code, "usage");
+});
+
+test("a description written as @<path> is checked on the file's text, as the catalog checks it (EMU-333)", () => {
+  const good = { category: "productivity", short_description: "A short line for the card.", description: "@README.md", changelog: "The first version of the app." };
+  const readme = "A description long enough for the catalog, read from the README file.";
+  assert.equal(textProblems(good).problems.description, null, "without the file only the path is checked");
+  assert.equal(textProblems(good, { description: readme }).problems.description, null);
+  assert.match(textProblems(good, { description: "Too short." }).problems.description, /10 characters: the description in README\.md needs at least 50/);
+  assert.match(textProblems(good, { description: null }).problems.description, /README\.md is not in the project/);
+  for (const outside of ["@../README.md", "@/etc/passwd", "@docs\\README.md", "@C:/README.md", "@"]) assert.match(textProblems({ ...good, description: outside }, { description: readme }).problems.description, /is not a file of the app's folder/, outside);
+  assert.match(textProblems({ ...good, changelog: "@CHANGELOG.md" }).problems.changelog, /may not start with @/);
 });

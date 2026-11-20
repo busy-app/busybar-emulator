@@ -51,6 +51,36 @@ export const patches = {
   extern uint32_t emu_alloc_bytes; /* native/emu_runner.c */
   emu_alloc_bytes += (uint32_t) size;`,
     ],
+    // Every call and construction of a function, JS or the engine's own (String(), Math.random(), a firmware global):
+    // a third measure of an app's work, for bar speed once a BUSY Bar recording prices it (emu_runner.c, EMU-344).
+    [
+      `ecma_op_function_call (ecma_object_t *func_obj_p, /**< Function object */
+                       ecma_value_t this_arg_value, /**< 'this' argument's value */
+                       const ecma_value_t *arguments_list_p, /**< arguments list */
+                       uint32_t arguments_list_len) /**< length of arguments list */
+{`,
+      `ecma_op_function_call (ecma_object_t *func_obj_p, /**< Function object */
+                       ecma_value_t this_arg_value, /**< 'this' argument's value */
+                       const ecma_value_t *arguments_list_p, /**< arguments list */
+                       uint32_t arguments_list_len) /**< length of arguments list */
+{
+  extern uint32_t emu_calls; /* native/emu_runner.c */
+  emu_calls++;`,
+    ],
+    [
+      `ecma_op_function_construct (ecma_object_t *func_obj_p, /**< Function object */
+                            ecma_object_t *new_target_p, /**< new target */
+                            const ecma_value_t *arguments_list_p, /**< arguments list */
+                            uint32_t arguments_list_len) /**< length of arguments list */
+{`,
+      `ecma_op_function_construct (ecma_object_t *func_obj_p, /**< Function object */
+                            ecma_object_t *new_target_p, /**< new target */
+                            const ecma_value_t *arguments_list_p, /**< arguments list */
+                            uint32_t arguments_list_len) /**< length of arguments list */
+{
+  extern uint32_t emu_calls; /* native/emu_runner.c */
+  emu_calls++;`,
+    ],
     // The emulator's watchdog (emu_runner.c engine_halt_callback) is asked at backward branches only, where JerryScript
     // asks its halt handler. A chain of promise reactions that never ends (a .then() that starts the next one, an async
     // function that calls itself after an await) has none: the job queue below never empties, and the app's JS held

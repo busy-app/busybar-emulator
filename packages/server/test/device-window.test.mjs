@@ -451,7 +451,8 @@ test("the page has every element its script looks up, and every key, position an
   assert.ok(pictures.length >= 5, `buttons that are a picture: ${pictures.length}`);
   for (const tag of pictures) {
     assert.match(tag, / aria-label="[^"]+"/, tag);
-    assert.match(tag, / title="[^"]+"/, tag);
+    // The More button has no hover label by the owner's word (18.11): its name is the aria-label alone.
+    if (!/id="(app-more|bar-address-copy)"/.test(tag)) assert.match(tag, / title="[^"]+"/, tag);
   }
   // The controls under the bar: the window's own buttons, each named for a screen reader; the two RGB LEDs beside
   // Start / Pause; icons only from BUSY's set (the test of the icons, below). Nothing of an illustration is left.
@@ -801,6 +802,11 @@ test("the card shows the address of BUSY Bar with Copy, and the API version link
   await settle();
   assert.deepEqual(calls.filter(([what]) => what !== "projects"), [["browse", "http://127.0.0.1:8861/"], ["browse", "http://127.0.0.1:8861/docs/"], ["copy", "http://127.0.0.1:8861"]]);
   assert.equal(page.$("#bar-address-copy").title, "Copied");
+  // No hover label before the press (Mikhail 18.11), and none on Create app when it can be pressed; both keep their names.
+  assert.doesNotMatch(html, /id="bar-address-copy"[^>]* title=/);
+  assert.match(html, /id="bar-address-copy"[^>]* aria-label="Copy the address of BUSY Bar"/);
+  assert.doesNotMatch(html, /id="create-app"[^>]* title=/);
+  assert.match(html, /id="create-app"[^>]* aria-label="Create app"/);
 });
 
 test("in a browser the card's links are plain links: nothing is asked of a shell", async () => {
@@ -1304,7 +1310,10 @@ test("an app that runs has a row and its numbers even when the list does not nam
   page.stream.emit("state", { ...state(), running: RUNNING("app.test.one") });
   await settle();
   assert.deepEqual(listed(page), [{ name: "app.test.one", note: "", buttons: ["Stop"], chosen: true, on: true }]);
-  assert.equal(page.$("#apps").children[0].querySelector(".row-actions").children.at(-1).title, "More", "the row's menu is behind its More button");
+  assert.equal(page.$("#apps").children[0].querySelector(".row-actions").children.at(-1).ariaLabel, "More for app.test.one", "the row's menu is behind its More button");
+  // No hover label on the icon: no card and no title (Mikhail 18.11); the name is the aria-label.
+  const more = page.$("#apps").children[0].querySelector(".row-more");
+  assert.deepEqual([more.title, more.dataset.tip, page.$("#app-more").title, page.$("#app-more").dataset.tip], ["", undefined, "", undefined], "the More buttons have no hover label");
   // It is the chosen app, and its numbers are in its section.
   assert.equal(titleOf(page), "app.test.one");
   assert.equal(part(page, "ac-heap").querySelector(".ac-heap-text").textContent, "Heap 2.0 of 128 KiB");
@@ -1426,6 +1435,7 @@ test("the list is the person's projects first, each with Refresh, then what else
     ["Packaged", "3.0, from a package", ["Start"]],
   ]);
   assert.equal(page.$("#create-app").ariaDisabled, "false");
+  assert.ok(!page.$("#create-app").title, "no hover label on Create app when it can be pressed");
 });
 
 // create-offline: a project created without the network, and three of the same name.
@@ -1516,7 +1526,8 @@ test("the chosen project's folder is a read-only field with Copy and Open in Fin
   assert.deepEqual(path.children.map((one) => [one.className, one.textContent]), [["head", "~/Projects/experiments"], ["tail", "/one"]]);
   assert.equal(path.className, "path ac-path");
   assert.deepEqual([path.getAttribute("role"), path.getAttribute("aria-readonly"), path.tabIndex, path.title], ["textbox", "true", 0, ""]);
-  assert.deepEqual([path.dataset.tip, path.dataset.tipDetail], ["The project's folder", PROJECT.folder]);
+  // No hover card and no title on it (Mikhail 18.11); the name is the aria-label.
+  assert.deepEqual([path.dataset.tip, path.dataset.tipDetail, path.ariaLabel, path.getAttribute("aria-describedby")], [undefined, undefined, "The project's folder", null]);
   copy.fire("click");
   show.fire("click");
   await settle();

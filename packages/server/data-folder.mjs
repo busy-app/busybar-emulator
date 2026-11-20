@@ -17,13 +17,19 @@
 // a folder or a file is an error, not a way somewhere else. The data folder itself may be reached through links (a
 // home on another disk, /tmp on macOS): that is the user's choice of where it lies.
 //
-// A folder that is of a newer format than FORMAT, or whose format record cannot be read, is left exactly as it is: not
-// a file is made in it. A folder of an older format is moved to this one (EMU-219) by the steps in MIGRATIONS, one
-// format at a time, under the folder's lock and before anything else uses it; the format record is written after each
-// step. A folder that cannot be moved (no step for its format, or a step failed) is set aside, not deleted: what the
-// emulator keeps there goes to set-aside/format-<n>-<time>/ and the folder starts anew, and the server's notices say
-// what was set aside, where and why. The only layout older than the format number, the bar's storage (ext) at the top,
-// is refused as before (test/convert-data-folder.mjs moves it).
+// The rule (ADR-0013, its section on the data folder; EMU-341): from 0.1.0 the format changes only with a step forward in MIGRATIONS
+// and a test of that step on a folder the previous release wrote (test/server/data-folders/, recorded from the
+// release by record.mjs there). A folder that is of a newer format than FORMAT, or whose format record cannot be read,
+// is left exactly as it is: not a file is made in it (formatProblem below is the same check for the app's shell and the
+// command line, which look before they write). A folder of an older format is moved to this one (EMU-219) by the
+// steps in MIGRATIONS, one format at a time, under the folder's lock and before anything else uses it; the format
+// record is written after each step, so a start that ended in the middle of a step (a crash, a power cut) is finished
+// by the next one. A folder that cannot be moved (no step for its format, or a step failed) is set aside, not deleted:
+// what the emulator keeps there goes to set-aside/format-<n>-<time>/ and the folder starts anew, and the server's
+// notices say what was set aside, where (the apps by name) and why; a setting aside that a start ended in the middle of
+// is finished by the next (set-aside/moving.json). That is the way out of a broken step, not a way to change the format.
+// The only layout older than the format number, the bar's storage (ext) at the top, is refused as before
+// (test/convert-data-folder.mjs moves it).
 import { randomBytes } from "node:crypto";
 import { accessSync, closeSync, constants, fchmodSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { createServer, connect } from "node:net";
@@ -229,6 +235,68 @@ function readFormat(root) {
     throw formatError(`The data folder ${root} cannot be used: its format record ${file} does not name a format (${JSON.stringify(first.slice(0, 40))}). It is left as it is. Name another folder, or put this one right.`);
   }
   return Number(first);
+}
+
+/**
+ * Why the data folder `root` cannot be opened by an emulator that knows formats up to `known`, read from its format
+ * record alone; null when it can (a folder of `known` or older, a new folder, no folder yet). Throws nothing, writes
+ * nothing. { kind: "newer", format, known, message }: a newer emulator moved it on; { kind: "record", message }: its
+ * record is a link, cannot be read or names no format; { kind: "layout", message }: the layout from before the format
+ * number. openDataFolder refuses exactly these; the command line asks before any command that writes into the folder,
+ * and the app's shell makes the same check itself (packages/app/src/data-format.mjs, a copy: it imports nothing from
+ * other packages), so that an emulator that cannot use a folder leaves it exactly as it is.
+ */
+export function formatProblem(root, known = FORMAT) {
+  try {
+    checkedFormat(root, known);
+    return null;
+  } catch (e) {
+    if (e?.code !== "EMU_DATA_FORMAT") return null;
+    return { kind: e.kind, ...(e.kind === "newer" ? { format: e.format, known } : {}), message: e.message };
+  }
+}
+
+/**
+ * The format of the data folder `root` (null for a folder without a record), or an EMU_DATA_FORMAT error with its
+ * `kind` when this emulator, which knows formats up to `target`, must leave the folder as it is.
+ */
+function checkedFormat(root, target) {
+  let format;
+  try {
+    format = readFormat(root);
+  } catch (e) {
+    throw Object.assign(e, { kind: "record" });
+  }
+  // A setting aside a newer emulator began (and was stopped in): the format record may be in set-aside already, and
+  // the folder looks new. Its record says which format it was going to.
+  const pending = settingAsideTo(root);
+  if (pending !== null && pending > target) {
+    throw Object.assign(
+      formatError(`The data folder ${root} is being set aside by a newer emulator (to its format ${pending}; this one knows format ${target} at most). It is left as it is. Use the newer emulator with it, or name another data folder.`),
+      { kind: "newer", format: pending },
+    );
+  }
+  if (format === null) {
+    const ext = join(root, "ext");
+    if (exists(ext) && lstatSync(ext).isDirectory()) {
+      throw Object.assign(
+        formatError(
+          `The data folder ${root} has the layout of an earlier emulator, without a format record: the BUSY Bar's storage, ext, is at its top. ` +
+            `This emulator does not move it, and leaves it as it is. Move ${ext} to ${join(root, "bar", "ext")}, or name another folder.`,
+        ),
+        { kind: "layout" },
+      );
+    }
+  } else if (format > target) {
+    throw Object.assign(
+      formatError(
+        `The data folder ${root} is of format ${format}: a newer emulator made it, and this one knows format ${target} at most. ` +
+          "It is left as it is. Use the newer emulator with it, or name another data folder.",
+      ),
+      { kind: "newer", format },
+    );
+  }
+  return format;
 }
 
 /**
@@ -572,12 +640,8 @@ async function migrate(root, { from, to, migrations, notices }) {
       }
     }
     if (why) {
-      const aside = setAside(root, n);
-      privateFile(join(root, "format"), `${to}\n`);
-      notices.push(
-        `The data folder ${root} was of format ${from}, made by an earlier emulator, and could not be moved to format ${to} (${why}). ` +
-          `What it held is set aside, untouched, in ${aside}; the emulator starts with an empty BUSY Bar and no projects.`,
-      );
+      const aside = setAside(root, { from, to });
+      notices.push(setAsideNotice(root, { from, to, why, aside }));
       return { from, to, setAside: aside };
     }
     privateFile(join(root, "format"), `${n + 1}\n`);
@@ -588,21 +652,95 @@ async function migrate(root, { from, to, migrations, notices }) {
   return { from, to, setAside: null };
 }
 
-/** Moves what the emulator keeps in the folder, but for KEPT_WHEN_SET_ASIDE, to set-aside/format-<n>-<time>/. */
-function setAside(root, n) {
+/** The record of a setting aside under way, in set-aside/ (which is kept): { from, to, folder }. */
+const SETTING_ASIDE = join("set-aside", "moving.json");
+
+/** The format a setting aside under way is going to (SETTING_ASIDE), null when there is none or it cannot be read. */
+function settingAsideTo(root) {
+  try {
+    const to = JSON.parse(readOwnFile(join(root, SETTING_ASIDE)) ?? "null")?.to;
+    return Number.isInteger(to) ? to : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Moves what the emulator keeps in the folder, but for KEPT_WHEN_SET_ASIDE, to set-aside/format-<from>-<time>/, then
+ * writes the format `to` on the folder left. Resumable: the record SETTING_ASIDE says where to before the first move
+ * and goes after the format is written, so a start that ended in between is finished by the next (finishSetAside),
+ * into the same folder, before that start reads the format again.
+ */
+function setAside(root, { from, to }) {
   const parent = join(root, "set-aside");
   ownFolder(parent, root);
-  const aside = join(parent, `format-${n}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-  mkdirSync(aside, { mode: 0o700 });
+  const name = `format-${from}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  mkdirSync(join(parent, name), { mode: 0o700 });
+  privateFile(join(root, SETTING_ASIDE), `${JSON.stringify({ from, to, folder: name })}\n`);
+  return moveAside(root, { to, folder: name });
+}
+
+function moveAside(root, { to, folder }) {
+  const aside = join(root, "set-aside", folder);
   for (const name of readdirSync(root)) {
     if (KEPT_WHEN_SET_ASIDE.has(name)) continue;
+    // A start that ended after it wrote the new record: the old one is in the set-aside folder already.
+    if (name === "format" && exists(join(aside, "format"))) {
+      rmSync(join(root, name), { force: true });
+      continue;
+    }
     try {
-      renameSync(join(root, name), join(aside, name));
+      renameWhole(join(root, name), join(aside, name));
     } catch (e) {
       throw formatError(`The data folder ${root} could not be set aside: ${join(root, name)} cannot be moved to ${aside} (${e?.code ?? e?.message ?? e}). Quit what uses it and start the emulator again.`, e);
     }
   }
+  privateFile(join(root, "format"), `${to}\n`);
+  rmSync(join(root, SETTING_ASIDE), { force: true });
   return aside;
+}
+
+/**
+ * A setting aside that a start ended in the middle of (SETTING_ASIDE is there): finished into its folder, and said.
+ * { from, to, setAside } when there was one, else null. One a newer emulator began never gets here: checkedFormat refuses the folder before.
+ */
+function finishSetAside(root, { target, notices }) {
+  let record;
+  try {
+    record = JSON.parse(readOwnFile(join(root, SETTING_ASIDE)) ?? "null");
+  } catch {
+    record = null;
+  }
+  if (!record || !Number.isInteger(record.from) || !Number.isInteger(record.to) || typeof record.folder !== "string" || !/^format-\d+-[0-9TZ-]+$/.test(record.folder) || !exists(join(root, "set-aside", record.folder))) return null;
+  // One a newer emulator began was refused before (checkedFormat).
+  const aside = moveAside(root, { to: record.to, folder: record.folder });
+  notices.push(setAsideNotice(root, { from: record.from, to: record.to, why: "an earlier start ended while it set the folder aside, and this one finished it", aside }));
+  return { from: record.from, to: record.to, setAside: aside };
+}
+
+/** The apps a set-aside folder holds: { at, ids } for each BUSY Bar's storage in it (bar/ext, bar/<firmware>/ext). */
+function appsIn(aside) {
+  const out = [];
+  const bars = join(aside, "bar");
+  const look = (ext) => {
+    const assets = join(ext, "user_assets");
+    if (!exists(assets)) return;
+    const ids = readdirSync(assets).filter((name) => !name.startsWith("."));
+    if (ids.length) out.push({ at: assets, ids });
+  };
+  if (!exists(bars)) return out;
+  look(join(bars, "ext"));
+  for (const name of readdirSync(bars)) if (name !== "ext" && !name.startsWith(".")) look(join(bars, name, "ext"));
+  return out;
+}
+
+function setAsideNotice(root, { from, to, why, aside }) {
+  const apps = appsIn(aside);
+  const where = apps.length ? ` Its apps are there too: ${apps.map((a) => `${a.ids.join(", ")} in ${a.at}`).join("; ")}.` : "";
+  return (
+    `The data folder ${root} was of format ${from}, made by an earlier emulator, and could not be moved to format ${to} (${why}). ` +
+    `What it held is set aside, untouched, in ${aside}; the emulator starts with an empty BUSY Bar and no projects.${where}`
+  );
 }
 
 /**
@@ -657,21 +795,8 @@ export function readChosenFirmware(root) {
  */
 export async function openDataFolder(root, { record = {}, signal, processInfo: info = processInfo, format: target = FORMAT, migrations = MIGRATIONS }) {
   makeRoot(root);
-  const format = readFormat(root);
-  if (format === null) {
-    const ext = join(root, "ext");
-    if (exists(ext) && lstatSync(ext).isDirectory()) {
-      throw formatError(
-        `The data folder ${root} has the layout of an earlier emulator, without a format record: the BUSY Bar's storage, ext, is at its top. ` +
-          `This emulator does not move it, and leaves it as it is. Move ${ext} to ${join(root, "bar", "ext")}, or name another folder.`,
-      );
-    }
-  } else if (format > target) {
-    throw formatError(
-      `The data folder ${root} is of format ${format}: a newer emulator made it, and this one knows format ${target} at most. ` +
-        "It is left as it is. Use the newer emulator with it, or name another data folder.",
-    );
-  }
+  // Before anything is made in it: a folder this emulator cannot use is left exactly as it is.
+  checkedFormat(root, target);
   // Format `target`, an older one (moved below, under the lock), or a new folder.
 
   ownFolder(join(root, "run"), root);
@@ -689,9 +814,19 @@ export async function openDataFolder(root, { record = {}, signal, processInfo: i
     releaseLock(lock);
   };
   try {
+    // What a start that ended in the middle of writing the format record left (privateFile's file of a random name).
+    for (const name of readdirSync(root)) if (/^format\.[0-9a-f]{12}\.tmp$/.test(name)) rmSync(join(root, name), { force: true });
+    // The same of the record of a setting aside (SETTING_ASIDE).
+    const asides = join(root, "set-aside");
+    if (exists(asides) && lstatSync(asides).isDirectory()) for (const name of readdirSync(asides)) if (/^moving\.json\.[0-9a-f]{12}\.tmp$/.test(name)) rmSync(join(asides, name), { force: true });
     let rightsKept = lock.rightsKept;
-    let migrated = null;
-    if (format === null) rightsKept = privateFile(join(root, "format"), `${target}\n`) && rightsKept;
+    // A setting aside that a start ended in the middle of is finished first: its record says where to.
+    let migrated = finishSetAside(root, { target, notices });
+    // Read again under the lock: another emulator may have moved the folder on since the first look.
+    const format = checkedFormat(root, target);
+    if (migrated) {
+      // Finished above.
+    } else if (format === null) rightsKept = privateFile(join(root, "format"), `${target}\n`) && rightsKept;
     else if (format < target) migrated = await migrate(root, { from: format, to: target, migrations, notices });
     const barDir = prepareBar(root);
     if (!rightsKept) {
@@ -705,7 +840,7 @@ export async function openDataFolder(root, { record = {}, signal, processInfo: i
       Object.assign(lock.record, fields, { nonce: lock.nonce });
       privateFile(lock.file, JSON.stringify(lock.record, null, 2) + "\n");
     };
-    return { root, barDir, format: target, created: format === null, migrated, lockFile: lock.file, rightsKept, notices, chosenFirmware, chooseFirmware, updateRecord, release };
+    return { root, barDir, format: target, created: format === null && !migrated, migrated, lockFile: lock.file, rightsKept, notices, chosenFirmware, chooseFirmware, updateRecord, release };
   } catch (e) {
     release();
     throw e;

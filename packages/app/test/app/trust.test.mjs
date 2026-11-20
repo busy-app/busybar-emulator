@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, test } from "./node-test.mjs";
 
 import { APP_DIR, HAS_REAL_SERVER, NODE, removeFolder, temporaryFolder } from "../helpers.mjs";
 import { launch } from "./harness.mjs";

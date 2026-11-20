@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { startProgram } from "../../engine/programs.mjs";
-import { LOCK_FILE, readChosenFirmware } from "../data-folder.mjs";
+import { formatProblem, LOCK_FILE, readChosenFirmware } from "../data-folder.mjs";
 import { processInfoSync } from "../process-info.mjs";
 import { sameRealPath } from "../same-path.mjs";
 import { LOCAL_PORTS_PATH } from "../local-access.mjs";
@@ -695,6 +695,8 @@ export const system = Object.freeze({
   askFirmware: (port, key, method, body, waitMs) => askFirmware(port, key, method, body, waitMs),
   // The firmware the data folder's BUSY Bar was last switched to: what the next start runs (data-folder.mjs).
   chosenFirmware: (dataDir) => readChosenFirmware(dataDir),
+  // Why this emulator cannot use the data folder (a newer format, a broken record; data-folder.mjs): only reads.
+  formatProblem: (dataDir) => formatProblem(dataDir),
   userName,
   // A new app's author (projects/author.mjs): read from files, no gh or git started.
   githubLogin: (dataDir, env = {}) => githubLogin({ dataDir, env, platform: process.platform, home: os.homedir() }),

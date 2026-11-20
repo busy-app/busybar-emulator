@@ -25,7 +25,7 @@ export function detailsHelp() {
   return [
     `category: one of ${CATEGORIES.map((c) => c.id).join(", ")}`,
     `short_description: one line of plain text for the app's card, ${LIMITS.shortDescription.join(" to ")} characters`,
-    `description: the app's page, ${LIMITS.description.join(" to ")} characters; level 1–2 headings, bold, italic, lists and links are taken ("\\n" is a new line)`,
+    `description: the app's page, ${LIMITS.description.join(" to ")} characters; level 1–2 headings, bold, italic, lists and links are taken ("\\n" is a new line); or a Markdown file of the app's folder written for the catalog, "@CATALOG.md" (the README publish readme writes has more than the catalog takes)`,
     `changelog: what is new in this version, ${LIMITS.changelog.join(" to ")} characters`,
     `screenshots, back_screenshots (optional): lists of PNG files of the project, the cover first; without them screenshots/front-<n>.png and back-<n>.png are taken`,
   ];

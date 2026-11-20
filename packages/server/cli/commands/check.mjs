@@ -20,6 +20,9 @@
 // newer firmware has (an app's /api/storage, console.warn) with a lower api_version; or api_version is newer than
 // anything the code was found to use, and BUSY Bars on an older firmware refuse the app. They are hints: they never
 // fail the check.
+//
+// And `package_names` (EMU-347; ../../readiness/package-names.mjs): names in the built package that the BUSY Bar
+// would not unpack as named (outside ASCII, or a path over 100 characters). A warning, not a failure.
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -78,7 +81,7 @@ export async function runCheck(ctx, sys, folder, { form = "try" } = {}) {
 export async function formText(made) {
   if (!made) return "";
   const { detailsHelp } = await import("../../readiness/submission.mjs");
-  return `Made ${made} for the catalog's texts. Write in it:\n${detailsHelp().map((line) => `  ${line}`).join("\n")}\n\n`;
+  return `Made ${made} for the catalog's texts: busy-emulator submit writes the catalog's manifest from it, so commit it with the project. Write in it:\n${detailsHelp().map((line) => `  ${line}`).join("\n")}\n\n`;
 }
 
 /** The firmware hints for the project of `result` (firmware-hints.mjs), or none when this copy cannot tell. */
@@ -103,6 +106,23 @@ export function hintsText(hints) {
   return ["", "Firmware hints, from reading the code's text (they do not fail the check):", ...hints.flatMap((hint) => [`  ${hint.message}`, indent(`Change: ${hint.fix}`)])].join("\n");
 }
 
+/** The warnings about names in the built package (package-names.mjs), or none when there is no package to read. */
+export async function packageNamesOf(result) {
+  try {
+    const { packageNameWarnings } = await import("../../readiness/package-names.mjs");
+    return packageNameWarnings(result.facts?.pkg);
+  } catch {
+    return [];
+  }
+}
+
+/** The package-name warnings as a block of the text, "" when there are none. */
+export function packageNamesText(warnings) {
+  if (!warnings.length) return "";
+  const indent = (text) => text.split("\n").map((line) => `    ${line}`).join("\n");
+  return ["", "Names in the package (they do not fail the check):", ...warnings.flatMap((one) => [`  ${one.message}`, indent(`Change: ${one.fix}`)])].join("\n");
+}
+
 /** The ids of the checks that fail, for a one-line message. */
 export const failing = (result) => result.checks.filter((check) => check.status === "fail" && check.blocking).map((check) => check.id);
 
@@ -121,8 +141,9 @@ export default {
   async run(ctx, sys, { args, options, json }) {
     const { project, result, readiness, made } = await runCheck(ctx, sys, args[0]);
     const hints = await firmwareHintsOf(ctx, result);
-    const data = { ...dataOf(readiness, result, options.full === true), firmware_hints: hints, made_details: made };
-    const report = `${readiness.reportText(result)}${hints.length ? `\n${hintsText(hints)}` : ""}`;
+    const names = await packageNamesOf(result);
+    const data = { ...dataOf(readiness, result, options.full === true), firmware_hints: hints, package_names: names, made_details: made };
+    const report = `${readiness.reportText(result)}${hints.length ? `\n${hintsText(hints)}` : ""}${names.length ? `\n${packageNamesText(names)}` : ""}`;
     const form = await formText(made);
     if (result.result === "fail") {
       const ids = failing(result);

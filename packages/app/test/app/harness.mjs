@@ -9,9 +9,10 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 
-import { alive, APP_DIR, CHROMIUM_GONE_WITHIN_MS, describeProcess, endOnExit, FAKE_SERVER, HAS_REAL_SERVER, listening, NODE, PORTS, REAL_SERVER, removeFolder, survivors, temporaryFolder, until } from "../helpers.mjs";
+import { APP_DIR, CHROMIUM_GONE_WITHIN_MS, describeProcess, endOnExit, endTree, FAKE_SERVER, HAS_REAL_SERVER, listening, namedAfterExit, NODE, PORTS, processTree, REAL_SERVER, removeFolder, survivors, temporaryFolder, until } from "../helpers.mjs";
 import { buildKindOf, inSourceTree, readBuildMarker } from "../../src/build-kind.mjs";
-import { watchSockets } from "./sockets.mjs";
+import { GESTURE_MS } from "../../src/external.mjs";
+import { connectedInNetLog, connectedSocket, shortCommand, watchSockets } from "./sockets.mjs";
 
 /**
  * The tests keep the app off the screen: windows are made but never shown, and the app stays out of the Dock and the
@@ -94,6 +95,12 @@ async function markerInArchive(executable) {
 
 let launches = 0;
 
+/** How long close() waits for an app's answer about its processes and its quit before it goes on without them. */
+const LEARN_PIDS_MS = 10_000;
+
+/** A wait that keeps nobody's process alive. */
+const giveUp = (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref());
+
 function hookAddress(folder) {
   launches += 1;
   return process.platform === "win32" ? `\\\\.\\pipe\\busy-emulator-test-${process.pid}-${launches}` : path.join(folder, "hook.sock");
@@ -161,7 +168,16 @@ export async function launch({ server = "fake", port = PORTS.app, env = {}, appD
   await new Promise((resolve, reject) => listener.once("error", reject).listen(address, resolve));
 
   const serverEnv = server === "bundled" ? {} : { BUSY_EMULATOR_NODE: NODE, BUSY_EMULATOR_SERVER_ENTRY: server === "fake" ? FAKE_SERVER : server === "real" ? REAL_SERVER : server };
-  const child = endOnExit(spawn(executable ?? ELECTRON, executable ? args : [appDir, ...args], {
+  // Chromium's log of the network, with its sockets and what made each one. On Windows always: netstat shows a UDP
+  // socket Chromium connected to one peer as bound to every address, and only the log tells it apart (close(),
+  // connectedInNetLog). BUSY_EMULATOR_TEST_NET_LOG=<folder> keeps the log of every launch there, as
+  // net-<test process>-<launch>.json, for finding who opened a socket the checks of close() name.
+  const netLogFolder = process.env.BUSY_EMULATOR_TEST_NET_LOG || (process.platform === "win32" ? temporaryFolder() : null);
+  const netLogFile = netLogFolder ? path.join(netLogFolder, `net-${process.pid}-${launches}.json`) : null;
+  const netLog = netLogFile ? [`--log-net-log=${netLogFile}`] : [];
+  // Before the spawn: a process of the tree close() takes started after this (helpers.mjs, treeOf).
+  const spawnedAt = Date.now();
+  const child = endOnExit(spawn(executable ?? ELECTRON, executable ? [...args, ...netLog] : [appDir, ...args, ...netLog], {
     env: {
       ...process.env,
       BUSY_EMULATOR_PORT: String(port),
@@ -173,6 +189,8 @@ export async function launch({ server = "fake", port = PORTS.app, env = {}, appD
       BUSY_EMULATOR_TEST_GREETED: "1",
       // No test touches the person's GitHub CLI: gh's configuration is a folder of the test's (publish-flow.mjs).
       BUSY_EMULATOR_GH_CONFIG_DIR: path.join(folder, "person", "gh"),
+      // Nor the person's git settings: the name and address git config gives are a folder of the test's (EMU-366).
+      BUSY_EMULATOR_GIT_HOME: path.join(folder, "person"),
       ...QUIET_ENV,
       ...env,
     },
@@ -208,6 +226,9 @@ export async function launch({ server = "fake", port = PORTS.app, env = {}, appD
     asked = Date.now();
     return learnPids();
   });
+  // Once the app's main process has ended, what is left of it is close()'s to find; the watching ends (a test that
+  // quit its app and goes on with another must not pay for listing the sockets of the first ten times a second).
+  void exited.then(() => sockets.stop());
 
   const app = {
     pid: child.pid,
@@ -243,6 +264,56 @@ export async function launch({ server = "fake", port = PORTS.app, env = {}, appD
         contents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
         contents.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
       }, which),
+    /**
+     * The person's key in the current window, then `code` run in its page, as one step of the app's main process, so
+     * that what lies between the two is the page's own time, as for a person's key: not two trips between this
+     * process and the app, which on a loaded machine have taken longer than the two seconds a key allows an action
+     * (gestures.mjs; EMU-330: "the person's no in the trust dialog" got no_gesture on Windows).
+     *
+     * The page's own time can still run out (EMU-361). The key's time is taken when the main process sends it
+     * (Chromium's input-event comes then), and the bridge checks it when the page's call arrives, after a trip through
+     * the page: about 0.1 s on a fresh window, even with every core busy. A stall of the page or of the main process
+     * longer than GESTURE_MS in between gets no_gesture, as it would for a person whose key the app took that late;
+     * the Mac's gate of 18.11 had such stalls (other tests of that run took 3 to 11 times their usual time). So each
+     * check of this window's gesture during the step is noted with its time (shell.gestures.allow, passed through).
+     * When the first one was refused more than GESTURE_MS after the key, nothing with consequences has run: the key
+     * is pressed once more and the step done again, and the test's output says so with the delay measured. A
+     * refusal of the first check within GESTURE_MS of the key is no stall but a fault of the gesture, and fails the
+     * step; a second stall in a row is returned as it is, for the test to fail on.
+     */
+    async act(code) {
+      for (let attempt = 1; ; attempt += 1) {
+        const step = await app.run((shell, _electron, source) => {
+          const contents = shell.windows.current.win.webContents;
+          const gestures = shell.gestures;
+          const allow = gestures.allow;
+          const checks = [];
+          gestures.allow = (window) => {
+            const allowed = allow(window);
+            if (window === contents) checks.push({ allowed, at: Date.now() });
+            return allowed;
+          };
+          const key = Date.now();
+          contents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
+          contents.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
+          return contents
+            .executeJavaScript(source, true)
+            .then((value) => ({ value, key, checks }))
+            .finally(() => {
+              gestures.allow = allow;
+            });
+        }, code);
+        const first = step.checks[0];
+        if (!first || first.allowed) return step.value;
+        const delay = first.at - step.key;
+        if (delay <= GESTURE_MS) throw new Error(`act: the app refused the key ${delay} ms after it, within the ${GESTURE_MS} ms a key allows: not a stall, a fault of the gesture`);
+        if (attempt === 2) {
+          console.error(`harness: act: the page asked ${delay} ms after the key pressed again too, past the ${GESTURE_MS} ms a key allows: the refusal is returned`);
+          return step.value;
+        }
+        console.error(`harness: act: the page asked ${delay} ms after the key, past the ${GESTURE_MS} ms a key allows (a stall of the app): the key once more`);
+      }
+    },
     /** A click of the mouse at the middle of the element `selector` names in the current window's page, sent the same way. */
     async click(selector) {
       const at = await app.page(`(() => { const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) }; })()`);
@@ -301,36 +372,74 @@ export async function launch({ server = "fake", port = PORTS.app, env = {}, appD
       return exited;
     },
 
-    /** Ends the test's use of the app: nothing may be left of it, and it must have kept to this machine. */
-    async close() {
-      await learnPids();
-      if (alive(child.pid)) {
-        if (socket && !socket.destroyed) await app.run((_shell, electron) => void setImmediate(() => electron.app.quit())).catch(() => {});
-        const left = await survivors([child.pid], CHROMIUM_GONE_WITHIN_MS);
-        if (left.length) child.kill("SIGKILL");
-      }
-      await exited;
-      const seen = await sockets.stop();
-      socket?.destroy();
-      await new Promise((resolve) => listener.close(resolve));
-      const left = [...(await survivors([...own])), ...(await survivors([...chromium], CHROMIUM_GONE_WITHIN_MS))].map(describeProcess);
-      for (const pid of left.map((one) => parseInt(one, 10))) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // Gone in the meantime.
-        }
-      }
-      const portTaken = await listening(port);
-      if (ownsFolder) await removeFolder(folder);
-      assert.deepEqual(left, [], `processes left behind by the app (stderr: ${stderr.slice(-400)})`);
-      assert.equal(portTaken, false, `port ${port} is still taken after the app ended`);
-      assert.ok(seen.samples > 0, "the app's sockets were never looked at");
-      if (network === "loopback") {
-        assert.deepEqual(seen.offLoopback, [], "the app listened on an address other than 127.0.0.1 and ::1: the network can reach it, and on Windows the firewall asks about it");
-      }
+    /**
+     * Ends the test's use of the app: nothing may be left of it, and it must have kept to this machine. Whatever the
+     * app left is ended before anything is checked — its whole tree of processes (what its main process started, the
+     * development loop's command line among them, and what that started), not only the processes the app names —
+     * and the folder is removed, so that a failed check here fails this one test and leaves nothing to the next. A
+     * second call answers as the first.
+     */
+    close() {
+      closing ??= closeOnce();
+      return closing;
     },
   };
+  let closing = null;
+
+  async function closeOnce() {
+    // The tree while its root runs: a process whose parent has ended is not found below it any more (Windows). Only
+    // while this ChildProcess has not ended: after its exit the number may be another process's already (Windows
+    // gives numbers again soon), whose tree this must not take (EMU-330 review); and only processes started since
+    // the spawn.
+    const tree = child.exitCode === null && child.signalCode === null ? await processTree([child.pid], { since: spawnedAt }) : [];
+    // An app that no longer answers (its main process stuck) must not hold the test here: what it would say is
+    // only more PIDs.
+    await Promise.race([learnPids(), giveUp(LEARN_PIDS_MS)]);
+    if (child.exitCode === null && child.signalCode === null) {
+      if (socket && !socket.destroyed) await Promise.race([app.run((_shell, electron) => void setImmediate(() => electron.app.quit())).catch(() => {}), giveUp(LEARN_PIDS_MS)]);
+      const left = await survivors([child.pid], CHROMIUM_GONE_WITHIN_MS);
+      if (left.length) child.kill("SIGKILL");
+    }
+    await exited;
+    const seen = await sockets.stop();
+    socket?.destroy();
+    await new Promise((resolve) => listener.close(resolve));
+    // Each process with the time it is given to end by itself: Chromium's (its helpers, which the main process names,
+    // and its crash handler, which it does not) the longer one; the app's own (the supervisor, the server) and the
+    // rest of the tree (the command lines the window's actions started, and what they started) the shorter one.
+    // The main process has ended here: its number is not looked at again (namedAfterExit).
+    const after = namedAfterExit({ own, chromium, main: child.pid });
+    const chromiumOf = (p) => after.chromium.includes(p.pid) || /--type=|crashpad/i.test(p.command ?? "");
+    const named = new Set([...after.own, ...after.chromium, child.pid]);
+    const others = tree.filter((p) => !named.has(p.pid));
+    const leftPids = (
+      await Promise.all([
+        survivors([...after.own, ...others.filter((p) => !chromiumOf(p)).map((p) => p.pid)]),
+        survivors([...after.chromium, ...others.filter(chromiumOf).map((p) => p.pid)], CHROMIUM_GONE_WITHIN_MS),
+      ])
+    ).flat();
+    const byPid = new Map(tree.map((p) => [p.pid, p]));
+    const left = leftPids.map((pid) => (byPid.get(pid)?.command ? `${pid} (${shortCommand(byPid.get(pid).command)})` : describeProcess(pid)));
+    await endTree(leftPids.map((pid) => byPid.get(pid) ?? { pid, started: null }));
+    // Said on the test's output as well: when the test has already failed (its time was up), node:test shows that
+    // failure and not this one.
+    if (left.length) console.error(`harness: ended ${left.length} processes the app left: ${left.join(", ")}`);
+    // A UDP socket Chromium connected to one peer takes datagrams from that peer alone: on Windows only its log says
+    // which sockets those were (sockets.mjs, connectedInNetLog).
+    const connected = netLogFile && seen.sockets.length && existsSync(netLogFile) ? connectedInNetLog(readFileSync(netLogFile, "utf8")) : [];
+    const excused = seen.sockets.filter((one) => chromium.has(one.pid) && connectedSocket(one, connected));
+    for (const one of excused) console.error(`harness: ${one.protocol} ${one.local} of ${one.pid} is a socket Chromium connected to one peer (its net log): not reachable from the network`);
+    const reachable = seen.sockets.filter((one) => !excused.includes(one)).map((one) => `${one.protocol} ${one.local}`).sort();
+    if (netLogFolder && !process.env.BUSY_EMULATOR_TEST_NET_LOG) await removeFolder(netLogFolder);
+    const portTaken = await listening(port);
+    if (ownsFolder) await removeFolder(folder);
+    assert.deepEqual(left, [], `processes left behind by the app, ended now (stderr: ${stderr.slice(-400)})`);
+    assert.equal(portTaken, false, `port ${port} is still taken after the app ended`);
+    assert.ok(seen.samples > 0, "the app's sockets were never looked at");
+    if (network === "loopback") {
+      assert.deepEqual(reachable, [], `the app listened on an address other than 127.0.0.1 and ::1: the network can reach it, and on Windows the firewall asks about it${seen.owners.length ? ` (${seen.owners.join("; ")})` : ""}`);
+    }
+  }
 
   if (hook) {
     await Promise.race([
@@ -341,6 +450,7 @@ export async function launch({ server = "fake", port = PORTS.app, env = {}, appD
         // Nothing of this launch may keep the test's process alive: the test fails here, it does not hang.
         await sockets.stop().catch(() => {});
         await new Promise((resolve) => listener.close(resolve));
+        if (netLogFolder && !process.env.BUSY_EMULATOR_TEST_NET_LOG) await removeFolder(netLogFolder);
         if (ownsFolder) await removeFolder(folder);
         throw new Error(`the app ended before it connected to the test entry (code ${code}, signal ${signal}): ${stderr.slice(-800)}`);
       }),

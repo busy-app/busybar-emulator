@@ -3,7 +3,7 @@
 // inside the app, with the network as closed as before.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { PORTS, sleep, until } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch } from "./harness.mjs";

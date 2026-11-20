@@ -105,6 +105,34 @@ function image(dir, relative, git) {
   return { path: relative, safe, inGit, outside, bytes: read.bytes ?? null, tooLarge: read.tooLarge ?? null, git: safe ? keptByGit(git, plain) : null };
 }
 
+/**
+ * The file a description names as `@<path>` (descriptionReference), read like a screenshot (`image`); null when the
+ * description is written in place. `text` is what the catalog reads of it, or null when the catalog would not read
+ * it, and then `unread` says why (a part of a sentence after the path): outside the folder, through .git, a link out,
+ * too large, not UTF-8, not there. The catalog reads the file at the commit.
+ */
+export function descriptionFile(dir, description, git) {
+  if (typeof description !== "string" || !description.startsWith("@")) return null;
+  const file = image(dir, description.slice(1), git);
+  let text = null;
+  let unread = null;
+  if (!file.safe) unread = "is not a file of the app's folder";
+  else if (file.inGit) unread = "is inside a .git folder";
+  else if (file.tooLarge) unread = `is ${file.tooLarge} bytes, more than this check reads`;
+  else if (!file.bytes) unread = "is not in the project";
+  else if (file.outside) unread = "is a link that leads out of the app's folder";
+  else {
+    try {
+      // As the catalog's read_text(encoding="utf-8"): bytes that are not UTF-8 fail, a byte order mark stays, and
+      // \r\n and a lone \r are read as \n (universal newlines).
+      text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(file.bytes).replace(/\r\n?/g, "\n");
+    } catch {
+      unread = "is not a UTF-8 text file";
+    }
+  }
+  return { ...file, text, unread };
+}
+
 /** screenshots/front-<n>.png and back-<n>.png, in the order of their numbers: the names `busy-emulator screenshot` gives. */
 function conventionScreenshots(dir, display) {
   let names = [];
@@ -257,6 +285,7 @@ export function gatherFacts(dir, { firmware = null } = {}) {
     pkg,
     stale: Boolean(pkg && srcNewest > pkg.modified + 2000),
     details,
+    descriptionFile: descriptionFile(dir, details.json && typeof details.json === "object" ? details.json.description : undefined, git),
     screenshots: { front: screenshots(dir, details, "screenshots", "front", git), back: screenshots(dir, details, "back_screenshots", "back", git) },
     icons,
     licenses: [...licenseFiles(dir, "the app's folder", git, ""), ...(git && git.top !== dir ? licenseFiles(git.top, "the repository's top folder", git, null) : [])],

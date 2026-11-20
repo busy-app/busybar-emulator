@@ -5,8 +5,9 @@
 // At bar speed (bar-speed.mjs) the app is single-threaded and slow, as on the bar: after each entry into the runtime
 // (a slice) the app stays busy for the bar's time for the slice's work, counted in byte-code instructions and heap
 // bytes. Events that come meanwhile (timers, keys, fetch answers) wait in the order they are due, at most one per
-// timer; Date.now() inside a slice advances by the work done so far, and timers and requests the slice starts count
-// from the bar's time of the call.
+// timer; Date.now() inside a slice advances by the work done so far, and requests the slice starts count from the
+// bar's time of the call. A timer it starts counts from when the firmware's event loop takes the request, after the
+// slice (startTimers).
 //
 // The app keeps its own time: a slice starts when its event is due or when the app is free, whichever is later, not
 // when the host's timer happened to fire. setTimeout on Windows fires in steps of ~15.6 ms, so counting from the
@@ -181,7 +182,18 @@ export class AppRuntime {
     this.consoleLine = "";
     // busyMs: the app's JS time as the bar would spend it; draws: display/draw requests.
     this.stats = { calls: 0, wasmMs: 0, maxWasmMs: 0, maxCpuMs: 0, busyMs: 0, draws: 0, heapSize: 0, heapNow: 0, heapPeak: 0 };
-    this.queue = []; // { fn, key, due } waiting for the app to be free, by due time
+    this.queue = []; // { fn, key, due, note } waiting for the app to be free, by due time
+    // Where the firmware's event loop is in its round when more than one event is ready (drain): true once it has
+    // handed the app a message (a key, a piece of an answer) and has yet to look at its expired timers.
+    this.timerTurn = false;
+    // The timers the app started that have yet to start counting: on the bar furi_event_loop_timer_start only asks the
+    // event loop to start one, and its time counts from when the loop takes the request (startTimers). Timer key → t.
+    this.starts = new Map();
+    // The event loop's Timer flag: some timer was started, stopped or freed since the loop's round began, so the next
+    // round takes the requests (furi_event_loop_run reads its flags once, as a round begins). roundTimers: the round
+    // under way read the flag set, and takes the requests once its message, if it has one, is over.
+    this.timerRequests = false;
+    this.roundTimers = false;
     this.busyUntil = 0; // the app's time (Unix ms) when it is free again
     // The redraw after the app's last draw (bar-speed.mjs, redrawMs): what of it its JS has yet to wait out, and when it
     // is over in the app's time if no JS slows it down. It is over when either runs out.
@@ -232,13 +244,15 @@ export class AppRuntime {
     if (this.exited || !(ms > 0)) return;
     this.skipped += ms;
     const now = this.wall();
-    for (const t of this.timers.values()) {
+    // A timer that has yet to start counting (starts) starts when the loop takes it, from the new time.
+    const counting = [...this.timers.values()].filter((t) => t.due !== null);
+    for (const t of counting) {
       // A periodic timer runs once for the periods passed over: at the last of them, and on its beat from there.
       const period = Math.max(t.ms, 1);
       if (t.periodic && t.due < now) t.due += Math.floor((now - t.due) / period) * period;
     }
     // Earliest first: the host fires timers that are due at once in the order they were set.
-    for (const t of [...this.timers.values()].filter((t) => !t.fired).sort((a, b) => a.due - b.due)) this.arm(t);
+    for (const t of counting.filter((t) => !t.fired).sort((a, b) => a.due - b.due)) this.arm(t);
     clearTimeout(this.drainTimer);
     this.drainTimer = null;
     this.drain();
@@ -291,6 +305,8 @@ export class AppRuntime {
       this.arm(t);
     }
     this.M._emu_timer_fire(t.timer);
+    // A setTimeout that ran is freed after its callback (js_interval.c, interval_callback): a request to the loop.
+    if (!t.periodic) this.timerRequests = true;
     // The whole ms of the app's clock the run ended in: the next run comes in a later one (arm).
     t.lastRunMs = Math.floor(this.appClock(this.now()));
   }
@@ -371,12 +387,17 @@ export class AppRuntime {
       fileRead: (path) => this.readFile(path),
       fileWrite: (path, bytes) => this.writeFile(path, bytes),
       timerStart: (timer, ms, periodic) => {
-        // Due in the app's time: from the call, which in a slice is the bar's time, not the computer's.
-        const t = { timer, ms, periodic: Boolean(periodic), handle: null, due: this.now() + ms, fired: false };
+        // Not due yet: it starts counting when the loop takes the request (startTimers), in the app's time.
+        const t = { timer, ms, periodic: Boolean(periodic), handle: null, due: null, fired: false };
+        this.clearTimer(timer);
         this.timers.set(timer, t);
-        this.arm(t);
+        this.starts.set(timer, t);
+        this.timerRequests = true;
       },
-      timerStop: (timer) => this.clearTimer(timer),
+      timerStop: (timer) => {
+        this.clearTimer(timer);
+        this.timerRequests = true;
+      },
       fetchStart: (fetch, url, method, headers, body, deviceKey) => {
         this.fetches.set(fetch, null);
         const start = this.now();
@@ -410,6 +431,8 @@ export class AppRuntime {
       const stage = ["", "reading", "parsing", "linking", "running"][status] ?? status;
       this.exit(`error ${stage} main.js: ${this.startError}`);
     }
+    // The script is over: the loop starts, and with it the timers the script asked for.
+    this.drain();
     return status;
   }
 
@@ -433,15 +456,59 @@ export class AppRuntime {
     this.exited = this.fatal ? `fatal: ${this.fatal}` : reason;
     for (const timer of [...this.timers.keys()]) this.clearTimer(timer);
     this.queue = [];
+    this.starts.clear();
     clearTimeout(this.drainTimer);
     for (const fetch of [...this.fetches.keys()]) this.dropFetch(fetch);
     this.onExit(this.exited);
   }
 
+  /**
+   * A timer is stopped, freed or started again. Its run waiting for the app is marked cleared: it no longer runs, and
+   * no longer keeps out a run of a timer the app makes at the same address (post). On the bar the timer stays in the
+   * loop's list until the loop takes the request (startTimers drops the cleared runs), and an expired one at the
+   * front of the list with a free or stop request waiting is skipped: that round runs no timer
+   * (furi_event_loop_process_expired_timers). Its memory is freed only then, so on the bar a timer made meanwhile
+   * has another address; the emulator's firmware frees it at once (furi_shim.c), and the next timer may get the
+   * same one, the key here (EMU-357).
+   */
   clearTimer(timer) {
     const t = this.timers.get(timer);
     if (t) clearTimeout(t.handle); // stops an interval too, in Node
     this.timers.delete(timer);
+    this.starts.delete(timer);
+    for (const e of this.queue) if (e.key === timer) e.cleared = true;
+  }
+
+  /**
+   * A round of the firmware's event loop begins (furi_event_loop_run): it reads its flags, the Timer flag among them,
+   * and clears them; what the app asks for from now on sets them for the next round.
+   */
+  beginRound() {
+    this.roundTimers = this.timerRequests;
+    this.timerRequests = false;
+  }
+
+  /**
+   * The loop takes the timer requests (furi_event_loop_process_timer_queue): each timer the app started counts from
+   * `at`, the app's time (start_time = xTaskGetTickCount()), and a periodic one keeps that beat. A timer stopped
+   * meanwhile was taken off (clearTimer), and one started twice counts once, from here.
+   */
+  startTimers(at) {
+    this.roundTimers = false;
+    this.queue = this.queue.filter((e) => !e.cleared);
+    for (const t of this.starts.values()) {
+      t.due = at + t.ms;
+      this.arm(t);
+    }
+    this.starts.clear();
+  }
+
+  /**
+   * When the app is free in its own time: the end of its last slice at bar speed; at the computer's speed it is free
+   * now. Never further back than the ticks make up (caughtUp).
+   */
+  freeAt() {
+    return this.caughtUp(this.busyUntil);
   }
 
   dropFetch(fetch) {
@@ -449,9 +516,13 @@ export class AppRuntime {
     this.fetches.delete(fetch);
   }
 
-  /** An event of a request, for as long as the app still wants it: it may have dropped the request meanwhile. */
-  postFetch(fetch, fn, due) {
-    this.post(() => this.fetches.has(fetch) && fn(), undefined, due);
+  /**
+   * An event of a request, for as long as the app still wants it: it may have dropped the request meanwhile. A `note`
+   * is the emulator's own (onRedirect, onNetworkError): it keeps its place among the request's events and does not
+   * enter the app.
+   */
+  postFetch(fetch, fn, due, note = false) {
+    this.post(() => this.fetches.has(fetch) && fn(), undefined, due, note);
   }
 
   /**
@@ -566,7 +637,7 @@ export class AppRuntime {
         if (status >= 300 && status < 400) {
           const location = /^location:[ \t]*(.*?)[ \t]*$/im.exec(text)?.[1] || null;
           // Said when the app gets the head, so that the note and the app's own lines come in the app's order.
-          this.postFetch(fetch, () => this.onRedirect?.({ url, method, status, location }), due());
+          this.postFetch(fetch, () => this.onRedirect?.({ url, method, status, location }), due(), true);
         }
         this.postFetch(fetch, () => this.withBytes(head, (p, n) => this.M._emu_fetch_headers(fetch, p, n)), due());
       },
@@ -590,7 +661,7 @@ export class AppRuntime {
         // A refusal has its own note (onRefused).
         if (!response.refused) {
           const failure = { url, method, message, afterHead: response.head, bytes: response.bytes };
-          this.postFetch(fetch, () => this.onNetworkError?.(failure), due());
+          this.postFetch(fetch, () => this.onNetworkError?.(failure), due(), true);
         }
         this.postFetch(fetch, () => this.withString(message, (p) => this.M._emu_fetch_error(fetch, p)), due());
       },
@@ -605,13 +676,13 @@ export class AppRuntime {
    * after the events due before it. A timer (`key`) waits at most once: on the bar too a late periodic timer fires
    * once, not once per missed period. At the computer's speed events run as they come.
    */
-  post(fn, key, due = this.wall()) {
+  post(fn, key, due = this.wall(), note = false) {
     if (this.exited) return;
-    if (key !== undefined && this.queue.some((e) => e.key === key)) return;
+    if (key !== undefined && this.queue.some((e) => e.key === key && !e.cleared)) return;
     if (!this.speed) due = 0;
     // After everything due no later, so the parts of one answer keep their order.
     const i = this.queue.findIndex((e) => e.due > due);
-    this.queue.splice(i < 0 ? this.queue.length : i, 0, { fn, key, due });
+    this.queue.splice(i < 0 ? this.queue.length : i, 0, { fn, key, due, note });
     // It may be due before what the drain is waiting for.
     clearTimeout(this.drainTimer);
     this.drainTimer = null;
@@ -630,19 +701,99 @@ export class AppRuntime {
 
   drain() {
     if (this.drainTimer) return;
-    while (this.queue.length && !this.exited) {
-      const start = Math.max(this.caughtUp(this.queue[0].due), this.busyUntil);
+    while (!this.exited) {
+      // Nothing is ready when the app is free, and timer requests wait: the loop goes round once more with nothing to
+      // hand the app, takes them then, and sleeps. Not before the app is free in the computer's time: until then an
+      // event can still come that is due before, and on the bar the round would hand the app that first. Ready is by
+      // the event's own time: one that waited through a long slice is ready, however far behind it is (caughtUp). A
+      // timer due by then is ready too while it is on its way into the queue: Node fired its host timer a fraction of
+      // a ms early and it waits again (arm); on the bar the round runs it before the next one takes the requests.
+      if ((this.queue[0]?.due ?? Infinity) > this.busyUntil && (this.starts.size || this.timerRequests) && !this.armedBy(this.busyUntil)) {
+        const wait = this.busyUntil - this.wall();
+        if (wait > 0) {
+          this.drainTimer = setTimeout(() => {
+            this.drainTimer = null;
+            this.drain();
+          }, wait);
+          return;
+        }
+        this.timerTurn = false;
+        this.beginRound();
+        this.startTimers(this.freeAt());
+        continue;
+      }
+      if (!this.queue.length) return;
+      const due = this.caughtUp(this.queue[0].due);
+      const start = Math.max(due, this.busyUntil);
       const wait = start - this.wall();
       if (wait > 0) {
+        // Waiting out the app's own busy time is the same round of the firmware's loop: on the bar the JS of that round
+        // is still running. Only a loop with nothing ready sleeps, and starts its round again with what wakes it.
+        if (due > this.busyUntil) this.timerTurn = false;
         this.drainTimer = setTimeout(() => {
           this.drainTimer = null;
           this.drain();
         }, wait);
         return;
       }
-      const { fn } = this.queue.shift();
-      this.call(() => fn(start), start);
+      const inRound = this.timerTurn;
+      let event = this.queue.splice(this.nextReady(start), 1)[0];
+      const { key, note } = event;
+      const timer = key !== undefined;
+      // A message begins a round, and so does a timer when no message did (nextReady). The emulator's notes are none.
+      if (!note && (!timer || !inRound)) this.beginRound();
+      // A round without a message takes the timer requests before it runs its timer: a cleared one is gone then, and
+      // the earliest expired timer left runs instead, if there is one.
+      if (timer && !inRound && this.roundTimers) {
+        this.startTimers(start);
+        if (event.cleared) {
+          const next = this.queue.findIndex((e) => e.key !== undefined && e.due <= start);
+          event = next < 0 ? null : this.queue.splice(next, 1)[0];
+        }
+      }
+      // A cleared timer is the round's turn with no timer run.
+      if (event && !event.cleared) this.call(() => event.fn(start), start);
+      // A round with a message takes them when the message is over: those of the round before, and those the message
+      // made itself, since the requests wait in one queue.
+      if (!timer && !note && this.roundTimers) this.startTimers(this.freeAt());
     }
+  }
+
+  /** Whether a timer due by `at` (the app's time) is yet to come into the queue: its host timer is set (arm). */
+  armedBy(at) {
+    for (const t of this.timers.values()) if (t.handle !== null && t.due !== null && t.due <= at) return true;
+    return false;
+  }
+
+  /**
+   * Which of the events ready at `start` runs next (its index in the queue). Each round of the firmware's event loop
+   * (furi_event_loop_run) takes one message from one of the queues that have some (keys, the answers of requests,
+   * commands), the queues in turn, and then runs one expired timer, the earliest due. So when the app was busy and
+   * both messages and a timer wait, they take turns: the head of an answer, then the timer, then the rest of the
+   * answer, and busy-lib's 3 s timeout fires before its request is over, as on a BUSY Bar. The emulator keeps one
+   * queue in the order things are due and takes the earliest ready message from it, not the queues in turn: the
+   * order among messages of different kinds that wait together (a key and a piece of an answer) may differ from the
+   * bar's. With only messages or only timers waiting, they run in the order they are due.
+   */
+  nextReady(start) {
+    // The first event is ready by how `start` was found (drain); one due long ago is as ready as one due now.
+    const ready = (e) => e.due <= start;
+    const first = (timer) => this.queue.findIndex((e) => ready(e) && (e.key !== undefined) === timer);
+    if (this.timerTurn) {
+      const timer = first(true);
+      if (timer >= 0) {
+        this.timerTurn = false;
+        return timer;
+      }
+    }
+    const message = first(false);
+    if (message >= 0) {
+      // The emulator's notes keep their place in the queue and are no turn of the loop's.
+      if (!this.queue[message].note) this.timerTurn = true;
+      return message;
+    }
+    this.timerTurn = false;
+    return first(true);
   }
 
   /**

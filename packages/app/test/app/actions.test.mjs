@@ -6,9 +6,10 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
-import { alive, HAS_REAL_SERVER, removeFolder, sleep, temporaryFolder, until } from "../helpers.mjs";
+import { alive, HAS_REAL_SERVER, processTree, removeFolder, sleep, temporaryFolder, until } from "../helpers.mjs";
+import { GESTURE_MS } from "../../src/external.mjs";
 import { launch } from "./harness.mjs";
 
 const skip = !HAS_REAL_SERVER && "the server is not beside this package";
@@ -44,10 +45,7 @@ function strangerProject(id = `app.stranger.n${n}`) {
 /** What the page gets from one of its actions, asked for by script alone: the value, or the failure as the page sees it. */
 const bare = (app, code) => app.page(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message, hint: e.hint } }))`);
 /** The same, asked for as the person does: a key in the window, then the page's call. */
-const act = async (app, code) => {
-  await app.press();
-  return bare(app, code);
-};
+const act = (app, code) => app.act(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message, hint: e.hint } }))`);
 const folderArg = (folder) => JSON.stringify(folder);
 const chooses = (app, folder) => app.run((shell, _electron, answer) => shell.folderDialogs.standIn(answer), folder);
 const trustedFolders = (app) => {
@@ -60,13 +58,84 @@ async function open(app, dir) {
   return act(app, "window.emulatorActions.projects.open()");
 }
 
+/**
+ * Ends the development loops a test leaves running when it fails before it stops them, so that the tests after it
+ * find the app as they expect it: one loop of theirs, the port free for their own launches (EMU-330: on Windows one
+ * loop that never printed "ready" took six tests after it down).
+ */
+function endLoopsAfter(t) {
+  t.after(async () => {
+    if (!app?.hooked() || !alive(app.pid)) return;
+    if (!(await app.run((shell) => shell.actions.pids().length).catch(() => 0))) return;
+    await app.run((shell) => shell.actions.stopLoops()).catch(() => {});
+    await until(async () => (await app.run((shell) => shell.actions.pids()).catch(() => [])).length === 0, "the development loops to end", 15_000).catch(() => {});
+  });
+}
+
+/**
+ * How long a development loop's first round may take before its "ready" line (EMU-330). The round is a chain of
+ * processes, one after another: the command line itself, its check that the emulator's process is the emulator's
+ * (PowerShell's Get-Process on Windows, ps elsewhere; once, at its start: the round asked again until EMU-330), then
+ * the project's busy-cli for build, app install and app run (commands/dev.mjs). On a quiet machine each is a fraction of a second (the whole round: under 4 s on the Mac, about
+ * 8 s on tride-win). Under the gate's first phase on tride-win (six suites at once, 17.11) each took 3 to 6 s: the
+ * PowerShell 4.1 s and 3.4 s, the command line 6.7 s to its first line, so a 15 s wait ran out in the middle of the
+ * round, twice in two full runs, while the loop worked as it should. Each process of the chain gets 8 s here, the
+ * slowest seen and a third more; a loop stuck in one step still fails, at its own time.
+ */
+const FIRST_ROUND_PROCESSES = 5;
+const PROCESS_UNDER_LOAD_MS = 8_000;
+const FIRST_ROUND_MS = FIRST_ROUND_PROCESSES * PROCESS_UNDER_LOAD_MS;
+
+const clock = (ms) => new Date(ms).toISOString().slice(11, 23);
+
+/** What the window heard of a project's development loop, each line at the time the page heard it. */
+const loopHeard = async (dir) =>
+  (await app.page("window.jobsSeen").catch(() => []))
+    .filter((job) => job.kind === "dev" && job.folder === dir)
+    .map((job) => `${clock(job.heardAt)} ${job.state}${job.line ? `: ${job.line}` : ""}`)
+    .join("\n");
+
+/**
+ * What a development loop's process starts, seen from outside while it works (EMU-330): every process below it with
+ * its start (the system's own time of it) and when it was last seen running, so that a first round that takes long
+ * says where the time went: the command line's own start, its checks of the emulator's process (PowerShell on
+ * Windows), the project's busy-cli for build, install and run. A look at the system's processes takes about a second
+ * on Windows (processTree); the looks follow one another. stop() returns the lines.
+ */
+function watchLoop(pid) {
+  // A command line short enough to read: each path by its last part ("node.exe cli.mjs build").
+  const named = (command) => (command.match(/"[^"]*"|\S+/g) ?? []).map((word) => word.replace(/^"|"$/g, "").split(/[\\/]/).pop()).join(" ").slice(0, 160);
+  const seen = new Map(); // pid → { command, started, last }
+  let running = true;
+  const looking = (async () => {
+    while (running) {
+      const tree = await processTree([pid]);
+      const now = Date.now();
+      for (const p of tree) {
+        const one = seen.get(p.pid) ?? { command: p.command, started: p.started, last: now };
+        one.last = now;
+        seen.set(p.pid, one);
+      }
+      await sleep(500);
+    }
+  })();
+  return async function stop() {
+    running = false;
+    await looking;
+    return [...seen.entries()]
+      .sort(([, a], [, b]) => (a.started ?? 0) - (b.started ?? 0))
+      .map(([id, p]) => `${p.started ? clock(p.started) : "?"} to ${clock(p.last)} (last seen) ${id} ${named(p.command)}`)
+      .join("\n");
+  };
+}
+
 let app;
 before(async () => {
   if (skip) return;
   work = temporaryFolder();
   app = await launch({ server: "real", env: { BUSY_EMULATOR_TEST_TRUST_ANSWER: "trust" } });
   await app.waitWindow("device");
-  await app.page("window.jobsSeen = []; window.emulatorActions.on('job', (job) => window.jobsSeen.push(job)); true");
+  await app.page("window.jobsSeen = []; window.emulatorActions.on('job', (job) => window.jobsSeen.push({ ...job, heardAt: Date.now() })); true");
 });
 after(async () => {
   await app?.close();
@@ -112,6 +181,49 @@ test("no action with consequences without the person's click or key in the windo
   assert.equal((await bare(app, `window.emulatorActions.copy("later")`)).error.code, "no_gesture", "the key was a while ago");
   assert.equal((await act(app, `window.emulatorActions.copy("x".repeat(64 * 1024 + 1))`)).value, false, "more than the clipboard takes from the window");
   assert.deepEqual(await app.run((shell) => shell.offScreen.copied.splice(0)), ["text 0", "text 1", "text 2", "text 3"]);
+});
+
+test("a key the app takes too late for the page's call: the action is refused, and the tests' act presses once more; a refusal in time fails it (EMU-361)", { skip }, async () => {
+  // The main process stalls once, longer than a key allows, between the key and the page's call, as a loaded machine
+  // stalled the app in the gate: the key's time is taken when it is sent, the check when the call arrives.
+  const stallOnce = () =>
+    app.run((shell, _electron, ms) => {
+      const contents = shell.windows.current.win.webContents;
+      const run = contents.executeJavaScript.bind(contents);
+      contents.executeJavaScript = (source, gesture) => {
+        delete contents.executeJavaScript;
+        const from = Date.now();
+        while (Date.now() - from < ms);
+        return run(source, gesture);
+      };
+    }, GESTURE_MS + 300);
+  await stallOnce();
+  const once = await app.run((shell, _electron, source) => {
+    const contents = shell.windows.current.win.webContents;
+    contents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
+    contents.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
+    return contents.executeJavaScript(source, true);
+  }, `window.busyShell.action("copy", "late").then((answer) => (answer.ok ? "done" : answer.error.code))`);
+  assert.equal(once, "no_gesture", "a key older than its time when the call arrives");
+  await stallOnce();
+  assert.equal((await act(app, `window.emulatorActions.copy("pressed again")`)).value, true);
+  assert.deepEqual(await app.run((shell) => shell.offScreen.copied.splice(0)), ["pressed again"]);
+  // A refusal well within the key's time is no stall, and act does not press again: it fails.
+  await app.run((shell) => {
+    const allow = shell.gestures.allow;
+    let refuse = true;
+    shell.gestures.allow = (window) => (refuse ? (refuse = false) : allow(window));
+    shell.testAllow = allow;
+  });
+  try {
+    await assert.rejects(act(app, `window.emulatorActions.copy("refused in time")`), /act: the app refused the key \d+ ms after it, within the 2000 ms a key allows/);
+  } finally {
+    await app.run((shell) => {
+      shell.gestures.allow = shell.testAllow;
+      delete shell.testAllow;
+    });
+  }
+  assert.deepEqual(await app.run((shell) => shell.offScreen.copied.splice(0)), []);
 });
 
 test("the main window's page has the actions; a frame in it and the local web's window have nothing of the shell", { skip }, async () => {
@@ -215,15 +327,23 @@ test("a project of the list that is no longer trusted (another folder at its pat
   assert.equal(existsSync(path.join(dir, "dist")), false);
 });
 
-test("one job for a project at a time; the development loop reports its lines and ends when it is stopped", { skip }, async () => {
+test("one job for a project at a time; the development loop reports its lines and ends when it is stopped", { skip }, async (t) => {
+  endLoopsAfter(t);
   const dir = strangerProject("app.stranger.loop");
   await open(app, dir);
+  const asked = Date.now();
   assert.deepEqual((await act(app, `window.emulatorActions.projects.dev.start(${folderArg(dir)})`)).value, { ok: true });
   const [pid] = await until(async () => {
     const pids = await app.run((shell) => shell.actions.pids());
     return pids.length === 1 && pids;
   }, "the development loop's process");
-  await until(async () => (await app.page("window.jobsSeen")).some((job) => job.kind === "dev" && job.folder === dir && /ready/.test(job.line ?? "")), "the loop's first round");
+  const watched = watchLoop(pid);
+  const record = async () => `asked at ${clock(asked)}; what the window heard of the loop:\n${await loopHeard(dir)}\nthe processes below the loop's (${pid}):\n${await watched()}`;
+  await until(async () => (await app.page("window.jobsSeen")).some((job) => job.kind === "dev" && job.folder === dir && /ready/.test(job.line ?? "")), "the loop's first round", FIRST_ROUND_MS).catch(async (e) => {
+    throw new Error(`${e.message}: ${await record()}\nthe app's log:\n${app.log().slice(-3000)}`);
+  });
+  // How long the loop's first round took, and where, for a slow machine's record.
+  t.diagnostic(await record());
   assert.equal((await act(app, "window.emulatorActions.projects.list()")).value.find((project) => project.folder === dir).job, "dev");
 
   for (const action of ["refresh", "build", "run", "stop", "dev.start", "check", "submit"]) {
@@ -295,7 +415,8 @@ test("the menu has New App and Open App Folder, and they are the window's action
   assert.deepEqual(await app.run((shell) => shell.fromMenu("projects.create")), { ok: true, value: null });
 });
 
-test("the development loop ends when the window closes", { skip }, async () => {
+test("the development loop ends when the window closes", { skip }, async (t) => {
+  endLoopsAfter(t);
   const dir = strangerProject("app.stranger.window");
   await open(app, dir);
   await act(app, `window.emulatorActions.projects.dev.start(${folderArg(dir)})`);
@@ -313,7 +434,9 @@ test("the development loop ends when the window closes", { skip }, async () => {
   await app.waitWindow("device");
 });
 
-test("the development loop ends when the app quits", { skip }, async () => {
+test("the development loop ends when the app quits", { skip }, async (t) => {
+  // The tests after this one start apps of their own on the same port: the app goes even when this test fails first.
+  t.after(() => (alive(app.pid) ? app.close() : undefined));
   const dir = strangerProject("app.stranger.quit");
   await open(app, dir);
   await act(app, `window.emulatorActions.projects.dev.start(${folderArg(dir)})`);

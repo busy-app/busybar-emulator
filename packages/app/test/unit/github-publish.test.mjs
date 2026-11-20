@@ -3,17 +3,20 @@
 // person's public repository with the project's files in one commit, read back, and the pull request to the catalog,
 // from a fork when the person may not push to the catalog and from a branch in it when they may.
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { ghEnvironment, ghFolders, ghRunner } from "../../src/github/gh.mjs";
 import { fakeSignedIn, runFakeGh } from "../fixtures/fake-gh.mjs";
-import { askRequest, BUNDLED_TEMPLATE, BUSY_CATALOGS, changedSinceCheck, compareVersions, isOptionalBox, createGithubPublish, MAX_BOX_LENGTH, MAX_BOXES, optionalQuestions, requestQuestions, requestTicks, fillTemplate, parseCatalog, parseChecklist, parseRepository, readCatalogManifest, withChangelog } from "../../src/github/publish-flow.mjs";
+import { aiNoteLine, aiPrompt, askRequest, BUNDLED_TEMPLATE, MAX_AI_NOTE, plainAiNote, BUSY_CATALOGS, changedSinceCheck, compareVersions, isOptionalBox, createGithubPublish, MAX_BOX_LENGTH, MAX_BOXES, optionalQuestions, requestQuestions, requestTicks, fillTemplate, parseCatalog, parseChecklist, parseRepository, readCatalogManifest, withChangelog } from "../../src/github/publish-flow.mjs";
 import { createPersonQuestions } from "../../src/person-question.mjs";
 import { createPublishRecord } from "../../src/github/publish-record.mjs";
 import { FAKE_GH } from "../fixtures/fake-gh.mjs";
+import { remoteAddress, remotesOf } from "../../src/github/local-git.mjs";
 import { startGithubStub } from "../fixtures/github-stub.mjs";
 import { PORTS } from "../helpers.mjs";
 
@@ -58,7 +61,7 @@ function project(name) {
 /** BUSY's catalogs and the stand-ins for one the tests send to, which need no second confirmation here (L3). */
 const standInCatalogs = () => [...BUSY_CATALOGS, ...["catalog-owner/busy-apps-catalog-demo", "other-owner/apps-catalog", "empty-owner/empty-catalog", "busy-app/not-open-yet", "located-owner/located-catalog", "versions-owner/versions-catalog", "update-owner/update-catalog", "hijack-owner/hijack-catalog", "contest-owner/contest-catalog"], `${stub.login}/own-catalog`];
 
-function flowFor({ env = {}, dataDir = mkdtempSync(path.join(root, "data-")), personGh = null, catalogs = standInCatalogs(), downloads = { origins: [{ protocol: "http:", host: new URL(stub.base).host }] } } = {}) {
+function flowFor({ env = {}, dataDir = mkdtempSync(path.join(root, "data-")), personGh = null, wrapRun = null, catalogs = standInCatalogs(), downloads = { origins: [{ protocol: "http:", host: new URL(stub.base).host }] } } = {}) {
   const opened = [];
   const runLog = path.join(dataDir, "gh-runs.jsonl");
   const folders = ghFolders(dataDir);
@@ -67,8 +70,11 @@ function flowFor({ env = {}, dataDir = mkdtempSync(path.join(root, "data-")), pe
   const configDir = path.join(person, "gh");
   if (personGh) fakeSignedIn(person, { standIn: stub.base, ...personGh });
   const ghEnv = ghEnvironment({ ...process.env, GH_TOKEN: LEAKED, GITHUB_TOKEN: LEAKED, BUSY_EMULATOR_FAKE_GH_STAND_IN: stub.base, BUSY_EMULATOR_FAKE_GH_LOG: runLog, BUSY_EMULATOR_FAKE_GH_POLL_MS: "5", ...env }, dataDir, configDir);
-  const gh = { run: ghRunner({ command: process.execPath, prefix: [FAKE_GH], env: ghEnv, cwd: folders.root }) };
-  const flow = createGithubPublish({ gh, dataDir, configDir, record, openExternal: (address) => opened.push(address), sleep: async () => {}, writeGapMs: 0, catalogs, downloads });
+  const run = ghRunner({ command: process.execPath, prefix: [FAKE_GH], env: ghEnv, cwd: folders.root });
+  // wrapRun: a test's own gh between the flow and the stand-in (one whose answer is lost).
+  const gh = { run: wrapRun ? wrapRun(run) : run };
+  // The person's git settings are a folder of the test's (EMU-366): never the git config of the machine's own user.
+  const flow = createGithubPublish({ gh, dataDir, configDir, record, openExternal: (address) => opened.push(address), sleep: async () => {}, writeGapMs: 0, catalogs, downloads, git: { home: person, xdg: null } });
   const runs = () => (existsSync(runLog) ? readFileSync(runLog, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : []);
   const store = () => (existsSync(path.join(person, "fake-keyring.json")) ? JSON.parse(readFileSync(path.join(person, "fake-keyring.json"), "utf8")) : {});
   const hosts = () => (existsSync(path.join(configDir, "hosts.yml")) ? readFileSync(path.join(configDir, "hosts.yml"), "utf8") : "");
@@ -154,9 +160,13 @@ test("the happy path: sign in by code, a new public repository with the project'
   await assert.rejects(flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: [list.boxes[0]], ai: "none", manifest }), { code: "not_ticked", message: /one is not ticked/ });
   await assert.rejects(flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", author: true, ai: "none", manifest }), { code: "not_ticked" }, "the old authorship flag alone is no tick");
   await assert.rejects(flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: null, manifest }), { code: "no_ai_choice" });
+  // "Partly" and "Fully" need the person's explanation (EMU-359): none, or only spaces, or too long, and nothing is sent.
+  await assert.rejects(flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "partly", manifest }), { code: "no_ai_note", message: /which parts AI made, and what they do/ });
+  await assert.rejects(flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "full", aiNote: " \n\t ", manifest }), { code: "no_ai_note", message: /what the generated code does/ });
+  await assert.rejects(flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "full", aiNote: "word ".repeat(MAX_AI_NOTE / 4), manifest }), { code: "ai_note_too_long" });
   assert.equal(stub.requests.filter((r) => r.method !== "GET").length, sentBefore, "nothing was written");
   const from = stub.requests.length;
-  const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "https://github.com/catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "partly", manifest, testing: "Built and run on BUSY Bar Emulator." });
+  const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "https://github.com/catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "partly", aiNote: "The settings page and the clock face, made with an AI agent: they draw the time and keep the choices.", manifest, testing: "Built and run on BUSY Bar Emulator." });
   assert.equal(made.created, true);
   assert.equal(made.direct, false);
   assert.equal(made.branch, `${stub.login}/${ID}_1.0.0`);
@@ -167,13 +177,13 @@ test("the happy path: sign in by code, a new public repository with the project'
   assert.equal(pull.title, "Add Clock 1.0.0");
   assert.match(pull.body, /^- \[x\] I'm the author of the app or have write access to its repository$/m);
   assert.match(pull.body, /^- \[x\] The app builds with `busy-cli build`, and the lock file is committed$/m, "every box the person ticked");
-  assert.match(pull.body, /^- Partly AI-assisted/m);
+  assert.match(pull.body, /^- Partly AI-assisted: The settings page and the clock face, made with an AI agent: they draw the time and keep the choices\.$/m, "the explanation after the option's colon (EMU-359)");
   assert.doesNotMatch(pull.body, /No AI was used|Fully AI-generated/);
   assert.match(pull.body, /# Device testing\n\nBuilt and run on BUSY Bar Emulator\./);
   assert.deepEqual(stub.filesOf(`${stub.login}/busy-apps-catalog-demo`, `${stub.login}/${ID}_1.0.0`)[`applications/${ID}/manifest.yml`], manifest);
 
   // Sent again with the request open: no second pull request.
-  const twice = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "partly", manifest });
+  const twice = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "catalog-owner/busy-apps-catalog-demo", ticked: list.boxes, ai: "partly", aiNote: "The settings page and the clock face, made with an AI agent: they draw the time and keep the choices.", manifest });
   assert.deepEqual([twice.created, twice.url], [false, made.url]);
 
   // No token anywhere but the Authorization header gh sent; none from the environment, in every run of gh.
@@ -252,7 +262,7 @@ test("a new version while the request for the earlier one is open: its commit go
   p.status.version = "1.1.0";
   const again = await flow.push({ folder: p.dir, status: p.status, files: p.plan });
   manifest = noted(p, again);
-  const second = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog, ticked: ALL_TICKED, ai: "partly", manifest });
+  const second = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog, ticked: ALL_TICKED, ai: "partly", aiNote: "The settings page and the clock face, made with an AI agent: they draw the time and keep the choices.", manifest });
   assert.deepEqual([second.created, second.number, second.url, second.branch], [false, first.number, first.url, `${stub.login}/${ID}_1.0.0`], "into the open request, on its branch");
   assert.equal(stub.pulls.length, count, "no second request");
   const pull = stub.pulls.find((one) => one.number === first.number);
@@ -279,12 +289,111 @@ test("the person has a repository named like the catalog that is not its fork: G
   stub.makeRepo("other-owner", "apps-catalog");
   stub.commitFiles("other-owner/apps-catalog", "main", { "README.md": "# Catalog\n" });
   stub.makeRepo(stub.login, "apps-catalog");
-  const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "other-owner/apps-catalog", ticked: ALL_TICKED, ai: "full", manifest });
+  const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "other-owner/apps-catalog", ticked: ALL_TICKED, ai: "full", aiNote: "The settings page and the clock face, made with an AI agent: they draw the time and keep the choices.", manifest });
   assert.equal(made.direct, false);
   const branch = `${stub.login}/${ID}_1.0.0`;
   assert.ok(stub.headOf(`${stub.login}/apps-catalog-1`, branch), "the branch is in the fork GitHub named");
   assert.equal(stub.headOf(`${stub.login}/apps-catalog`, branch), null, "and not in the person's own repository of that name");
   assert.equal(stub.pulls.at(-1).head, `${stub.login}:${branch}`);
+});
+
+test("a request that fails after the fork and the branch says what was made, and the next try opens one pull request on them (EMU-360)", async () => {
+  const { flow } = await signedIn();
+  const p = project("clock-partial");
+  const manifest = noted(p, await flow.push({ folder: p.dir, status: p.status, files: p.plan, name: "clock-partial" }));
+  stub.makeRepo("partial-owner", "partial-catalog");
+  stub.commitFiles("partial-owner/partial-catalog", "main", { "README.md": "# Catalog\n" });
+  const ask = () => flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "partial-owner/partial-catalog", otherCatalog: "partial-owner/partial-catalog", ticked: ALL_TICKED, ai: "none", manifest });
+  const pullsBefore = stub.pulls.length;
+  stub.hooks.fail = (req, url) => (req.method === "POST" && url.pathname === "/api/repos/partial-owner/partial-catalog/pulls" ? { status: 422, body: { message: "Validation Failed", errors: [{ message: "GitHub is busy" }] } } : null);
+  const branch = `${stub.login}/${ID}_1.0.0`;
+  await assert.rejects(ask(), (e) => e.code === "unprocessable" && e.done?.fork === `${stub.login}/partial-catalog` && e.done?.branch === branch);
+  stub.hooks.fail = null;
+  const commits = stub.headOf(`${stub.login}/partial-catalog`, branch);
+  const made = await ask();
+  assert.equal(made.created, true);
+  assert.equal(stub.pulls.length, pullsBefore + 1, "one pull request");
+  assert.equal(stub.headOf(`${stub.login}/partial-catalog`, branch), commits, "the file was on the branch already: no second commit");
+  // A failure before anything is made says nothing was: no `done`.
+  stub.hooks.fail = (req, url) => (url.pathname === "/api/repos/partial-owner/partial-catalog" ? { drop: true } : null);
+  await assert.rejects(ask(), (e) => e.code === "network" && e.done === undefined);
+  stub.hooks.fail = null;
+});
+
+test("the pull request's answer lost after GitHub opened it: the next try finds it and says it was sent, never a second one (EMU-360 review)", async () => {
+  const { flow } = await signedIn();
+  const p = project("clock-lost");
+  const manifest = noted(p, await flow.push({ folder: p.dir, status: p.status, files: p.plan, name: "clock-lost" }));
+  stub.makeRepo("lost-owner", "lost-catalog");
+  stub.commitFiles("lost-owner/lost-catalog", "main", { "README.md": "# Catalog\n" });
+  const ask = () => flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "lost-owner/lost-catalog", otherCatalog: "lost-owner/lost-catalog", ticked: ALL_TICKED, ai: "none", manifest });
+  const pulls = stub.pulls.length;
+  stub.hooks.lose = (req, url) => req.method === "POST" && url.pathname === "/api/repos/lost-owner/lost-catalog/pulls";
+  await assert.rejects(ask(), (e) => ["network", "timeout"].includes(e.code) && e.where?.at === "pull");
+  stub.hooks.lose = null;
+  assert.equal(stub.pulls.length, pulls + 1, "GitHub opened it");
+  const again = await ask();
+  assert.deepEqual([again.unchanged, again.url, stub.pulls.length], [true, stub.pulls.at(-1).url, pulls + 1], "found, with these changes: sent, and no second one");
+  // Found by its head when the list of the person's requests misses it: sent as well.
+  stub.hooks.fail = (req, url) => (req.method === "GET" && url.pathname === "/api/repos/lost-owner/lost-catalog/pulls" && !url.searchParams.has("head") ? { status: 200, body: [] } : null);
+  const byHead = await ask();
+  stub.hooks.fail = null;
+  assert.deepEqual([byHead.created, byHead.unchanged, stub.pulls.length], [true, true, pulls + 1]);
+});
+
+test("a failure says where it happened: a 403 on the fork's branch, and on the pull request (EMU-360 review)", async () => {
+  const { flow } = await signedIn();
+  const p = project("clock-where");
+  const manifest = noted(p, await flow.push({ folder: p.dir, status: p.status, files: p.plan, name: "clock-where" }));
+  stub.makeRepo("where-owner", "where-catalog");
+  stub.commitFiles("where-owner/where-catalog", "main", { "README.md": "# Catalog\n" });
+  const ask = () => flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "where-owner/where-catalog", otherCatalog: "where-owner/where-catalog", ticked: ALL_TICKED, ai: "none", manifest });
+  stub.hooks.fail = (req, url) => (req.method === "POST" && url.pathname === `/api/repos/${stub.login}/where-catalog/git/refs` ? { status: 403, body: { message: "Resource not accessible" } } : null);
+  await assert.rejects(ask(), (e) => e.code === "forbidden" && e.where?.at === "push" && e.where.direct === false && e.done?.fork === `${stub.login}/where-catalog`);
+  stub.hooks.fail = (req, url) => (req.method === "POST" && url.pathname === "/api/repos/where-owner/where-catalog/pulls" ? { status: 403, body: { message: "Resource not accessible" } } : null);
+  await assert.rejects(ask(), (e) => e.code === "forbidden" && e.where?.at === "pull");
+  stub.hooks.fail = null;
+  // Where it stands, read for the window opened again: open, then merged.
+  const made = await ask();
+  assert.equal((await flow.pullState({ url: made.url, catalog: "where-owner/where-catalog" })).state, "open");
+  stub.pulls.at(-1).merged = true;
+  stub.pulls.at(-1).state = "closed";
+  assert.equal((await flow.pullState({ url: made.url, catalog: "where-owner/where-catalog" })).state, "merged");
+  await assert.rejects(flow.pullState({ url: made.url, catalog: "busy-app/busy-apps-catalog" }), { code: "usage" }, "only a request of the catalog named");
+});
+
+test("the new repository made, its answer lost to gh's time limit: publishing goes on in it, not as someone else's (EMU-360 re-review)", async () => {
+  let lost = 0;
+  // gh did the call, then its time ran out before the answer: what the transport sees as a timeout.
+  const wrapRun = (run) => async (args, options) => {
+    const out = await run(args, options);
+    if (args[0] === "api" && args[1] === "/user/repos" && args.includes("POST") && !lost++) return { ...out, code: null, stdout: Buffer.alloc(0), timedOut: true };
+    return out;
+  };
+  const { flow } = await signedIn({ wrapRun });
+  const p = project("clock-lost-repo");
+  const pushed = await flow.push({ folder: p.dir, status: p.status, files: p.plan, name: "clock-lost-repo" });
+  assert.equal(lost, 1, "the create's answer was lost");
+  assert.deepEqual([pushed.owner, pushed.name], [stub.login, "clock-lost-repo"]);
+  assert.ok(stub.filesOf(`${stub.login}/clock-lost-repo`, "main")["src/main.ts"] !== undefined, "the project's files are in it");
+});
+
+test("a request sent again: nothing new is unchanged (nothing sent); a new tick or text is updated (EMU-360 re-review)", async () => {
+  const { flow } = await signedIn();
+  const p = project("clock-resend");
+  const manifest = noted(p, await flow.push({ folder: p.dir, status: p.status, files: p.plan, name: "clock-resend" }));
+  stub.makeRepo("resend-owner", "resend-catalog");
+  stub.commitFiles("resend-owner/resend-catalog", "main", { "README.md": "# Catalog\n" });
+  const ask = (more = {}) => flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "resend-owner/resend-catalog", otherCatalog: "resend-owner/resend-catalog", ticked: ALL_TICKED, ai: "none", manifest, ...more });
+  const first = await ask();
+  assert.equal(first.created, true);
+  const same = await ask();
+  assert.deepEqual([same.created, same.unchanged], [false, true]);
+  const patches = stub.requests.filter((r) => r.method === "PATCH").length;
+  const other = await ask({ ai: "full", aiNote: "All of it, with an AI agent." });
+  assert.deepEqual([other.created, other.unchanged], [false, false], "the text changed: updated");
+  assert.equal(stub.requests.filter((r) => r.method === "PATCH").length, patches + 1);
+  assert.match(stub.pulls.at(-1).body, /Fully AI-generated: All of it, with an AI agent\./);
 });
 
 test("a catalog that cannot be seen, an empty one, a name that is taken: each a sentence and what to do", async () => {
@@ -382,6 +491,170 @@ test("a repository with commits the project doesn't have is never published into
   mkdirSync(path.join(g.dir, ".git", "objects", remote.slice(0, 2)), { recursive: true });
   writeFileSync(path.join(g.dir, ".git", "objects", remote.slice(0, 2), remote.slice(2)), "");
   assert.equal((await flow.plan({ folder: g.dir, status: g.status, name: "ahead-git" })).mode, "existing");
+});
+
+/** The project's own git, written as git writes it: .git/config with `config`, HEAD on main at `head` (EMU-358). */
+function gitClone(dir, config, head = null) {
+  mkdirSync(path.join(dir, ".git", "refs", "heads"), { recursive: true });
+  writeFileSync(path.join(dir, ".git", "config"), config);
+  writeFileSync(path.join(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
+  if (head) writeFileSync(path.join(dir, ".git", "refs", "heads", "main"), `${head}\n`);
+}
+const origin = (url, more = "") => `[core]\n\trepositoryformatversion = 0\n\tbare = false\n[remote "origin"]\n\turl = ${url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n${more}[branch "main"]\n\tremote = origin\n`;
+
+test("the project's git remote names the repository on the signed-in account: then the same plan, existing, diverged or new; another account's or not GitHub's is said and not used; a publish or an import from here comes first (EMU-358)", async () => {
+  const { flow } = await signedIn();
+  const plan = (p, name = null) => flow.plan({ folder: p.dir, status: p.status, name });
+  // A git clone of the person's own repository (the SSH form, the account in another case): Publish into it.
+  stub.makeRepo(stub.login, "busybar-github-activity");
+  const at = stub.commitFiles(`${stub.login}/busybar-github-activity`, "main", { "src/main.ts": "draw();\n" });
+  const p = project("clone-own");
+  p.status.files = p.plan;
+  gitClone(p.dir, origin(`git@github.com:${stub.login.toUpperCase()}/busybar-github-activity.git`), at);
+  const own = await plan(p);
+  assert.deepEqual([own.name, own.mode, own.head, own.base, own.named], ["busybar-github-activity", "existing", at, "git", "remote"]);
+  assert.deepEqual(own.remote, { remote: "origin", repo: `${stub.login.toUpperCase()}/busybar-github-activity`, host: "github.com", unreadable: false, why: null });
+  assert.equal((await plan(p, "BusyBar-GitHub-Activity")).named, "remote", "the default typed again, in another case");
+  assert.equal((await plan(p, "something-else")).named, "typed");
+  await assert.rejects(flow.push({ folder: p.dir, status: p.status, files: p.plan }), { code: "confirm_existing" }, "never without the person's confirmation");
+  // GitHub moved on since the clone: nothing is sent, and git pull is what to do.
+  stub.commitFiles(`${stub.login}/busybar-github-activity`, "main", { "NOTES.md": "from the web\n" });
+  const behind = await plan(p);
+  assert.deepEqual([behind.mode, behind.base, behind.named], ["diverged", "git", "remote"]);
+  await assert.rejects(flow.push({ folder: p.dir, status: p.status, files: p.plan }), { code: "remote_ahead", hint: /git pull in the project's folder/ });
+  // Every form git takes for github.com/<login>/<name>, with or without .git, any case; a repository not made yet: new.
+  for (const url of [`https://github.com/${stub.login}/fresh-one`, `https://github.com/${stub.login}/fresh-one.git/`, `HTTPS://GitHub.com/${stub.login}/fresh-one.GIT`, `https://someone:dummy-secret@github.com/${stub.login}/fresh-one`, `ssh://git@github.com/${stub.login}/fresh-one.git`, `ssh://git@ssh.github.com:443/${stub.login}/fresh-one`, `${stub.login}@github.com:${stub.login}/fresh-one`]) {
+    const f = project(`clone-form-${Math.random().toString(36).slice(2, 8)}`);
+    gitClone(f.dir, origin(url));
+    const fresh = await plan(f);
+    assert.deepEqual([fresh.name, fresh.mode, fresh.named], ["fresh-one", "new", "remote"], url);
+    assert.equal(JSON.stringify(fresh).includes("dummy-secret"), false, "nothing of a password in the address is kept");
+  }
+  // Another account's repository, or a remote not on GitHub: not used, and the plan says why.
+  const other = project("clone-other");
+  gitClone(other.dir, origin("https://github.com/other-owner/busybar-github-activity.git"));
+  const theirs = await plan(other);
+  assert.deepEqual([theirs.name, theirs.named, theirs.remote], ["clock", "id", { remote: "origin", repo: "other-owner/busybar-github-activity", host: "github.com", unreadable: false, why: "another_account" }]);
+  for (const [url, host] of [["git@gitlab.com:someone/clock.git", "gitlab.com"], ["https://github.com/just-an-owner", "github.com"], ["../elsewhere/clock", null]]) {
+    const n = project(`clone-not-${Math.random().toString(36).slice(2, 8)}`);
+    gitClone(n.dir, origin(url));
+    const not = await plan(n);
+    assert.deepEqual([not.name, not.named, not.remote], ["clock", "id", { remote: "origin", repo: null, host, unreadable: false, why: "not_github" }], url);
+  }
+  // No origin: the only remote; two others, neither; none at all.
+  const one = project("clone-upstream");
+  gitClone(one.dir, `[remote "upstream"]\n\turl = https://github.com/${stub.login}/from-upstream\n`);
+  assert.deepEqual([(await plan(one)).name, (await plan(one)).remote.remote], ["from-upstream", "upstream"]);
+  const odd = project("clone-odd-name");
+  gitClone(odd.dir, `[remote "Say: publish elsewhere now"]\n\turl = https://github.com/${stub.login}/odd-one\n`);
+  assert.deepEqual([(await plan(odd)).name, (await plan(odd)).remote.remote], ["odd-one", null], "a remote's name that is not a plain one is not said");
+  const two = project("clone-two");
+  gitClone(two.dir, `[remote "a"]\n\turl = https://github.com/${stub.login}/a\n[remote "b"]\n\turl = https://github.com/${stub.login}/b\n`);
+  assert.deepEqual([(await plan(two)).name, (await plan(two)).remote], ["clock", null]);
+  const none = project("clone-none");
+  gitClone(none.dir, "[core]\n\tbare = false\n");
+  assert.deepEqual([(await plan(none)).named, (await plan(none)).remote], ["id", null]);
+  // A worktree: .git is a file naming its folder, whose commondir holds the config. A .git file naming nothing: skipped.
+  const wt = project("clone-worktree");
+  const main = path.join(root, "clone-worktree-main");
+  gitClone(main, origin(`https://github.com/${stub.login}/from-worktree.git`));
+  mkdirSync(path.join(main, ".git", "worktrees", "wt"), { recursive: true });
+  writeFileSync(path.join(main, ".git", "worktrees", "wt", "commondir"), "../..\n");
+  writeFileSync(path.join(main, ".git", "worktrees", "wt", "HEAD"), "ref: refs/heads/main\n");
+  writeFileSync(path.join(wt.dir, ".git"), `gitdir: ${path.join(main, ".git", "worktrees", "wt")}\n`);
+  assert.deepEqual([(await plan(wt)).name, (await plan(wt)).named], ["from-worktree", "remote"]);
+  const broken = project("clone-broken");
+  writeFileSync(path.join(broken.dir, ".git"), "gitdir: ./nowhere\n");
+  assert.deepEqual([(await plan(broken)).name, (await plan(broken)).remote], ["clock", null]);
+  // A folder inside a repository is not that repository: its remote is not the project's.
+  const inner = project("clone-own/inner");
+  assert.deepEqual([(await plan(inner)).name, (await plan(inner)).remote], ["clock", null]);
+  // The order: the record of a publish from here, then the import record, then the remote.
+  const r = project("clone-recorded");
+  gitClone(r.dir, origin(`https://github.com/${stub.login}/from-remote`));
+  record.imported(r.dir, { owner: stub.login, name: "from-import", commit: "b".repeat(40) });
+  assert.deepEqual([(await plan(r)).name, (await plan(r)).named], ["from-import", "imported"]);
+  record.pushed(r.dir, { owner: stub.login, name: "from-publish", commit: "c".repeat(40) });
+  assert.deepEqual([(await plan(r)).name, (await plan(r)).named], ["from-publish", "published"]);
+});
+
+test("a clone of another account's repository, under the person's own name with commits the clone lacks: import again, not git pull, which would pull from the other one (EMU-358, review)", async () => {
+  const { flow } = await signedIn();
+  if (!stub.repoOf(`${stub.login}/clock`)) stub.makeRepo(stub.login, "clock");
+  stub.commitFiles(`${stub.login}/clock`, "main", { "HISTORY.md": "mine\n" });
+  const p = project("clone-of-theirs");
+  p.status.files = p.plan;
+  gitClone(p.dir, origin("https://github.com/other-owner/clock.git"), "d".repeat(40));
+  const planned = await flow.plan({ folder: p.dir, status: p.status, name: null });
+  assert.deepEqual([planned.name, planned.mode, planned.base, planned.named], ["clock", "diverged", "git", "id"]);
+  await assert.rejects(flow.push({ folder: p.dir, status: p.status, files: p.plan }), (e) => e.code === "remote_ahead" && /import the repository again/.test(e.hint) && !/git pull/.test(e.hint));
+  // An address with "://" this does not read is not said to be a folder on this computer.
+  const q = project("clone-unreadable");
+  gitClone(q.dir, origin(`https://someone:pass/dummy-secret@github.com/${stub.login}/clock-q`));
+  const unread = await flow.plan({ folder: q.dir, status: q.status, name: null });
+  assert.deepEqual([unread.named, unread.remote], ["id", { remote: "origin", repo: null, host: null, unreadable: true, why: "not_github" }]);
+});
+
+test("the project's .git is read without waiting and within bounds: a FIFO or a device anywhere under it, or a file too large, is not read (EMU-358, review)", { skip: process.platform === "win32" && "FIFOs are not files on Windows" }, () => {
+  const fifo = (file) => execFileSync("/usr/bin/mkfifo", [file]);
+  const cases = [];
+  const made = (name, build) => {
+    const dir = path.join(root, `fifo-${name}`);
+    mkdirSync(dir, { recursive: true });
+    build(dir);
+    cases.push(dir);
+  };
+  made("dot-git", (dir) => fifo(path.join(dir, ".git")));
+  made("dot-git-zero", (dir) => symlinkSync("/dev/zero", path.join(dir, ".git")));
+  const worktree = (dir, commondir) => {
+    const wt = path.join(dir, "wt-git");
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(path.join(wt, "HEAD"), "ref: refs/heads/main\n");
+    commondir(path.join(wt, "commondir"));
+    writeFileSync(path.join(dir, ".git"), `gitdir: ${wt}\n`);
+  };
+  made("commondir", (dir) => worktree(dir, fifo));
+  made("commondir-zero", (dir) => worktree(dir, (file) => symlinkSync("/dev/zero", file)));
+  made("inside", (dir) => {
+    gitClone(dir, origin("https://github.com/x/y"));
+    for (const one of ["HEAD", "config", "packed-refs"]) rmSync(path.join(dir, ".git", one), { force: true });
+    fifo(path.join(dir, ".git", "HEAD"));
+    fifo(path.join(dir, ".git", "config"));
+    symlinkSync("/dev/zero", path.join(dir, ".git", "packed-refs"));
+    mkdirSync(path.join(dir, ".git", "objects", "pack"), { recursive: true });
+    fifo(path.join(dir, ".git", "objects", "pack", "pack-1.idx"));
+  });
+  made("ref", (dir) => {
+    gitClone(dir, origin("https://github.com/x/y"));
+    fifo(path.join(dir, ".git", "refs", "heads", "main"));
+  });
+  made("large", (dir) => {
+    gitClone(dir, origin("https://github.com/x/y"));
+    writeFileSync(path.join(dir, ".git", "HEAD"), `${"a".repeat(40)}\n${" ".repeat(8192)}`);
+  });
+  // In a process of its own, so that a read that waits fails the test at its limit instead of hanging the file.
+  const script = `const m = await import(${JSON.stringify(pathToFileURL(path.resolve(import.meta.dirname, "../../src/github/local-git.mjs")).href)});
+    const out = process.argv.slice(1).map((dir) => [m.localRemote(dir), m.localHead(dir), m.localHas(dir, "${"e".repeat(40)}")]);
+    process.stdout.write(JSON.stringify(out));`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script, ...cases], { encoding: "utf8", timeout: 20_000 });
+  assert.equal(run.error?.code, undefined, `read without waiting: ${run.error?.code}`);
+  assert.equal(run.status, 0, run.stderr);
+  const answers = JSON.parse(run.stdout);
+  assert.deepEqual(answers.map(([remote]) => remote), [null, null, null, null, null, { remote: "origin", host: "github.com", github: { owner: "x", name: "y" } }, { remote: "origin", host: "github.com", github: { owner: "x", name: "y" } }]);
+  assert.deepEqual(answers.map(([, head, has]) => [head, has]), cases.map(() => [null, false]));
+});
+
+test("a git config read as data: remotes with quotes, comments and escapes; an include not followed (EMU-358)", () => {
+  assert.deepEqual([...remotesOf('[Remote "origin"]\n  URL = "https://github.com/a/b.git" ; a comment\n  url = https://github.com/a/second\n[remote "x y"] url = git@github.com:c/d # comment\n[include]\n  path = ../other\n')], [
+    ["origin", "https://github.com/a/b.git"],
+    ["x y", "git@github.com:c/d"],
+  ]);
+  assert.deepEqual(remoteAddress("git@github.com:a/b.git"), { host: "github.com", github: { owner: "a", name: "b" } });
+  assert.deepEqual(remoteAddress("ftp://github.com/a/b"), { host: "github.com", github: null });
+  assert.deepEqual(remoteAddress("https://github.com/a/.."), { host: "github.com", github: null });
+  assert.deepEqual(remoteAddress("file:///tmp/clock"), { host: null, github: null });
+  assert.deepEqual(remoteAddress("https://evil\u202e.example/a/b").host, "another host");
+  for (const url of ["https://github.com/a/b?x=1", "https://github.com/a/b#main", "https://u:pass/dummy-secret@github.com/a/b"]) assert.deepEqual(remoteAddress(url), { host: null, github: null, unreadable: true }, url);
 });
 
 test("an app the catalog has already: an update, only with a higher version and a new What's new, titled Update, with the new commit (catalog-update)", async () => {
@@ -952,9 +1225,9 @@ test("the catalog's checklist: every box of the template as it is written, the A
   assert.equal(list.required.length, 6, "the contest item is optional");
   assert.deepEqual(list.blocks.map((one) => one.kind), ["heading", "box", "box", "box", "box", "box", "box", "box", "heading", "instruction", "ai"]);
   assert.deepEqual(list.ai, [
-    { id: "none", text: "No AI was used." },
-    { id: "partly", text: "Partly AI-assisted: which parts, and what they do." },
-    { id: "full", text: "Fully AI-generated: what the generated code does." },
+    { id: "none", text: "No AI was used.", prompt: null },
+    { id: "partly", text: "Partly AI-assisted: which parts, and what they do.", prompt: "Which parts, and what they do" },
+    { id: "full", text: "Fully AI-generated: what the generated code does.", prompt: "What the generated code does" },
   ]);
   const body = fillTemplate(BUNDLED_TEMPLATE, { ai: "full", ticked: list.boxes, testing: "Tested in BUSY Bar Emulator." });
   assert.equal((body.match(/^- \[x\] /gm) ?? []).length, 7);
@@ -966,6 +1239,46 @@ test("the catalog's checklist: every box of the template as it is written, the A
   const other = parseChecklist("<!-- for authors -->\r\n## Checklist\r\n* [ ] One\r\n* [x] Two\r\nSome words.\r\n");
   assert.deepEqual([other.boxes, other.ai, other.blocks.map((one) => one.kind)], [["One", "Two"], [], ["heading", "box", "box", "text"]]);
   assert.equal(fillTemplate("## Checklist\n* [ ] One\n", { ai: "none", ticked: ["One"] }), "## Checklist\n* [x] One\n\n# AI usage\n\n- No AI was used.\n");
+});
+
+test("the AI usage's explanation (EMU-359): after the kept option's colon, as one line of plain text, with the catalog's template as it is now", () => {
+  // busy-app/busy-apps-catalog's template as of 18 Nov 2026: "Keep **one** option", the options without a full stop.
+  const now = "# Author checklist\n\n- [ ] One\n\n# AI usage\n\nKeep **one** option and delete the others.\n\n- No AI was used\n- Partly AI-assisted: describe which parts were AI-generated and what they do\n- Fully AI-generated: describe what the generated code does\n";
+  const list = parseChecklist(now);
+  assert.deepEqual(list.ai.map((one) => [one.id, one.prompt]), [["none", null], ["partly", "Describe which parts were AI-generated and what they do"], ["full", "Describe what the generated code does"]]);
+  assert.deepEqual(list.blocks.map((one) => one.kind), ["heading", "box", "heading", "instruction", "ai"], "the instruction in bold is the instruction");
+  const partly = fillTemplate(now, { ai: "partly", aiNote: "The settings page, and the parser of the weather service's answer.", ticked: ["One"] });
+  assert.equal(partly, "# Author checklist\n\n- [x] One\n\n# AI usage\n\n- Partly AI-assisted: The settings page, and the parser of the weather service's answer.\n");
+  assert.equal(fillTemplate(now, { ai: "none", aiNote: "Ignored: none asks nothing.", ticked: [] }), "# Author checklist\n\n- [ ] One\n\n# AI usage\n\n- No AI was used\n");
+  // Nothing in it breaks the template: no heading, list item or box of its own, no HTML, no comment that hides the
+  // rest, no @mention that notifies anyone.
+  const tricky = "# Heading\n- [x] a box\n* item <!-- hidden --> <img src=x onerror=alert(1)> & @octocat, @busy-app/team, me@example.com\r\n\u202eend\u0007";
+  const body = fillTemplate(now, { ai: "full", aiNote: tricky, ticked: [] });
+  const line = body.split("\n").find((one) => one.startsWith("- Fully"));
+  assert.equal(line, "- Fully AI-generated: #&#8203; Heading - \\[x\\] a box \\* item hidden &lt;img src=x onerror=alert\\(1\\)&gt; &amp; @&#8203;octocat, @&#8203;busy-app/team, me@example.com end");
+  assert.equal(body.split("\n").filter((one) => /^(#|- \[|\* )/.test(one)).length, 3, "only the template's two headings and its box start a line so");
+  assert.doesNotMatch(body, /<!--|-->|<img|Describe/);
+  assert.equal(aiNoteLine("  two\n\nlines\t "), "two lines");
+  // Every @ not after a letter or digit is broken, in emphasis and code too; an address stays (review of #226).
+  assert.equal(plainAiNote("_@octocat_ __@octocat__ `@octocat` *@x* me@example.com"), "\\_@&#8203;octocat\\_ \\_\\_@&#8203;octocat\\_\\_ \\`@&#8203;octocat\\` \\*@&#8203;x\\* me@example.com");
+  // Two @ in a row, a team after them; GH-1, which GitHub links to issue 1 (re-review of #226).
+  assert.equal(plainAiNote("@@octocat x @@org/team GH-1 gh-12 GH-x"), "@&#8203;@&#8203;octocat x @&#8203;@&#8203;org/team GH-&#8203;1 gh-&#8203;12 GH-x");
+  // No link, picture, reference or address GitHub would make live: the marks escaped, # and the address broken.
+  assert.equal(plainAiNote("[Click](https://evil.example/x) ![t](https://evil.example/p.png) owner/repo#1 #1 www.evil.example"), "\\[Click\\]\\(https&#8203;://evil.example/x\\) \\!\\[t\\]\\(https&#8203;://evil.example/p.png\\) owner/repo#&#8203;1 #&#8203;1 www&#8203;.evil.example");
+  assert.equal(plainAiNote("~~gone~~ | **bold** \\n"), "\\~\\~gone\\~\\~ \\| \\*\\*bold\\*\\* \\\\n");
+  // A token pasted in is masked, in the line that is kept and sent alike.
+  assert.equal(aiNoteLine("key ghp_abcdefghijklmnop1234 and github_pat_11ABCDEFG0123456789_xyz, and x".concat("a".repeat(40))), "key … and …, and …");
+  assert.match(fillTemplate(now, { ai: "partly", aiNote: "My token gho_0123456789abcdefghij is here.", ticked: [] }), /^- Partly AI-assisted: My token … is here\.$/m);
+  assert.deepEqual([aiPrompt("Partly AI-assisted: which parts."), aiPrompt("No AI was used")], ["Which parts", null]);
+  // A template whose line has no colon, and one with no AI usage at all: the explanation is put after the option.
+  assert.match(fillTemplate("## AI\n- Partly AI-assisted\n- No AI was used\n", { ai: "partly", aiNote: "Tests.", ticked: [] }), /^- Partly AI-assisted: Tests\.$/m);
+  assert.match(fillTemplate("## Checklist\n* [ ] One\n", { ai: "full", aiNote: "All of it.", ticked: [] }), /\n\n# AI usage\n\n- Fully AI-generated: All of it\.\n$/);
+  // The person's question shows the explanation as the request gives it.
+  const target = { owner: "octo", name: "clock", commit: "c".repeat(40) };
+  const [asked] = requestQuestions({ folder: "/p/clock", catalog: { owner: "busy-app", name: "busy-apps-catalog" }, target, ai: "full", aiNote: "The whole\napp.", list: { source: "catalog", boxes: ["One"] } });
+  assert.match(asked.detail, /AI usage: fully AI-generated\. The explanation the request gives: "The whole app\."\./);
+  const [none] = requestQuestions({ folder: "/p/clock", catalog: { owner: "busy-app", name: "busy-apps-catalog" }, target, ai: "none", aiNote: "ignored", list: { source: "catalog", boxes: ["One"] } });
+  assert.match(none.detail, /AI usage: no AI was used\.\n/);
 });
 
 // ---------------------------------------------------------------- the catalog and the account of a request (EMU-291)
@@ -1177,7 +1490,7 @@ test("publish pr with the contest ticked, and without (EMU-313): the request's d
     p.status.id = `io.github.octo.${name.replace(/-/g, "_")}`;
     const list = await flow.checklist({ catalog: "contest-owner/contest-catalog" });
     const ticked = requestTicks(list, take ? [`(optional) ${contest}`] : []);
-    const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "contest-owner/contest-catalog", ticked, ai: "full", manifest });
+    const made = await flow.request({ status: p.status, files: p.plan, folder: p.dir, catalog: "contest-owner/contest-catalog", ticked, ai: "full", aiNote: "The settings page and the clock face, made with an AI agent: they draw the time and keep the choices.", manifest });
     assert.deepEqual(made.optional, [{ item: contest, ticked: take }]);
     const body = stub.pulls.at(-1).body;
     assert.equal((body.match(/^- \[x\] /gm) ?? []).length, take ? 7 : 6);

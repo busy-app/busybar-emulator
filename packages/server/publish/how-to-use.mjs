@@ -16,6 +16,10 @@
 //   rowsOf(list)        → [{ control, text }]   the rows of the section's list alone
 //   listOf(rows)        → list                  the section's list, as the README holds it
 //   problem(rows)       → null | words          what keeps the rows from being published
+//   sectionProblem(rows)→ null | words          the same for the README step's own editor (fields), where the section
+//                                               is optional: no rows hold nothing back (EMU-364)
+//   sectionHint(rows)   → null | words          what is said of a section written elsewhere (Markdown, the person's own
+//                                               README.md): never a block, since the catalog does not read it yet
 import { markdownProblem } from "../readiness/markdown.mjs";
 
 /** The bar's controls, by the names the catalog's chips show (docs.busy.app/bar/basics/controls). */
@@ -57,6 +61,9 @@ const ITEM = /^\s{0,3}[-*+]\s+(.*)$/;
 const NAMED = /^(?:\*\*([^*]+)\*\*|__([^_]+)__)\s*(?::|—|–|-)?\s*(.*)$/;
 const PLAIN = /^([A-Za-z][A-Za-z -]{0,20}?)\s*(?::|—|–)\s*(.*)$/;
 const LEAD = /^(turn the wheel|press the wheel|the wheel|wheel turn|wheel press|start|back|ok)\b[\s,]+(.*)$/i;
+/** A one-word control leads a sentence only when a verb follows it ("Start shows the date"), not "Start a session". */
+const VERB = /^[a-z]+s\b/i;
+const ONE_WORD = new Set(["start", "back", "ok"]);
 
 /** The rows of the section's list: an item a row; one without a known control keeps its text with control null. */
 export function rowsOf(list) {
@@ -83,7 +90,7 @@ export function rowsOf(list) {
     }
     // A sentence that starts with its control, as older READMEs write them: "Start begins a session".
     const lead = LEAD.exec(body);
-    const led = lead ? controlOf(lead[1]) : null;
+    const led = lead && (!ONE_WORD.has(lead[1].toLowerCase()) || VERB.test(lead[2])) ? controlOf(lead[1]) : null;
     rows.push(led && lead[2].trim() ? { control: led, text: lead[2].trim().replace(/^./, (c) => c.toUpperCase()) } : { control: null, text: body });
   }
   return rows;
@@ -148,13 +155,19 @@ export function write(readme, rows) {
   return tidy.join("\n");
 }
 
+/**
+ * What the README step says when How to use has no control rows: the section is optional (EMU-364). The catalog does
+ * not read it yet (docs/requests/catalog-team.md, point 9); people reading the README on GitHub do.
+ */
+export const OPTIONAL_HINT = "How to use is optional: a row for each control of the BUSY Bar (- **Start**: what it does) helps people reading the README. The catalog does not show it yet.";
+
 /** What keeps the rows from being published, in a few words; null when nothing does. At least one row is needed. */
 export function problem(rows) {
   const list = Array.isArray(rows) ? rows : [];
   if (!list.length) return "Add a control to How to use";
   if (list.length > MAX_ROWS) return `How to use: at most ${MAX_ROWS} controls`;
   for (const [i, row] of list.entries()) {
-    if (!CONTROLS.includes(row.control)) return `How to use, row ${i + 1}: choose the control`;
+    if (!CONTROLS.includes(row.control)) return `How to use, row ${i + 1}: name a control of the BUSY Bar, ${CONTROLS.slice(0, -1).join(", ")} or ${CONTROLS.at(-1)}`;
     const text = String(row.text ?? "").trim();
     if (!text) return `How to use: write what ${row.control} does`;
     if ([...text].length > MAX_TEXT) return `How to use, ${row.control}: at most ${MAX_TEXT} characters`;
@@ -162,4 +175,30 @@ export function problem(rows) {
   const found = markdownProblem(listOf(list)).problem;
   if (found) return `How to use: ${found.replace(/^line (\d+): /, (_, n) => `row ${n}, `)}`;
   return null;
+}
+
+/**
+ * What keeps the README step from going on because of How to use, in a few words; null when nothing does. The
+ * section is optional: without rows (no section, or one with no list) nothing does; rows the person wrote are checked
+ * as problem() checks them, so that a wrong one is still said.
+ */
+export function sectionProblem(rows) {
+  return Array.isArray(rows) && rows.length ? problem(rows) : null;
+}
+
+const rowWords = (list) => (list.length === 1 ? `row ${list[0]}` : `rows ${list.slice(0, -1).join(", ")} and ${list.at(-1)}`);
+
+/**
+ * What is said of a How to use section written outside the step's editor (Markdown, or the person's own README.md), in
+ * a few words; null when its rows are control rows the catalog could show. Never a block (EMU-364): the section goes
+ * nowhere yet, and a README from elsewhere often has install steps under the heading.
+ */
+export function sectionHint(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return OPTIONAL_HINT;
+  const plain = list.flatMap((row, i) => (CONTROLS.includes(row.control) ? [] : [i + 1]));
+  const look = `- **Start**: Starts the timer, with Start, Wheel turn, Wheel press or Back`;
+  if (plain.length) return `How to use: ${rowWords(plain)} ${plain.length === 1 ? "names" : "name"} no control of the BUSY Bar, so the section reads as plain text, which is fine. Rows of controls look like ${look}.`;
+  const wrong = problem(list);
+  return wrong ? `${wrong}. The section is optional, so this does not hold the step.` : null;
 }

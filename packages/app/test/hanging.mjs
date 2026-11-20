@@ -1,5 +1,6 @@
-// Runs the hanging test file (fixtures/hangs.mjs) the way the scripts of package.json run a test file, for
-// test/unit/hang.test.mjs and test/app/hang.test.mjs.
+// Runs a test file of fixtures/ the way the scripts of package.json run a test file: the hanging one (hangs.mjs) for
+// test/unit/hang.test.mjs and test/app/hang.test.mjs, the one whose first test hangs (cascade.mjs) for
+// test/app/cascade.test.mjs.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -12,12 +13,14 @@ export function testFlags(script) {
   return command.split(/\s+/).filter((word) => word.startsWith("--") && word !== "--test");
 }
 
-/** Runs the hanging file the way the scripts run a test file, with a short time limit put after theirs. */
-export function runHanging(env, limitMs) {
+/** Runs the hanging file (or another of fixtures/) the way the scripts run a test file, with a short time limit put after theirs. */
+export function runHanging(env, limitMs, fixture = "hangs.mjs", script = "test") {
   const folder = temporaryFolder();
   const reportFile = path.join(folder, "hang.json");
   const t0 = Date.now();
-  const child = spawn(NODE, ["--test", ...testFlags("test"), `--test-timeout=${limitMs}`, path.join(APP_DIR, "test", "fixtures", "hangs.mjs")], {
+  // TAP, which the tests read: Node 22 (the Mac's) prints it by default to a pipe, Node 24 (the Windows machine's) the
+  // spec reporter's tree (EMU-330: cascade.test.mjs failed on that alone in gate:win).
+  const child = spawn(NODE, ["--test", ...testFlags(script), `--test-timeout=${limitMs}`, "--test-reporter=tap", path.join(APP_DIR, "test", "fixtures", fixture)], {
     // Without NODE_TEST_CONTEXT, which would make the inner run take itself for a part of this one.
     env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== "NODE_TEST_CONTEXT")), HANG_REPORT: reportFile, ...env },
     stdio: ["ignore", "pipe", "pipe"],

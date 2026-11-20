@@ -143,8 +143,10 @@ it opens at the first step not done.
    PNG files you made (72×16 or 160×80, or an exact enlargement). Reorder them, or remove one. The first front one is
    the cover.
 3. **README.** The front page of your repository. Write a title and a paragraph about the app. Under **How to use**,
-   add a row for each control the app uses (Start, Wheel turn, Wheel press, Back), each with a short sentence on what
-   it does. The step needs at least one row. Or write the whole README in Markdown. The screenshots, the settings,
+   you can add a row for each control the app uses (Start, Wheel turn, Wheel press, Back), each with a short sentence
+   on what it does. It is optional: it helps people reading the README, and the catalog does not show it yet. Or write
+   the whole README in Markdown, or, for a README.md you wrote elsewhere, turn on **Use the project's README.md as it
+   is**: the emulator shows it as GitHub will and never changes it, with hints for links that would break. The screenshots, the settings,
    how to build and the license line are added for you.
 4. **License.** The catalog takes open source apps only. Choose MIT, Apache 2.0 or GPL 3.0, each said in plain words,
    and write the copyright holder: your name, or your organisation's. Or choose **Upload license file…** for a

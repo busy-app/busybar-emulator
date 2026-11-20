@@ -4,7 +4,7 @@
 // comes up, in the middle of a notification shows the step it is at, and after it shows nothing of it. The steps
 // themselves are checked against the firmware's code in packages/server/test/status-lights.test.mjs.
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { HAS_REAL_SERVER, PORTS, sleep, until } from "../helpers.mjs";
 import { launch } from "./harness.mjs";

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CONTROLS, HEADING, listOf, MAX_ROWS, problem, read, rowsOf, write } from "../how-to-use.mjs";
+import { CONTROLS, HEADING, listOf, MAX_ROWS, OPTIONAL_HINT, problem, read, rowsOf, sectionHint, sectionProblem, write } from "../how-to-use.mjs";
 import { markdownProblem } from "../../readiness/markdown.mjs";
 
 const README = "<!-- mark -->\n\n# Desk Clock\n\nA clock for the desk.\n\n## Settings\n\n- **Digits**: Big\n\n## Build and install\n\nnpm ci\n";
@@ -43,7 +43,7 @@ test("write puts the section in place, before the next section when there is non
 
 test("problem: at least one row, each with its control and a short sentence, in Markdown the catalog takes", () => {
   assert.equal(problem([]), "Add a control to How to use");
-  assert.equal(problem([{ control: null, text: "x" }]), "How to use, row 1: choose the control");
+  assert.equal(problem([{ control: null, text: "x" }]), "How to use, row 1: name a control of the BUSY Bar, Start, Wheel turn, Wheel press or Back");
   assert.equal(problem([{ control: "Back", text: " " }]), "How to use: write what Back does");
   assert.equal(problem([{ control: "Start", text: "x".repeat(101) }]), "How to use, Start: at most 100 characters");
   assert.equal(problem(Array.from({ length: MAX_ROWS + 1 }, () => ({ control: "Start", text: "Go" }))), `How to use: at most ${MAX_ROWS} controls`);
@@ -51,4 +51,27 @@ test("problem: at least one row, each with its control and a short sentence, in 
   const fine = [{ control: "Start", text: "Starts **the** timer, see [the docs](https://busy.app)" }];
   assert.equal(problem(fine), null);
   assert.equal(markdownProblem(`${HEADING}\n\n${listOf(fine)}\n`).problem, null, "the section passes the catalog's rules");
+});
+
+test("sectionProblem: the README step's How to use is optional, a section written wrong is still said (EMU-364)", () => {
+  // The owner's own README: controls described in its bullets, no ## How to use section.
+  const own = "# Claude Code on the BUSY Bar\n\nShows what Claude Code does.\n\n## Features\n\n- Press Start to pause the hooks\n- The wheel scrolls the log\n";
+  assert.deepEqual(read(own), []);
+  assert.equal(sectionProblem(read(own)), null, "no section: nothing holds the step back");
+  assert.equal(sectionProblem(read("# App\n\n## How to use\n\nTurn the wheel to pick a song.\n")), null, "a section of prose alone: nothing either");
+  assert.equal(sectionProblem(read("# App\n\n## How to use\n\n- Press it to start\n")), "How to use, row 1: name a control of the BUSY Bar, Start, Wheel turn, Wheel press or Back");
+  assert.equal(sectionProblem(read("# App\n\n## How to use\n\n- **Start**:\n")), "How to use: write what Start does");
+  assert.equal(sectionProblem(read("# App\n\n## How to use\n\n- **Start**: Pauses\n")), null);
+  assert.match(OPTIONAL_HINT, /optional/);
+  assert.match(OPTIONAL_HINT, /catalog does not show it yet/);
+});
+
+test("sectionHint: a section written elsewhere is said, never held; install steps are no control rows (EMU-364 review)", () => {
+  const steps = read("# App\n\n## How to use\n\n- Install it from the catalog\n- Start a session\n- Start shows the date\n");
+  assert.deepEqual(steps.map((row) => row.control), [null, null, "Start"], "Start a session is no row of Start; Start shows the date is");
+  assert.match(sectionHint(steps), /^How to use: rows 1 and 2 name no control of the BUSY Bar, so the section reads as plain text, which is fine\. Rows of controls look like - \*\*Start\*\*: Starts the timer, with Start, Wheel turn, Wheel press or Back\.$/);
+  assert.match(sectionHint(read("## How to use\n\n- Go\n")), /^How to use: row 1 names no control/);
+  assert.equal(sectionHint([]), OPTIONAL_HINT);
+  assert.equal(sectionHint(read("## How to use\n\n- **Back**: Quits\n")), null);
+  assert.equal(sectionHint(read("## How to use\n\n- **Back**:\n")), "How to use: write what Back does. The section is optional, so this does not hold the step.");
 });

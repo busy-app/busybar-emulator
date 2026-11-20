@@ -12,7 +12,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { closedNetwork } from "../../src/security.mjs";
 import { PORTS, sleep } from "../helpers.mjs";

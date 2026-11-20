@@ -9,7 +9,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 
 import { ghTransport } from "../../src/github/gh.mjs";
-import { blobSha, checkRepoPath, createGithubApi, MAX_FILES, sameIfRepeated, SERVER_RETRY_MS, WRITE_GAP_MS, WRITES_PER_HOUR } from "../../src/github/github-api.mjs";
+import { blobSha, checkRepoPath, createGithubApi, MAX_FILES, noreplyAddress, sameIfRepeated, SERVER_RETRY_MS, WRITE_GAP_MS, WRITES_PER_HOUR } from "../../src/github/github-api.mjs";
 import { fakeSignedIn, runFakeGh } from "../fixtures/fake-gh.mjs";
 import { startGithubStub } from "../fixtures/github-stub.mjs";
 import { PORTS } from "../helpers.mjs";
@@ -55,7 +55,7 @@ const writesOf = (from) => stub.requests.slice(from).filter((r) => r.method !== 
 test("every request is `gh api <path> --hostname github.com --method <M> --include` with GitHub's media type and API version; a body goes as JSON on gh's standard input; gh sends the token", async () => {
   const { api, calls } = apiFor({ writeGapMs: 0 });
   const from = stub.requests.length;
-  assert.deepEqual(await api.user(), { login: stub.login });
+  assert.deepEqual(await api.user(), { login: stub.login, id: stub.account.id, name: stub.account.name, email: null });
   assert.deepEqual(calls[0], { args: ["api", "/user", "--hostname", "github.com", "--method", "GET", "--include", "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28"], input: null });
   const [asked] = stub.requests.slice(from);
   assert.equal(asked.headers.authorization, `token ${stub.token}`, "the stand-in for gh sends the token as gh does");
@@ -67,6 +67,30 @@ test("every request is `gh api <path> --hostname github.com --method <M> --inclu
   assert.deepEqual(calls[1].args.slice(-2), ["--input", "-"]);
   assert.deepEqual(JSON.parse(calls[1].input), { name, description: "d", private: false, auto_init: true });
   for (const call of calls) assert.equal(call.args.join(" ").includes(stub.token), false, "the token is never in gh's arguments");
+});
+
+test("a commit names its author and committer when given them; the account's verified addresses, or no_scope; GH007 is email_private (EMU-366)", async () => {
+  const { api } = apiFor({ writeGapMs: 0 });
+  const name = repoName();
+  await api.createRepo({ name });
+  const author = { name: "Octo Person", email: noreplyAddress({ id: stub.account.id, login: stub.login }) };
+  assert.equal(author.email, `${stub.account.id}+${stub.login}@users.noreply.github.com`);
+  const signed = await api.pushFiles({ owner: stub.login, name, branch: "main", files: [file("a.txt", "1")], message: "m", author });
+  assert.deepEqual(stub.commitOf(signed.commit).sent, { author, committer: author });
+  assert.deepEqual((await api.commit(stub.login, name, signed.commit)).author, author);
+  // Without one, GitHub decides (the request names none).
+  const unsigned = await api.pushFiles({ owner: stub.login, name, branch: "main", files: [file("a.txt", "2")], message: "m" });
+  assert.deepEqual(stub.commitOf(unsigned.commit).sent, { author: null, committer: null });
+  // The verified addresses only; without the scope user:email, no_scope with the scopes GitHub takes.
+  assert.deepEqual(await api.emails(), [{ email: "octo.person@example.com", primary: true, visibility: "private" }, { email: "octo.work@example.net", primary: false, visibility: null }]);
+  stub.account.emailScope = false;
+  try {
+    await assert.rejects(api.emails(), (e) => e.code === "no_scope" && /user:email/.test(e.details.accepted));
+  } finally {
+    stub.account.emailScope = true;
+  }
+  stub.next.push({ status: 422, body: { message: "GH007: Your push would publish a private email address." } });
+  await assert.rejects(api.createCommit(stub.login, name, { message: "m", tree: "0".repeat(40), parents: [], author }), (e) => e.code === "email_private" && e.status === 422);
 });
 
 test("blob ids are git's: the same as `git hash-object`", () => {
@@ -172,13 +196,17 @@ test("errors by what they mean: the name is taken, the token is gone, gh has no 
   const offline = createGithubApi({ transport: ghTransport(async () => ({ code: 1, stdout: Buffer.alloc(0), stderr: "error connecting to api.github.com\n" })) });
   await assert.rejects(offline.user(), (e) => e.code === "network" && /error connecting/.test(e.message));
   const slow = createGithubApi({ transport: ghTransport(async () => ({ code: null, stdout: Buffer.alloc(0), stderr: "", timedOut: true })) });
-  await assert.rejects(slow.user(), (e) => e.code === "network");
+  await assert.rejects(slow.user(), (e) => e.code === "timeout" && e.details?.write === false, "no answer in time is not the network (EMU-360 review)");
+  const broken = createGithubApi({ transport: ghTransport(async () => ({ code: null, stdout: Buffer.alloc(0), stderr: "gh could not be started: ENOENT", timedOut: false })) });
+  await assert.rejects(broken.user(), (e) => e.code === "gh_failed");
+  const tokenless = createGithubApi({ transport: ghTransport(async () => ({ code: 0, stdout: Buffer.alloc(0), stderr: "" }), { token: async () => ({ failure: "network", detail: "gh did not answer" }) }) });
+  await assert.rejects(tokenless.user(), (e) => e.code === "token_unreadable");
 });
 
 test("the primary limit: a short wait is waited out to the reset time, a long one is the caller's", async () => {
   let { api, waits, now } = apiFor();
   stub.next.push({ status: 403, body: { message: "API rate limit exceeded" }, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(now() / 1000) + 30) } });
-  assert.deepEqual(await api.user(), { login: stub.login });
+  assert.equal((await api.user()).login, stub.login);
   assert.equal(waits.length, 1);
   assert.ok(waits[0] >= 30_000 && waits[0] <= 32_000, String(waits[0]));
 

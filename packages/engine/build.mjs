@@ -370,7 +370,7 @@ function buildRuntime() {
   const exported = [
     "malloc", "free", "emu_init", "emu_run_file", "emu_terminate", "emu_heap_stats", "emu_last_error", "emu_cleanup",
     "emu_pump", "emu_timer_fire", "emu_input", "emu_fetch_headers", "emu_fetch_data", "emu_fetch_error", "emu_fetch_finish",
-    "emu_vm_ops_count", "emu_alloc_bytes_count", "emu_unhandled_take", "emu_system_heap",
+    "emu_vm_ops_count", "emu_alloc_bytes_count", "emu_calls_count", "emu_unhandled_take", "emu_system_heap",
   ];
   const flags = [...[...firmwareDefines, ...emulatorDefines].map((d) => `-D${d}`), ...includes.map((i) => `-I${i}`), ...common, ...pathMaps()];
 

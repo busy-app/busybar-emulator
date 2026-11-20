@@ -2,7 +2,7 @@
 // window's Publish dialog step by step in its order, by the person's clicks, each step closed by Next, which writes
 // what it holds: Application Info (an icon that fails a requirement, converted, the name, the category from its list, the catalog texts; Next
 // goes on at once), screenshots taken from the bar and uploaded from files by each display's button, the README with
-// How to use as rows of a control and a sentence (never the template's), a license (never chosen for the person; one's
+// How to use as rows of a control and a sentence, optional (never the template's), and why Next is off said beside it, a license (never chosen for the person; one's
 // own file uploaded, asked before it replaces one), the repository's files (.gitignore), the pre-flight check with
 // nothing left to fix, the build and submission/, with what will be sent said and the copy buttons' Copied. A
 // planted .env and a token in a source file are warned of before anything is published. Then stage 2 against a stand-in for GitHub. With the real server and the
@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { after, test } from "node:test";
+import { after, test } from "./node-test.mjs";
 
 import { BUNDLED_TEMPLATE } from "../../src/github/publish-flow.mjs";
 import { FAKE_GH, fakeSignedIn } from "../fixtures/fake-gh.mjs";
@@ -35,13 +35,12 @@ after(async () => {
 });
 
 const q = (text) => JSON.stringify(text);
-const act = async (code) => {
-  await app.press();
-  return app.page(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message } }))`);
-};
+const act = (code) => app.act(`(${code}).then((value) => ({ value }), (e) => ({ error: { code: e.code, message: e.message } }))`);
 const chooses = (folder) => app.run((shell, _electron, answer) => shell.folderDialogs.standIn(answer), folder);
 const pane = () => app.page(`document.querySelector(".publish-pane")?.innerText ?? ""`);
 const said = () => app.page(`document.querySelector(".publish-said")?.textContent ?? ""`);
+/** Why Next is off, as it stands beside Back and Next (EMU-364); "" when it is on. */
+const why = () => app.page(`document.querySelector(".publish-foot .publish-why")?.textContent ?? ""`);
 const idle = () => until(async () => !(await app.page(`document.querySelector(".publish-said")?.classList.contains("working") ?? true`)), "the dialog to finish its work", 300_000, 200);
 /** A click of the mouse at a point of the page, sent as the system sends the person's (what the shell takes for a
  * gesture), and dispatched by the page before the test reads it (harness.mjs, clickAt). */
@@ -178,7 +177,7 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.doesNotMatch(await pane(), /Pomodoro/, "no description under the field once chosen");
   await fill("Short description", "Short");
   assert.match(await pane(), /5 characters: the short description needs at least 10/);
-  assert.equal(await said(), "Short description: at least 10 characters", "the reason Next is off, in the footer");
+  assert.equal(await why(), "Short description: at least 10 characters", "the reason Next is off, beside it");
   await fill("Short description", "A focus timer that turns the BUSY Bar red while you work.");
   await fill("Description", "Start a focus session with **Start**. The BUSY Bar shows how long is left.\n\n- Back ends it\n- The wheel sets the length");
   await fill("What's new", "The first version: focus sessions.");
@@ -203,7 +202,7 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.equal(await app.page(`document.querySelector(".publish-step.done")?.textContent`), "Application Info", "the step is ticked");
 
   // ---- Screenshots: taken from the bar, and uploaded from files made before; the first is the cover.
-  assert.equal(await said(), "Add a front screenshot");
+  assert.equal(await why(), "Add a front screenshot");
   await press("Take from the BUSY Bar", 0);
   await idle();
   assert.ok(existsSync(path.join(dir, "screenshots", "front-1.png")), `the first screenshot: ${await said()}`);
@@ -232,17 +231,51 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   await press("Next");
   await idle();
 
-  // ---- README: made from the texts and the screenshots; How to use is the author's, as rows of a control and a sentence.
-  assert.equal(await said(), "Add a control to How to use");
+  // ---- README: made from the texts and the screenshots; How to use is the author's, as rows of a control and a
+  // sentence, and optional (EMU-364): Next is on without it, and a hint says so.
+  assert.deepEqual([await nextOff(), await why()], ["false", ""], "no How to use holds nothing back");
+  assert.match(await app.page(`document.querySelector(".publish-howto")?.innerText ?? ""`), /Optional\.[\s\S]*the catalog does not show it yet[\s\S]*No rows: the README goes on without How to use\./);
   assert.match(await app.page(`document.querySelector(".publish-preview")?.innerText ?? ""`), /Focus Timer[\s\S]*Start a focus session/);
   assert.equal(await app.page(`document.querySelectorAll(".publish-preview img.shot").length`), 3, "the screenshots in the preview");
   const row = (n, text) => app.page(`(() => { const el = document.querySelector('.publish-howto input[data-row="${n}"]'); el.value = ${q(text)}; el.dispatchEvent(new Event("input")); return true; })()`);
+  // The project's README.md as it is (EMU-365): the switch shows the file as GitHub will and writes nothing; what the
+  // step would check is said as hints. Next keeps the choice in the project's record, and the file byte for byte.
+  const readmeFile = path.join(dir, "README.md");
+  const readmeBefore = readFileSync(readmeFile);
+  const keepSwitch = () => where(`document.querySelector('.publish-keep input[data-part="readme-keep"]')`);
+  assert.match(await app.page(`document.querySelector(".publish-keep")?.innerText ?? ""`), /Use the project's README\.md as it is/);
+  await clickAt(await keepSwitch());
+  await until(() => app.page(`document.querySelector('.publish-keep input').checked && !document.querySelector(".publish-howto")`), "the file in place of the editor");
+  assert.match(await pane(), /README\.md, as GitHub will show it[\s\S]*BUSY JS app template/, "the file as it is");
+  assert.match(await app.page(`[...document.querySelectorAll(".publish-pane .publish-warn")].map((one) => one.textContent).join("\\n")`), /Still has the template's opening line\./, "the template's text: a hint, not a block");
+  assert.deepEqual([await nextOff(), await why()], ["false", ""]);
+  await shot("3-readme-kept");
+  await press("Next");
+  await idle();
+  assert.match(await app.page(`document.querySelector(".publish-step.on")?.textContent ?? ""`), /License/);
+  assert.ok(readFileSync(readmeFile).equals(readmeBefore), "README.md not touched");
+  assert.equal(JSON.parse(readFileSync(path.join(dir, ".busy", "publish.json"), "utf8")).steps.readme.config.mode, "file", "the choice kept in the record");
+  await step("README");
+  assert.equal(await app.page(`document.querySelector('.publish-keep input')?.checked`), true, "opened again: still the file");
+  // Off: the editor again, the file's own text in Markdown; nothing is written over it unless the person says so.
+  await clickAt(await keepSwitch());
+  await until(() => app.page(`Boolean(document.querySelector(".publish textarea.code"))`), "the editor, in Markdown");
+  assert.match(await app.page(`document.querySelector(".publish textarea.code").value`), /BUSY JS app template/);
+  assert.ok(readFileSync(readmeFile).equals(readmeBefore));
+  await press("Fields");
   await press("Add a row for Start");
   await row(0, "Begins a session");
   await press("Add a row for Wheel turn");
   await row(1, "Sets the length");
   await press("Add a row for Back");
-  assert.equal(await said(), "How to use: write what Back does");
+  // A row written wrong: Next off, and why beside it in words, not only in its tooltip; seen, at the buttons.
+  assert.deepEqual([await nextOff(), await why()], ["true", "How to use: write what Back does"]);
+  assert.deepEqual(await app.page(`(() => {
+    const reason = document.querySelector(".publish-foot .publish-why");
+    const box = reason.getBoundingClientRect();
+    const next = [...document.querySelectorAll(".publish-foot button")].find((b) => b.textContent === "Next").getBoundingClientRect();
+    return [reason.nextElementSibling?.textContent, box.width > 0 && box.height > 0, Math.round(next.left - box.right) < 200, getComputedStyle(reason).visibility];
+  })()`), ["Back", true, true, "visible"], "the reason stands beside Back and Next");
   await row(2, "Ends it");
   assert.equal(await nextOff(), "false");
   // Moved: the row with the wheel goes first.
@@ -256,8 +289,16 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.match(await app.page(`document.querySelector(".publish textarea.code").value`), /## How to use\n\n- \*\*Wheel turn\*\*: Sets the length\n- \*\*Start\*\*: Begins a session\n- \*\*Back\*\*: Ends it\n/);
   await shot("3-readme-markdown");
   await press("Fields");
+  // Next would write over the README.md used as it is: asked first.
   await press("Next");
+  await until(async () => /Replace README\.md\?/.test(await pane()), "the question before README.md is replaced");
+  assert.ok(readFileSync(readmeFile).equals(readmeBefore), "not before the person says so");
+  await press("Replace README.md");
   await idle();
+  assert.match(await app.page(`document.querySelector(".publish-step.on")?.textContent ?? ""`), /License/, `on to License: ${await said()} ${await pane()}`);
+  const away = readdirSync(path.join(dir, ".busy", "removed")).filter((name) => name.endsWith("-README.md"));
+  assert.equal(away.length, 1, "the README.md used as it is went to .busy/removed/");
+  assert.ok(readFileSync(path.join(dir, ".busy", "removed", away[0])).equals(readmeBefore), "as it was");
   const readme = readFileSync(path.join(dir, "README.md"), "utf8");
   assert.match(readme, /^<!-- Made by BUSY Bar Emulator/);
   assert.match(readme, /# Focus Timer\n/);
@@ -267,7 +308,7 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
 
   // ---- License: nothing is chosen for the person; the choice and the name are written on Next.
   assert.equal(await app.page(`[...document.querySelectorAll(".publish-licenses input")].some((one) => one.checked)`), false, "no license is chosen for the person");
-  assert.equal(await said(), "Choose a license");
+  assert.equal(await why(), "Choose a license");
   await app.page(`(() => { document.querySelector('.publish-licenses input[value="MIT"]').click(); return true; })()`);
   await fill("Copyright holder", "Test Author");
   await press("Show the full text");
@@ -275,7 +316,7 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   await shot("4-license");
   // Another license: the person's own file, from the system's dialog, copied in as LICENSE and checked.
   await app.page(`(() => { document.querySelector('.license-other input').click(); return true; })()`);
-  assert.equal(await said(), "Upload your license file");
+  assert.equal(await why(), "Upload your license file");
   const own = path.join(work, "made before", "LICENSE.txt");
   writeFileSync(own, readFileSync(fileURLToPath(new URL("../../../server/publish/licenses/MIT.txt", import.meta.url)), "utf8").replace("<year>", "2026").replace("<copyright holders>", "Test Author"));
   await chooses(own);
@@ -403,6 +444,11 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.match(await pane(), /This also signs in GitHub CLI on this computer\./);
   assert.match(await pane(), /This sign-in belongs to GitHub CLI on this computer: other programs, including AI agents, can use it too\. The emulator's confirmations cover only its own commands\./, "said before the sign-in (F3)");
   await shot("8-signin");
+  // The project is a git clone of another account's repository (EMU-358): its remote does not name the person's.
+  mkdirSync(path.join(dir, ".git"), { recursive: true });
+  const gitRemote = (url) => writeFileSync(path.join(dir, ".git", "config"), `[core]\n\tbare = false\n[remote "origin"]\n\turl = ${url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`);
+  gitRemote("https://github.com/octo-own/elsewhere.git");
+  writeFileSync(path.join(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
   github.device.answers.push({ body: { device_code: "device-code-1", user_code: "WDJB-MJHT", verification_uri: "https://github.com/login/device", expires_in: 900, interval: 5 } });
   // GitHub says "not yet" a few times (gh asks about once a second here), so that the code is there to be seen.
   for (let i = 0; i < 4; i++) github.device.answers.push({ body: { error: "authorization_pending" } });
@@ -427,7 +473,19 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.match(await pane(), /^Publish to GitHub/);
   assert.match(await pane(), /Creates the public repository github\.com\/octo-person\/\S+ and uploads \d+ files.* in one commit\. Anyone can see it\./);
   assert.equal(await nextOff(), null);
+  const source = () => app.page(`document.querySelector(".publish-field .hint.source")?.textContent ?? null`);
+  assert.equal(await source(), "The project's git remote, origin, is github.com/octo-own/elsewhere, another account's: the name is from the app's id.");
+  // Sign commits with (EMU-366): GitHub's private address of the account by default, said beside the button too.
+  const noreply = `${github.account.id}+${github.login}@users.noreply.github.com`;
+  await until(async () => (await app.page(`document.querySelector(".publish-row .hint.signed")?.textContent ?? null`)) === `Signed ${github.account.name} <${noreply}>`, "the commit's author beside Publish to GitHub");
+  assert.deepEqual(await app.page(`[...document.querySelectorAll("select[data-focus=signer] option")].map((o) => o.value)`), ["noreply", "octo.person@example.com", "octo.work@example.net"], "the private address first, then the verified ones");
   await shot("10-signed-in");
+  // Its remote on the person's own account names the repository, and the field says so.
+  gitRemote(`git@github.com:${github.login}/${id.split(".").at(-1)}.git`);
+  await step("Build and package");
+  await step("Publish to GitHub");
+  await until(async () => (await source()) === "The name is from the project's git remote, origin.", "the name from the project's git remote");
+  assert.match(await pane(), /Creates the public repository github\.com\/octo-person\/\S+ and uploads/);
   // GitHub is slow to take the files: the upload shows how far it is, then that it is still waiting, and Cancel.
   let blobs = 0;
   let release;
@@ -444,10 +502,13 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   release();
   await idle();
   text = await pane();
-  assert.match(text, /Published/, await said());
+  // Published (EMU-360): the step's form hidden, a screen of its own with the repository and the commit's page.
+  assert.match(text, /Published to GitHub/, await said());
+  assert.equal(await app.page(`document.querySelector(".publish-checklist, #publish-ai-note, .publish-field")`), null, "the form is hidden");
   const repoName = id.split(".").at(-1);
   const head = github.headOf(`${github.login}/${repoName}`, "main");
   assert.match(head, /^[0-9a-f]{40}$/);
+  assert.deepEqual(github.commitOf(head).sent, { author: { name: github.account.name, email: noreply }, committer: { name: github.account.name, email: noreply } }, "signed with the private address (EMU-366)");
   assert.match(text, new RegExp(head));
   const onGithub = github.filesOf(`${github.login}/${repoName}`, "main");
   assert.ok(onGithub["LICENSE"] && onGithub["catalog.json"] && onGithub["screenshots/front-2.png"] !== undefined, Object.keys(onGithub).join(", "));
@@ -455,6 +516,13 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.equal(Object.keys(onGithub).some((one) => one.startsWith(".github/workflows/")), false, "no workflows: they would need the scope workflow");
   const filled = readFileSync(path.join(dir, "submission", "applications", id, "manifest.yml"), "utf8");
   assert.match(filled, new RegExp(`origin: https://github.com/${github.login}/${repoName}.git\n    commit_sha: ${head}`));
+  assert.equal(await app.page(`[...document.querySelectorAll(".publish-outcome a")].find((a) => a.textContent === ${q(head)})?.href`), `https://github.com/${github.login}/${repoName}/commit/${head}`);
+  // The facts in one grid: every value from the same left edge, every row the same height, the actions at the right.
+  const grid = () => app.page(`[...document.querySelectorAll(".publish-facts li")].map((li) => ({ value: Math.round(li.querySelector(".value").getBoundingClientRect().left), height: Math.round(li.getBoundingClientRect().height), action: Math.round(li.querySelector(".action").getBoundingClientRect().right), right: Math.round(li.getBoundingClientRect().right) }))`);
+  const rows = await grid();
+  assert.deepEqual(rows.map((one) => one.value), Array(3).fill(rows[0].value), JSON.stringify(rows));
+  assert.deepEqual(rows.map((one) => one.height), Array(3).fill(rows[0].height), JSON.stringify(rows));
+  assert.deepEqual(rows.map((one) => one.action), Array(3).fill(rows[0].action), JSON.stringify(rows));
   assert.doesNotMatch(filled, /Filled in Stage 2/);
   await shot("11-published");
 
@@ -485,22 +553,131 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   await until(async () => /Tick every item of the checklist: 5 of 6 ticked/.test(await pane()), "what is left to tick, once the catalog was read");
   await app.page(`(() => { document.querySelectorAll('.publish-checklist input[type="checkbox"]')[5].click(); return true; })()`);
   assert.equal(await sendOff(), "false");
-  await shot("12-catalog");
-  await press("Send to catalog");
+  // "Partly AI-assisted" (EMU-359): the catalog's template asks which parts and what they do, so a field asks it in
+  // the option's own words, and Send waits for it. The person's click and keys note it in the project.
+  const aiNote = () => app.page(`document.getElementById("publish-ai-note")?.value ?? null`);
+  assert.equal(await aiNote(), null, "no field for No AI was used");
+  await clickAt(await where(`document.querySelector('.publish-choices input[value="partly"]')`));
+  await until(async () => /Which parts, and what they do/.test(await pane()), "the explanation's field, named as the option asks");
+  assert.equal(await sendOff(), "true", "no explanation yet");
+  assert.match(await pane(), /Explain the AI usage\. Opens a pull request to busy-app\/busy-apps-catalog from your account with this checklist and your AI choice and explanation/);
+  assert.equal(await app.page(`document.getElementById("publish-ai-note").maxLength`), 1200);
+  const typed = "The timer's settings page, made with an AI agent:\nit keeps the session lengths. Thanks @octocat.";
+  await app.act(`(() => { const el = document.getElementById("publish-ai-note"); el.focus(); el.value = ${q(typed)}; el.dispatchEvent(new Event("input")); return true; })()`);
+  await until(async () => (await sendOff()) === "false", "Send on with the explanation");
+  const record = () => JSON.parse(readFileSync(path.join(dir, ".busy", "publish.json"), "utf8")).steps?.ai ?? null;
+  await until(() => record()?.note === "The timer's settings page, made with an AI agent: it keeps the session lengths. Thanks @octocat.", "the explanation noted in the project", 10_000);
+  assert.equal(record().choice, "partly");
+  // Too long: said, and Send off.
+  await app.act(`(() => { const el = document.getElementById("publish-ai-note"); el.value = "x".repeat(1001); el.dispatchEvent(new Event("input")); return true; })()`);
+  await until(async () => /At most 1000 characters/.test(await pane()), "the limit said");
+  await until(async () => (await sendOff()) === "true", "Send off past the limit");
+  await app.act(`(() => { const el = document.getElementById("publish-ai-note"); el.value = ${q(typed)}; el.dispatchEvent(new Event("input")); return true; })()`);
+  await until(async () => (await sendOff()) === "false", "Send on again");
+  // The window opened again (its page loaded anew, the flow's memory gone): the step has the choice and the
+  // explanation back, from the project's .busy/publish.json; the ticks are the person's to give again.
+  await app.run((shell) => shell.windows.current.win.webContents.reload());
+  await until(() => app.page(`document.querySelector("#publish")?.ariaDisabled === "false"`).catch(() => false), "Publish to be there to press again", 60_000);
+  await app.click("#publish");
   await idle();
+  await step("Send to catalog");
+  await until(async () => (await aiNote()) !== null, "the explanation's field again", 30_000);
+  assert.equal(await aiNote(), "The timer's settings page, made with an AI agent: it keeps the session lengths. Thanks @octocat.");
+  assert.equal(await app.page(`document.querySelector('.publish-choices input[value="partly"]').checked`), true);
+  for (let i = 0; i < 6; i++) await app.page(`(() => { document.querySelectorAll('.publish-checklist input[type="checkbox"]')[${i}].click(); return true; })()`);
+  await until(async () => (await sendOff()) === "false", "Send on, the boxes ticked again");
+  await shot("12-catalog");
+
+  // ---- What a send comes to (EMU-360), each on the stand-in for GitHub: the form hidden, a screen of its own.
+  const outcome = () => app.page(`document.querySelector(".publish-outcome")?.innerText ?? ""`);
+  const formShown = () => app.page(`Boolean(document.querySelector(".publish-checklist"))`);
+  const shows = async (pattern, what) => {
+    await until(async () => pattern.test(await outcome()), what, 60_000).catch(async (e) => {
+      throw new Error(`${e.message}. The pane says: ${await pane()}`);
+    });
+    await idle();
+  };
+  // No network: every call of the API goes unanswered.
+  github.hooks.fail = (req, url) => (url.pathname.startsWith("/api/") ? { drop: true } : null);
+  await press("Send to catalog");
+  await shows(/No connection to GitHub/, "the no-network screen");
+  assert.match(await outcome(), /Check the internet connection, then try again\./);
+  assert.equal(await formShown(), false, "the form is hidden");
+  assert.ok(await where(`[...document.querySelectorAll(".publish-outcome button")].find((b) => b.textContent.trim() === "Try again")`), "Try again");
+  await shot("20-no-network");
+  // Back: the form as it was.
+  await press("Back");
+  assert.equal(await formShown(), true);
+  assert.equal(await sendOff(), "false", "the ticks and the explanation are kept");
+  // GitHub's limit: 403 with no requests left until an hour from now.
+  github.hooks.fail = (req, url) => (url.pathname.startsWith("/api/") ? { status: 403, body: { message: "API rate limit exceeded" }, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600) } } : null);
+  await press("Send to catalog");
+  await shows(/GitHub's limit is reached for now/, "the limit's screen");
+  assert.match(await outcome(), /Try again after/);
+  // The catalog can't be read.
+  github.hooks.fail = (req, url) => (req.method === "GET" && url.pathname === "/api/repos/busy-app/busy-apps-catalog" ? { status: 404, body: { message: "Not Found" } } : null);
+  await press("Try again");
+  await shows(/The catalog can't be reached/, "the catalog's screen");
+  // The catalog can't be forked.
+  github.hooks.fail = (req, url) => (req.method === "POST" && url.pathname === "/api/repos/busy-app/busy-apps-catalog/forks" ? { status: 403, body: { message: "Resource not accessible by integration" } } : null);
+  await press("Try again");
+  await shows(/The catalog can't be forked/, "the no-fork screen");
+  // No access to the fork: it is made, then a write to it is refused.
+  github.hooks.fail = (req, url) => (req.method === "POST" && url.pathname.startsWith(`/api/repos/${github.login}/busy-apps-catalog/git/`) ? { status: 403, body: { message: "Resource not accessible by integration" } } : null);
+  await press("Try again");
+  await shows(/No access to your copy of the catalog/, "the fork's screen");
+  assert.match(await outcome(), new RegExp(`Made on GitHub so far: your copy of the catalog, github\\.com/${github.login}/busy-apps-catalog\\.`));
+  await shot("21-no-fork");
+  // Sending, held at the pull request: the form hidden, the dialog not closed; then the pull request fails once, after
+  // the fork and the branch were made: said, and Try again goes on without a second of either.
+  let open;
+  const opening = new Promise((resolve) => (open = resolve));
+  let refused = false;
+  const pulls = github.pulls.length;
+  github.hooks.hold = (req, url) => (req.method === "POST" && url.pathname === "/api/repos/busy-app/busy-apps-catalog/pulls" ? opening : null);
+  github.hooks.fail = (req, url) => (req.method === "POST" && url.pathname === "/api/repos/busy-app/busy-apps-catalog/pulls" && !refused ? ((refused = true), { status: 422, body: { message: "Validation Failed", errors: [{ message: "GitHub is busy" }] } }) : null);
+  await press("Try again");
+  await until(async () => /Opening the pull request…/.test(await outcome()), "the sending screen", 60_000);
+  assert.match(await outcome(), /Waiting for GitHub: \d+ s/);
+  assert.match(await outcome(), /stops waiting after 2 minutes without an answer/);
+  assert.equal(await app.page(`document.querySelector(".publish-scrim").hidden`), false);
+  await app.page(`window.emulatorPublish.close(); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); true`);
+  assert.equal(await app.page(`document.querySelector(".publish-scrim").hidden`), false, "neither Close nor Esc closes it while GitHub has not answered");
+  assert.equal(await app.page(`document.querySelector('.publish-head button[aria-label="Close"]').ariaDisabled`), "true");
+  assert.equal(await app.page(`[...document.querySelectorAll(".publish-foot button")].length`), 0, "no buttons while it runs");
+  await shot("22-sending");
+  github.hooks.hold = null;
+  open();
+  await shows(/The pull request was not opened/, "the partial screen");
+  assert.match(await outcome(), new RegExp(`Made on GitHub so far: your copy of the catalog, github\\.com/${github.login}/busy-apps-catalog, and the branch ${github.login}/`));
+  assert.match(await outcome(), /Try again goes on from there: nothing is made twice\./);
+  await shot("23-partial");
+  github.hooks.fail = null;
+  await press("Try again");
+  await shows(/Pull request sent/, "the success screen");
+  assert.equal(github.pulls.length, pulls + 1, "one pull request");
   text = await pane();
-  assert.match(text, /Opened/, await said());
   const pull = github.pulls.at(-1);
   const branch = pull.head.split(":")[1];
   assert.match(pull.head, new RegExp(`^${github.login}:${github.login}/${id.replace(/\./g, "\\.")}_\\d+\\.\\d+\\.\\d+$`));
   assert.equal((pull.body.match(/^- \[x\] /gm) ?? []).length, 6, pull.body);
   assert.match(pull.body, /^- \[ \] \(optional\) My app takes part/m, "the optional box stays as the person left it");
   assert.match(pull.body, /^- \[x\] I'm the author of the app/m);
-  assert.match(pull.body, /^- No AI was used\.$/m);
-  assert.doesNotMatch(pull.body, /Partly AI-assisted|Keep ONE option/);
+  assert.match(pull.body, /^- Partly AI-assisted: The timer's settings page, made with an AI agent: it keeps the session lengths\. Thanks @&#8203;octocat\.$/m, "the explanation after the option's colon, the mention notifying nobody");
+  assert.doesNotMatch(pull.body, /No AI was used|Fully AI-generated|Keep ONE option|which parts, and what they do/);
   assert.match(github.filesOf(`${github.login}/busy-apps-catalog`, branch)[`applications/${id}/manifest.yml`], new RegExp(`commit_sha: ${head}`));
   assert.match(text, new RegExp(pull.url.replace(/^https:\/\//, "")));
+  assert.match(text, /The catalog's checks run on GitHub, then a moderator reviews the app\./);
+  assert.equal((await grid()).length, 1, "the pull request as a fact row of the same grid");
+  assert.equal(await formShown(), false);
   await shot("13-sent");
+  // The window opened again: straight to what was sent.
+  await app.run((shell) => shell.windows.current.win.webContents.reload());
+  await until(() => app.page(`document.querySelector("#publish")?.ariaDisabled === "false"`).catch(() => false), "Publish to be there to press again", 60_000);
+  await app.click("#publish");
+  await idle();
+  await shows(/Pull request sent/, "the success screen on opening");
+  assert.equal(await app.page(`document.querySelector(".publish-step.on")?.textContent`), "9Send to catalog");
 
   // ---- An update (catalog-update): the catalog has the app now, at 0.0.1 from a repository of the person's. Send to
   // catalog says so, asks What's new for this version (not the published one's), and sends "Update … to …".
@@ -509,6 +686,11 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   github.commitFiles("busy-app/busy-apps-catalog", "main", { [`applications/${id}/manifest.yml`]: `sourcecode:\n  type: git\n  location:\n    origin: https://github.com/${github.login}/old-copy.git\n    commit_sha: ${old}\ncategory: productivity\nchangelog: The first version: focus sessions.\n` });
   await step("Publish to GitHub");
   await step("Send to catalog");
+  await shows(/Pull request sent/, "what was sent, again");
+  await press("Change it and send again");
+  // The page was loaded anew: the ticks are the person's to give again (the AI usage came back from the project).
+  await until(() => app.page(`document.querySelectorAll('.publish-checklist input[type="checkbox"]').length === 8`), "the checklist again", 30_000);
+  for (let i = 0; i < 6; i++) await app.page(`(() => { document.querySelectorAll('.publish-checklist input[type="checkbox"]')[${i}].click(); return true; })()`);
   await until(async () => /In the catalog\s*\S.* 0\.0\.1/.test(await pane()), "the update's facts", 30_000).catch(async (e) => {
     throw new Error(`${e.message}. The step says: ${await pane()}`);
   });
@@ -524,11 +706,39 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   await until(async () => (await updateOff()) === "false", "Send update to be there to press");
   await shot("18-update");
   await press("Send update");
-  await idle();
+  await shows(/Pull request updated/, "the updated screen");
+  assert.match(await outcome(), /The open pull request has the new changes: the catalog's checks run on it again\./);
+  await shot("24-updated");
   const updated = github.pulls.find((one) => one.number === pull.number);
   assert.equal(updated.title, `Update ${await app.page(`document.querySelector("#publish-title").textContent.replace(/^Publish /, "")`)} to ${version}`);
   assert.match(github.filesOf(`${github.login}/busy-apps-catalog`, branch)[`applications/${id}/manifest.yml`], /changelog: "A pause button, and a longer break after four sessions\."/);
   assert.equal(JSON.parse(readFileSync(path.join(dir, "catalog.json"), "utf8")).changelog, "A pause button, and a longer break after four sessions.", "written into catalog.json too");
+
+  // ---- Out of date (EMU-360): GitHub's commit no longer has the project's files (here its tree names one more), so
+  // the request is not sent; Publish again leads to Publish to GitHub.
+  github.hooks.fail = (req, url) => (req.method === "GET" && url.pathname.startsWith(`/api/repos/${github.login}/${repoName}/git/trees/`) ? { status: 200, body: { sha: "1".repeat(40), truncated: false, tree: [{ path: "extra.txt", mode: "100644", type: "blob", sha: "2".repeat(40), size: 1 }] } } : null);
+  await press("Change it and send again");
+  await until(async () => (await updateOff()) === "false", "Send update again");
+  await press("Send update");
+  await shows(/The project changed since it was published/, "the out-of-date screen");
+  await shot("25-out-of-date");
+  github.hooks.fail = null;
+  await press("Publish again");
+  await idle();
+  assert.equal(await app.page(`document.querySelector(".publish-step.on")?.textContent`), "8Publish to GitHub");
+  // Publish to GitHub's own failure: its screen, Try again, then the published one with the commit.
+  const publishAgainOn = () => app.page(`[...document.querySelectorAll(".publish button")].find((b) => b.textContent.trim() === "Publish again")?.ariaDisabled === "false"`);
+  await until(async () => /Publishing as/.test(await pane()) && (await publishAgainOn()), "the publish view, the repository read", 30_000).catch(async (e) => {
+    throw new Error(`${e.message}. The pane says: ${await pane()}`);
+  });
+  github.hooks.fail = (req, url) => (url.pathname.startsWith("/api/") ? { drop: true } : null);
+  await press("Publish again");
+  await shows(/No connection to GitHub/, "Publish to GitHub's no-network screen");
+  github.hooks.fail = null;
+  await press("Try again");
+  await shows(/Up to date on GitHub|Published to GitHub/, "published again");
+  assert.match(await outcome(), new RegExp(github.headOf(`${github.login}/${repoName}`, "main")));
+  await press("Back");
 
   // ---- Publish into a repository the person has already (catalog-update): offered, with what changes said first.
   github.makeRepo(github.login, "my-old-app");
@@ -595,6 +805,20 @@ test("publish, stage 1: from a new project to Ready to publish, every check pass
   assert.ok(await where(`[...document.querySelectorAll(".publish button")].find((b) => b.textContent.trim() === "Sign in with another account")`));
   assert.match(await pane(), new RegExp(`added to GitHub CLI, which goes on using ${github.login}, and publishing uses it`));
   await shot("17-another-account");
+  // ---- An expired sign-in (EMU-360): GitHub answers 401 to everything; the screen says so and leads to signing in.
+  await press("Back to Publish");
+  await until(async () => /Publishing as/.test(await pane()), "back on the publish view");
+  // The form, as it was left when Publish again was chosen (the request out of date was not sent).
+  await step("Send to catalog");
+  await until(async () => (await updateOff()) === "false", "Send update on");
+  github.hooks.fail = (req, url) => (url.pathname.startsWith("/api/") ? { status: 401, body: { message: "Bad credentials" } } : null);
+  await press("Send update");
+  await shows(/Your GitHub sign-in has expired/, "the expired sign-in's screen");
+  assert.match(await outcome(), new RegExp(`GitHub no longer accepts the sign-in of ${github.login}\\.`));
+  await shot("26-expired");
+  github.hooks.fail = null;
+  await press("Sign in again");
+  await until(async () => /^Choose a GitHub account/.test(await pane()), "the account view after the expired sign-in", 30_000);
   // Nothing of the emulator's was left in the project beyond what it said: .busy and submission are kept out of git.
   assert.ok(JSON.parse(readFileSync(path.join(dir, ".busy", "publish.json"), "utf8")).steps.package);
 });

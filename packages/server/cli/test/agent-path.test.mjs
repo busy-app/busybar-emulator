@@ -74,7 +74,10 @@ test("publish signin with several accounts of GitHub CLI: choose_account lists t
   assert.equal((await call(["publish", "signin", "--new-account", "--user", "octo-work"], ctx, sys)).json.code, "usage");
   const used = await call(["publish", "signin", "--user", "octo-work"], ctx, sys);
   assert.deepEqual([used.code, used.json.login], [0, "octo-work"]);
-  assert.deepEqual(asked.at(-1)[0], { op: "signin-existing", login: "octo-work" }, "the app is told which account, and asks the person");
+  // After a sign-in the command asks who commits are signed by (EMU-366): the asking before it is the sign-in's.
+  const lastAsked = () => asked.filter(([q]) => q.op !== "signer").at(-1)[0];
+  assert.deepEqual(lastAsked(), { op: "signin-existing", login: "octo-work" }, "the app is told which account, and asks the person");
+  assert.equal(asked.at(-1)[0].op, "signer");
   const other = await call(["publish", "signin", "--user", "octo-own"], ctx, sys);
   assert.deepEqual([other.json.code, other.json.login], ["signed_in_other", "octo-work"]);
   await call(["publish", "signout"], ctx, sys);
@@ -87,7 +90,7 @@ test("publish signin with several accounts of GitHub CLI: choose_account lists t
   assert.deepEqual([again.json.waiting, again.json.userCode], [true, "WDJB-MJHT"], "the same code, no new sign-in");
   const done = await call(["publish", "signin", "--progress"], ctx, sys);
   assert.deepEqual([done.code, done.json.login, done.json.kept], [0, "octo-new", "octo-own"]);
-  assert.equal(asked.at(-1)[0].op, "signin-wait");
+  assert.equal(lastAsked().op, "signin-wait");
   assert.match(done.err, /enter the code WDJB-MJHT/);
 });
 
@@ -118,8 +121,14 @@ test("MCP publish: the words of each step, only the options a step takes, a sign
   assert.deepEqual(words("publish", { step: "status", folder: dir }), ["publish", "status", dir]);
   assert.deepEqual(words("publish", { step: "readme", folder: dir, readme_action: "set", intro: "A timer.", controls: [{ control: "Start", text: "Starts" }], usage: "More." }), ["publish", "readme", "set", dir, "--intro=A timer.", '--controls=[{"control":"Start","text":"Starts"}]', "--usage=More."]);
   assert.deepEqual(words("publish", { step: "readme", folder: dir }), ["publish", "readme", "get", dir]);
+  // The project's README.md as it is (EMU-365): keep; another README over it, replace.
+  assert.deepEqual(words("publish", { step: "readme", folder: dir, readme_action: "set", keep: true }), ["publish", "readme", "set", dir, "--keep"]);
+  assert.deepEqual(words("publish", { step: "readme", folder: dir, readme_action: "set", mode: "fields", replace: true }), ["publish", "readme", "set", dir, "--replace", "--mode=fields"]);
   assert.deepEqual(words("publish", { step: "prepare", folder: dir, license: "MIT", author: "Pat" }), ["publish", "prepare", dir, "--license=MIT", "--author=Pat"]);
-  assert.deepEqual(words("publish", { step: "pr", folder: dir, ai: "partly" }), ["publish", "pr", dir, "--ai=partly"]);
+  assert.deepEqual(words("publish", { step: "pr", folder: dir, ai: "partly", ai_note: "The settings page." }), ["publish", "pr", dir, "--ai=partly", "--ai-note=The settings page."]);
+  // "Partly" and "Fully" need the explanation the catalog asks for (EMU-359): refused without it, with what to do.
+  for (const ai of ["partly", "full"]) for (const note of [undefined, "  "]) assert.throws(() => words("publish", { step: "pr", folder: dir, ai, ...(note === undefined ? {} : { ai_note: note }) }), (e) => e.code === "usage" && /needs ai_note/.test(e.message) && /with the person/.test(e.hint), `${ai} ${JSON.stringify(note)}`);
+  assert.throws(() => words("publish", { step: "push", folder: dir, ai_note: "x" }), (e) => e.code === "usage" && /takes no ai_note/.test(e.message));
   assert.deepEqual(words("publish", { step: "pr", folder: dir, ai: "none", catalog: "busy-app/busy-apps-catalog-dev" }), ["publish", "pr", dir, "--ai=none", "--catalog=busy-app/busy-apps-catalog-dev"], "--catalog stays, for development");
   assert.deepEqual(words("publish", { step: "signin" }), ["publish", "signin", "--no-wait"]);
   assert.deepEqual(words("publish", { step: "signin", wait: true }), ["publish", "signin"]);

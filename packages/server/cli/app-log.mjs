@@ -33,13 +33,13 @@ export const momentOf = (line) => (Number.isFinite(line?.at) ? line.at : line?.t
 export function shownLine(line) {
   const time = new Date(line.time);
   const clock = Number.isFinite(time.getTime()) ? [time.getHours(), time.getMinutes(), time.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":") : "--:--:--";
-  return `${clock}  ${String(line.kind ?? "").padEnd(6)}  ${line.text}`;
+  return `${clock}  ${String(line.kind ?? "").padEnd(6)}  ${line.text}${line.note ? `  (${line.note})` : ""}`;
 }
 
 /** A line for --json: the time as ISO 8601. */
 export function jsonLine(line) {
   const time = new Date(line.time);
-  return { time: Number.isFinite(time.getTime()) ? time.toISOString() : null, kind: line.kind ?? null, text: line.text };
+  return { time: Number.isFinite(time.getTime()) ? time.toISOString() : null, kind: line.kind ?? null, text: line.text, ...(line.note ? { note: line.note } : {}) };
 }
 
 /** The app a line of the log is about, by the forms device.mjs writes; null for a line of the bar itself. */

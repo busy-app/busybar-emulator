@@ -26,11 +26,15 @@
 //                                                   (test/timed/<firmware>/, the emulator's firmware)
 //   node emulator/test/timed.mjs --firmware 1.3.1   the same on another firmware; --emu 127.0.0.1:8640 a running emulator
 //   node emulator/test/timed.mjs --record           watch a connected bar (10.0.4.20) and save what it showed
-//   node emulator/test/timed.mjs --only scroll      one scene
+//   node emulator/test/timed.mjs --only scroll      one scene (or several: --only scroll,countdown)
 //   node emulator/test/timed.mjs --images           the bar's frames the emulator never showed, in a folder of the
 //                                                   system's temporary folder (EMU_TEST_OUT when the gate runs it)
 //   node emulator/test/timed.mjs --signatures       also a signature of each of the emulator's playbacks (its frames
 //                                                   and their times): the same in every run when the hold works
+//
+// A scene recorded at the BUSY Bar session (bar-session/run.mjs) is `awaiting` until its recording is there: without one it
+// is not played and the line says so. One scene watches the back display (`display: 1`): a .anim of the firmware there
+// (EMU-348).
 //
 // A firmware's folder may name scenes it compares with another firmware's recording (borrowed.json), with why and
 // what was compared to allow it: 1.4.1's off is 1.3.1's. The line of such a scene says so.
@@ -52,7 +56,7 @@ const option = (name, fallback) => {
   return i >= 0 ? args[i + 1] : fallback;
 };
 const record = args.includes("--record");
-const only = option("--only", null);
+const only = option("--only", null)?.split(",") ?? null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const APP = "emu.timed";
 // GUI_TICK_PERIOD_MS: the GUI redraws at most this often, so the emulator's picture changes only at these steps.
@@ -86,6 +90,16 @@ const SCENES = {
   // The mode selector moved to OFF: the firmware's power-off animation, then dark displays. It starts from SETTINGS,
   // whose menu stands still (the apps menu's title is animated); `restore` puts the selector back afterwards.
   off: { seconds: 5, key: "off", from: "settings", restore: "apps" },
+  // The firmware's spinner on the back display, the front still (EMU-348). Its pace is not one of BAR_SLOWDOWN's.
+  "anim-back": {
+    seconds: 8,
+    display: 1,
+    awaiting: true,
+    elements: [
+      { id: "f", type: "text", text: "back", font: "small", x: 0, y: 4 },
+      { id: "a", type: "animation", display: "back", x: 64, y: 32, stock_path: "shared/spinner_back_16x16.anim", loop: true },
+    ],
+  },
 };
 
 /**
@@ -108,7 +122,7 @@ function call(method, path, body) {
 }
 
 const api = (method, path, body) => call(method, `/api/${path}`, body);
-const screen = async () => (await call("GET", "/api/screen?display=0")).text;
+const screen = async (display = 0) => (await call("GET", `/api/screen?display=${display}`)).text;
 
 const hashOf = (frame) => createHash("sha1").update(frame).digest("hex").slice(0, 12);
 
@@ -164,7 +178,7 @@ async function watchBar(scene) {
   const frames = new Map(); // hash → the frame, base64
   const runs = [];
   while (performance.now() - t0 < scene.seconds * 1000) {
-    const frame = await (await fetch(`http://${addr}/api/screen?display=0`)).text();
+    const frame = await (await fetch(`http://${addr}/api/screen?display=${scene.display ?? 0}`)).text();
     look(runs, frames, frame, performance.now() - t0);
   }
   await cleanUp(scene);
@@ -198,14 +212,14 @@ async function watchEmulator(scene, seconds, hold) {
     // before the key is not the scene.
     const before = new Set();
     for (let at = 0; scene.key && at < 1500; at += STEP_MS) {
-      before.add(hashOf(await screen()));
+      before.add(hashOf(await screen(scene.display)));
       await time(`advance=${STEP_MS}`);
     }
     await draw(now);
     const frames = new Map();
     const runs = [];
     for (let at = 0; at <= seconds * 1000; at += STEP_MS) {
-      look(runs, frames, await screen(), at);
+      look(runs, frames, await screen(scene.display), at);
       await time(`advance=${STEP_MS}`);
     }
     return { frames, runs, before, wander };
@@ -322,7 +336,7 @@ const BAR_SLOWDOWN = {
   25: { value: 1.001, tolerance: 0.005 },
 };
 
-if (only && !SCENES[only]) throw new Error(`no scene ${only}: ${Object.keys(SCENES).join(", ")}`);
+for (const one of only ?? []) if (!SCENES[one]) throw new Error(`no scene ${one}: ${Object.keys(SCENES).join(", ")}`);
 // The bar, or the emulator: one at --emu, else one of this test's own (at bar speed: the scenes need the wander).
 const target = record ? { addr: option("--bar", "10.0.4.20"), stop: async () => {} } : await emulatorFor(args, { name: "timed" });
 const addr = target.addr;
@@ -345,7 +359,7 @@ if (!record) {
 let failed = 0;
 let passed = 0;
 for (const [name, scene] of Object.entries(SCENES)) {
-  if (only && name !== only) continue;
+  if (only && !only.includes(name)) continue;
   const lent = Object.hasOwn(borrowed, name) && !existsSync(join(savedDir, `${name}.json`)) ? borrowed[name] : null;
   const file = lent ? join(recordingsDir("timed", lent.from), `${name}.json`) : join(savedDir, `${name}.json`);
   if (lent) console.log(`  (${name}: not a recording of a bar on ${firmware}; ${lent.from}'s, as test/timed/${firmware}/borrowed.json says why)`);
@@ -355,6 +369,11 @@ for (const [name, scene] of Object.entries(SCENES)) {
     const frames = [...seen.frames.entries()].map(([hash, frame]) => ({ hash, frame }));
     writeFileSync(file, JSON.stringify({ runs: seen.runs.map((r) => [r.hash, Math.round(r.start), Math.round(r.end)]), frames }) + "\n");
     console.log(`  ${name}: ${seen.frames.size} frames in ${seen.runs.length} runs`);
+    continue;
+  }
+  if (!existsSync(file) && scene.awaiting) {
+    // Not a check yet: the BUSY Bar session records it (docs/bar-session.md).
+    console.log(`  wait ${name}: no recording of a bar on ${firmware} yet; the BUSY Bar session records it (node emulator/test/bar-session/run.mjs)`);
     continue;
   }
   if (!existsSync(file)) {
@@ -435,7 +454,7 @@ for (const [name, scene] of Object.entries(SCENES)) {
     const signature = (runs) => hashOf(runs.map((r) => `${r.hash}@${r.start}`).join(",")).slice(0, 8);
     console.log(`         playbacks: nominal ${signature(timeline)}, at bar speed ${atBarSpeed.map((e) => signature(e.runs.slice(1))).join(", ")}`);
   }
-  if (missing.length && args.includes("--images")) {
+  if (missing.length && args.includes("--images") && !scene.display) {
     const dir = join(outputDir("timed"), name);
     mkdirSync(dir, { recursive: true });
     for (const f of missing.slice(0, 20)) writeFileSync(join(dir, `bar-${f.hash}.png`), framePng(f.frame));

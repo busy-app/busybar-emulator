@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { after, test } from "node:test";
+import { after, test } from "./node-test.mjs";
 
 import { FAKE_GH, fakeSignedIn } from "../fixtures/fake-gh.mjs";
 import { startGithubStub } from "../fixtures/github-stub.mjs";

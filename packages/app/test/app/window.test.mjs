@@ -1,7 +1,7 @@
 // The shell shows one window: the device window, loaded from the server's own address. Of the shell it has one thing:
 // the bridge's function for the actions on app projects (actions.test.mjs holds those to their rules).
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { after, before, test } from "./node-test.mjs";
 
 import { sleep } from "../helpers.mjs";
 import { HAS_REAL_SERVER, launch, VISIBLE } from "./harness.mjs";

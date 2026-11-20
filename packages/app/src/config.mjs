@@ -188,6 +188,12 @@ export function resolveConfig({ env, platform, kind, testVariant, appDir, appDat
       // Where a release's app package may be downloaded from: github.com's hosts over HTTPS (publish-flow.mjs). The
       // tests name their stand-in for GitHub on this machine (BUSY_EMULATOR_GITHUB_DOWNLOADS); a release reads none.
       downloads: loopbackAddress(given("BUSY_EMULATOR_GITHUB_DOWNLOADS")),
+      // Where the person's own git settings are, for the name and address `git config` gives (EMU-366): their home
+      // folder. A development run and the test variant may name another (BUSY_EMULATOR_GIT_HOME), so that the tests and
+      // the publish preview never read the person's own. A release reads XDG_CONFIG_HOME as git itself does (git's
+      // own variable, where the person keeps git's settings): it only says where to read a name and an address, which
+      // are offered and never used unless the person picks them.
+      git: given("BUSY_EMULATOR_GIT_HOME") ? { home: p.resolve(given("BUSY_EMULATOR_GIT_HOME")), xdg: p.join(p.resolve(given("BUSY_EMULATOR_GIT_HOME")), ".config") } : { home, xdg: env.XDG_CONFIG_HOME || null },
     },
     // For the shell's tests of the start: how long a start goes without an answer before the window says it is
     // starting (server-keeper.mjs, SLOW_START_MS), so that a test that is not about that page never sees it, however

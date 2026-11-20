@@ -203,11 +203,13 @@ test("GitHub CLI: a release runs the gh inside it with GitHub CLI's default sett
   const env = { BUSY_EMULATOR_GH: "/tmp/fake-gh.mjs", BUSY_EMULATOR_GH_CONFIG_DIR: "/tmp/gh-config", GH_CONFIG_DIR: "/tmp/elsewhere", XDG_CONFIG_HOME: "/tmp/xdg", BUSY_EMULATOR_GITHUB_DOWNLOADS: "http://127.0.0.1:8123" };
   const release = resolveConfig({ ...mac, env, kind: "release", testVariant: false });
   // A release's packages come from github.com's own hosts only: it reads no stand-in for them.
-  assert.deepEqual(release.github, { gh: `${macResources}/gh/bin/gh`, configDir: "/Users/you/.config/gh", downloads: null });
+  assert.deepEqual(release.github, { gh: `${macResources}/gh/bin/gh`, configDir: "/Users/you/.config/gh", downloads: null, git: { home: "/Users/you", xdg: "/tmp/xdg" } });
   const windows = resolveConfig({ ...win, env, kind: "release", testVariant: false });
-  assert.deepEqual(windows.github, { gh: `${winResources}\\gh\\bin\\gh.exe`, configDir: "C:\\Users\\you\\AppData\\Roaming\\GitHub CLI", downloads: null });
-  const test = resolveConfig({ ...macSource, env, kind: "development", testVariant: true });
-  assert.deepEqual(test.github, { gh: "/tmp/fake-gh.mjs", configDir: "/tmp/gh-config", downloads: "http://127.0.0.1:8123/" });
+  assert.deepEqual(windows.github, { gh: `${winResources}\\gh\\bin\\gh.exe`, configDir: "C:\\Users\\you\\AppData\\Roaming\\GitHub CLI", downloads: null, git: { home: "C:\\Users\\you", xdg: "/tmp/xdg" } });
+  // The person's git settings (EMU-366): a release reads the person's own whatever BUSY_EMULATOR_GIT_HOME says; a test names its own.
+  assert.deepEqual(resolveConfig({ ...mac, env: { ...env, BUSY_EMULATOR_GIT_HOME: "/tmp/git-home" }, kind: "release", testVariant: false }).github.git, { home: "/Users/you", xdg: "/tmp/xdg" });
+  const test = resolveConfig({ ...macSource, env: { ...env, BUSY_EMULATOR_GIT_HOME: "/tmp/git-home" }, kind: "development", testVariant: true });
+  assert.deepEqual(test.github, { gh: "/tmp/fake-gh.mjs", configDir: "/tmp/gh-config", downloads: "http://127.0.0.1:8123/", git: { home: "/tmp/git-home", xdg: "/tmp/git-home/.config" } });
   assert.equal(resolveConfig({ ...macSource, env: { BUSY_EMULATOR_GH: "none" }, kind: "development", testVariant: true }).github.gh, null);
   assert.equal(resolveConfig({ ...macSource, env: {}, kind: "development", testVariant: false }).github.gh, null, "a run from the source folder has no gh of its own");
 });
